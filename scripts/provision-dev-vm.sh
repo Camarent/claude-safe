@@ -305,7 +305,7 @@ OFFICE_PKGS=(poppler-utils xz-utils tesseract-ocr tesseract-ocr-eng tesseract-oc
   fonts-liberation2 fonts-noto-core fonts-noto-color-emoji libreoffice-writer libreoffice-calc
   libreoffice-impress libreoffice-core fonts-crosextra-carlito fonts-crosextra-caladea)
 check_office() {
-  pkgs_installed "${OFFICE_PKGS[@]}" && pandoc --version 2>/dev/null | head -1 | grep -qF "$PANDOC_VERSION" \
+  pkgs_installed "${OFFICE_PKGS[@]}" && pandoc --version 2>/dev/null | sed -n 1p | grep -qF "$PANDOC_VERSION" \
     && typst --version 2>/dev/null | grep -qF "${TYPST_VERSION#v}"
 }
 step_office() {
@@ -404,7 +404,8 @@ list_steps() { local s; for s in "${STEPS[@]}"; do printf '%-10s %s\n' "${s%%|*}
 validate_names() { # validate_names OPTION CSV
   local n
   for n in ${2//,/ }; do
-    step_names | grep -qx "$n" || die "unknown step '$n' in $1 (see --list)"
+    # no `step_names | grep -q`: grep exits early, SIGPIPE + pipefail then reports a valid name as unknown
+    case " $(step_names | tr '\n' ' ') " in *" $n "*) ;; *) die "unknown step '$n' in $1 (see --list)" ;; esac
   done
 }
 
