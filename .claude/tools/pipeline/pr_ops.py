@@ -13,10 +13,10 @@ from . import gitx, pr_mode, worktree
 from .configuration import (
     BLOCKED,
     CHECKS_TIMEOUT_S,
+    CI_DENIED_MSG,
     CI_EMPTY_POLLS,
     CI_POLL_S,
     CI_RUNS_LIMIT,
-    CI_TOKEN_ERROR,
     DONE,
     GIT_LONG_TIMEOUT_S,
     GIT_NETWORK_TIMEOUT_S,
@@ -195,7 +195,7 @@ def _pr_checks(repo, br, limit=None):
     """`gh pr checks BR` (with --watch and a time limit when `limit` is set) -> CompletedProcess. A token that cannot read check runs
     falls back to the workflow runs of the PR head, answered in the same shape: rc 0 green, 1 red or none, 8 pending."""
     c = _run(["gh", "pr", "checks", br, *(["--watch"] if limit else [])], repo, *([limit] if limit else []))
-    if not c.returncode or CI_TOKEN_ERROR not in c.stdout + c.stderr:
+    if not c.returncode or CI_DENIED_MSG not in c.stdout + c.stderr:
         return c
     runs = _ci_wait(repo, br, limit) if limit else _ci_runs(repo, _view(repo, br, "headRefOid"))
     pending = any(x["status"] != "COMPLETED" for x in runs)
@@ -206,7 +206,7 @@ def _pr_checks(repo, br, limit=None):
 
 def _failing(repo, br):
     r = _run(["gh", "pr", "checks", br, "--json", "name,bucket"], repo)
-    if r.returncode and CI_TOKEN_ERROR in r.stdout + r.stderr:
+    if r.returncode and CI_DENIED_MSG in r.stdout + r.stderr:
         return _ci_failed(_ci_runs(repo, _view(repo, br, "headRefOid")))
     try:
         return [c["name"] for c in json.loads(r.stdout or "[]") if isinstance(c, dict) and c.get("bucket") in ("fail", "cancel")]
@@ -744,7 +744,7 @@ def _sweep(repo, cfg):
     rel = release_branch(repo, cfg)
     listing = ["gh", "pr", "list", "--author", "app/dependabot", "--state", "open", "--json"]
     r = _run([*listing, "number,title,statusCheckRollup"], repo)
-    token_gap = bool(r.returncode) and CI_TOKEN_ERROR in r.stdout + r.stderr
+    token_gap = bool(r.returncode) and CI_DENIED_MSG in r.stdout + r.stderr
     if token_gap:  # the token cannot read check runs: list without them and read the workflow runs of each head
         r = _run([*listing, "number,title,headRefOid"], repo)
     if r.returncode:
