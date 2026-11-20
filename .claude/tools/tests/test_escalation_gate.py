@@ -94,7 +94,7 @@ class GateTest(unittest.TestCase):
         self.assertEqual(self.log()[0]["judge"], "NONE")
 
     def test_security_risk_escalation_is_never_vetoed(self):
-        # task-2 of the n5-furigana stage: the judge vetoed this valid security ESCALATE as "not a file defect"
+        # task-2 of the course-a-furigana stage: the judge vetoed this valid security ESCALATE as "not a file defect"
         with open(self.fail_file, "w", encoding="utf-8") as f:
             f.write("VERDICT: ESCALATE\nESCALATE: subprocess exec of a course.json path built from input, scripts/build.py:42\n")
         seen = []

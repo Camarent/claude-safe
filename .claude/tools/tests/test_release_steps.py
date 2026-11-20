@@ -148,12 +148,12 @@ class Hook(RepoCase):
         self.assertIn("minor bump v0.1.5 -> v0.2.0", self.bump())
 
     def test_goal_version_from_plan_header_is_the_target(self):
-        self.w(".work/s/Plan.md", "# Plan\n\nRelease dojo-kit v0.3.0.\n")
+        self.w(".work/s/Plan.md", "# Plan\n\nRelease example-app v0.3.0.\n")
         self.assertIn("goal bump v0.1.5 -> v0.3.0", self.bump())
         self.assertEqual(self.r("VERSION"), "0.3.0\n")
 
     def test_version_already_at_goal_gets_no_second_bump(self):
-        self.w(".work/s/Plan.md", "# Plan\n\nRelease dojo-kit v0.3.0.\n")
+        self.w(".work/s/Plan.md", "# Plan\n\nRelease example-app v0.3.0.\n")
         self.w("VERSION", "0.3.0\n")
         self.git("add", "-A")
         self.git("commit", "-qm", "phase bump")

@@ -75,8 +75,8 @@ class T(unittest.TestCase):
         self.assertFalse(any("absolute workspace path" in m for m in brieflint.lint(ok)))
 
     def test_test_line_absolute_main_checkout_path(self):
-        repo = "/srv/main/dojo-kit"
-        bad = GOOD + "Test: python3 -I /root/.claude/tools/qrun.py -- node --test /srv/main/dojo-kit/web/a.test.js\n"
+        repo = "/srv/main/example-app"
+        bad = GOOD + "Test: python3 -I /root/.claude/tools/qrun.py -- node --test /srv/main/example-app/web/a.test.js\n"
         self.assertTrue(any("main checkout" in m for m in brieflint.lint(bad, repo)))
         self.assertFalse(any("main checkout" in m for m in brieflint.lint(bad)))  # no repo: nothing to compare
 

@@ -126,9 +126,9 @@ class UxRunTest(unittest.TestCase):
         with open(f"{d}/pipeline.json", "w", encoding="utf-8") as f:
             json.dump({"ux_flows": "workspace/<course>/flows.json"}, f)
         with open(f"{d}/.work/s/TASKS.md", "w", encoding="utf-8") as f:
-            f.write("UX-VARS: course=n5\n")
-        os.makedirs(f"{d}/workspace/n5")
-        with open(f"{d}/workspace/n5/flows.json", "w", encoding="utf-8") as f:
+            f.write("UX-VARS: course=course-a\n")
+        os.makedirs(f"{d}/workspace/course-a")
+        with open(f"{d}/workspace/course-a/flows.json", "w", encoding="utf-8") as f:
             json.dump([{"name": "home", "actions": []}], f)
         done = mock.Mock(returncode=0, stdout="", stderr="")
         with (
@@ -139,7 +139,7 @@ class UxRunTest(unittest.TestCase):
         ):
             self.assertEqual(ux_run.main(["--stage", "s", "--dir", d]), 0)
         cmd = run.call_args[0][0]
-        self.assertEqual(cmd[cmd.index("--steps") + 1], f"{d}/workspace/n5/flows.json")
+        self.assertEqual(cmd[cmd.index("--steps") + 1], f"{d}/workspace/course-a/flows.json")
 
 
 if __name__ == "__main__":

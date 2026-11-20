@@ -10,13 +10,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import stage_recall as sr
 from tests.support.tmpdirs import tracked_mkdtemp
 
-PHASE_PACK = "## files\n### repo dojo-kit\n## s\n### code\n- a.py - d\n### repo n5 (nested: paths relative to it)\n## s\n### code\n- b.py\n"
+PHASE_PACK = "## files\n### repo example-app\n## s\n### code\n- a.py - d\n### repo course-a (nested: paths relative to it)\n## s\n### code\n- b.py\n"
 
 
 class Sections(unittest.TestCase):
     def test_phase_pack_splits_by_repo_heading(self):
-        d = os.path.join(tracked_mkdtemp(), "dojo-kit")
-        nested = os.path.join(d, "ws", "n5")
+        d = os.path.join(tracked_mkdtemp(), "example-app")
+        nested = os.path.join(d, "ws", "course-a")
         os.makedirs(nested)
         with mock.patch.object(sr, "pick_roots", return_value=[d, nested]):
             secs = sr.pack_sections(PHASE_PACK, d)

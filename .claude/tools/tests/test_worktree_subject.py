@@ -22,10 +22,10 @@ class SubjectTest(unittest.TestCase):
         self.assertTrue(worktree._predicted("lib/x.py", ["lib/x.py"], "pkg"))
 
     def test_absolute_predicted_matches_relative_edit(self):
-        self.assertTrue(worktree._predicted("src/x.py", ["/ws/proj/n5/src/x.py"], "n5"))
-        self.assertTrue(worktree._predicted("n5/src/x.py", ["/ws/proj/n5/src/x.py"], ""))
-        self.assertTrue(worktree._predicted("src/a/x.py", ["/ws/proj/n5/src"], "n5"))
-        self.assertFalse(worktree._predicted("src/y.py", ["/ws/proj/n5/src/x.py"], "n5"))
+        self.assertTrue(worktree._predicted("src/x.py", ["/ws/proj/course-a/src/x.py"], "course-a"))
+        self.assertTrue(worktree._predicted("course-a/src/x.py", ["/ws/proj/course-a/src/x.py"], ""))
+        self.assertTrue(worktree._predicted("src/a/x.py", ["/ws/proj/course-a/src"], "course-a"))
+        self.assertFalse(worktree._predicted("src/y.py", ["/ws/proj/course-a/src/x.py"], "course-a"))
         self.assertFalse(worktree._predicted("x.py", ["/ws/proj/x.py"], "other"))
 
     def test_record_scope_strips_workspace_root(self):
@@ -35,8 +35,8 @@ class SubjectTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, ".work", "s"))
             with open(os.path.join(d, ".work", "s", "t1.md"), "w") as fh:
-                fh.write(f"Predicted paths: `{d}/n5/src/x.py`, `{d}/n5/doc/`\n")
-            worktree._record_scope(d, "s", "t1", "n5", ["src/x.py", "doc/a.md", "other.py"])
+                fh.write(f"Predicted paths: `{d}/course-a/src/x.py`, `{d}/course-a/doc/`\n")
+            worktree._record_scope(d, "s", "t1", "course-a", ["src/x.py", "doc/a.md", "other.py"])
             with open(os.path.join(d, ".work", "s", "metrics.jsonl")) as fh:
                 rec = json.loads(fh.readline())
         self.assertEqual(rec["extra"], ["other.py"])

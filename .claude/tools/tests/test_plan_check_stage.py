@@ -54,8 +54,8 @@ class CheckStageTest(unittest.TestCase):
 
     def test_publish_scope_follows_the_build_command(self):
         # cwd is the repo; the course folder sits below it and only the build command names it
-        kw = {"build": "./tool build workspace/n5 --out {out}", "cwd": "app"}
-        self.assertEqual(len(self.publish_config("# Stage\n", ["workspace/n5/data/x.json"], **kw)), 1)
+        kw = {"build": "./tool build workspace/course-a --out {out}", "cwd": "app"}
+        self.assertEqual(len(self.publish_config("# Stage\n", ["workspace/course-a/data/x.json"], **kw)), 1)
         self.assertEqual(self.publish_config("# Stage\n", ["workspace/other/x.json"], **kw), [])
         self.assertEqual(self.publish_config("# Stage\n", ["src/tool/x.py"], **kw), [])  # a bare build word is no scope
 
