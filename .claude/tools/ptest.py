@@ -76,7 +76,8 @@ def run_file(tests_dir, name, cov_dir=None):
             text=True,
             errors="replace",
             check=False,
-            env={**QUIET_GIT, **os.environ, "TMPDIR": scratch},
+            # ORCH_NO_INDEX: no detached background indexer may outlive the file and rewrite its removed temp dir
+            env={**QUIET_GIT, "ORCH_NO_INDEX": "1", **os.environ, "TMPDIR": scratch},
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
