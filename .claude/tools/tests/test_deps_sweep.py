@@ -29,7 +29,9 @@ PRS = """[{"number": 1, "title": "bump a", "statusCheckRollup": [{"status": "COM
 {"number": 3, "title": "bump c", "statusCheckRollup": [{"status": "IN_PROGRESS", "conclusion": ""}]}]"""
 
 
-class SweepTest(unittest.TestCase):
+class GhScratch(unittest.TestCase):
+    """Scratch repo plus a fake `gh` on PATH; subclasses add the tests (this class has none)."""
+
     def setUp(self):
         self.root = tracked_mkdtemp()
         self.d = os.path.join(self.root, "w")
@@ -62,6 +64,8 @@ class SweepTest(unittest.TestCase):
     def calls(self):
         return Path(self.log).read_text().splitlines() if os.path.exists(self.log) else []
 
+
+class SweepTest(GhScratch):
     def test_green_merged_red_pending_left_and_master_fast_forwarded(self):
         self.add_origin()
         other = os.path.join(self.root, "other")
@@ -101,6 +105,72 @@ class SweepTest(unittest.TestCase):
         self.add_origin()
         Path(self.d, "pipeline.json").write_text('{"branch_work": "dev"}', encoding="utf-8")
         self.assertFalse(pr_mode.sweep_active(self.a))
+
+
+# A token without checks:read: every call that reads check runs fails with the GraphQL error; workflow runs stay readable.
+FAKE_GH_NO_CHECKS = """#!/bin/sh
+echo "$@" >> "$GH_LOG"
+deny() { echo "GraphQL: Resource not accessible by personal access token (statusCheckRollup)" >&2; exit 1; }
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "pr list") case "$*" in *statusCheckRollup*) deny ;; *) cat "$GH_LOG.prs" ;; esac ;;
+  "pr checks") deny ;;
+  "pr view") echo '{"headRefOid": "sha-ok"}' ;;
+  "run list")
+    case "$*" in
+      *sha-ok*) echo '[{"name": "ci", "status": "completed", "conclusion": "success"}]' ;;
+      *sha-red*) echo '[{"name": "ci", "status": "completed", "conclusion": "failure"}]' ;;
+      *sha-wait*) echo '[{"name": "ci", "status": "in_progress", "conclusion": ""}]' ;;
+      *) echo '[]' ;;
+    esac ;;
+  "pr merge") exit 0 ;;
+esac
+"""
+
+PRS_NO_CHECKS = """[{"number": 1, "title": "bump a", "headRefOid": "sha-ok"},
+{"number": 2, "title": "bump b", "headRefOid": "sha-red"},
+{"number": 3, "title": "bump c", "headRefOid": "sha-wait"},
+{"number": 4, "title": "bump d", "headRefOid": "sha-none"}]"""
+
+
+class NoChecksTokenTest(GhScratch):
+    """Same scratch setup, but gh answers like a fine-grained token."""
+
+    def setUp(self):
+        super().setUp()
+        Path(self.root, "bin", "gh").write_text(FAKE_GH_NO_CHECKS, encoding="utf-8")
+        Path(self.log + ".prs").write_text(PRS_NO_CHECKS, encoding="utf-8")
+
+    def test_sweep_reads_workflow_runs(self):
+        self.add_origin()
+        v, text = pr_ops.run("sweep", self.d, "s", "x")
+        self.assertEqual(v, "DONE", text)
+        self.assertIn("#1 merged", text)
+        self.assertIn("#2 skipped red", text)
+        self.assertIn("#3 skipped pending", text)
+        self.assertIn("#4 skipped pending", text)
+        self.assertEqual([c for c in self.calls() if c.startswith("pr merge")], ["pr merge 1 --squash --delete-branch"])
+
+    def test_pr_checks_green_via_runs(self):
+        c = pr_ops._pr_checks(self.d, "stage/x", 5)
+        self.assertEqual(c.returncode, 0)
+
+    def test_pr_checks_plain_green_via_runs(self):
+        self.assertEqual(pr_ops._pr_checks(self.d, "stage/x").returncode, 0)
+
+    def test_failing_names_via_runs(self):
+        Path(self.root, "bin", "gh").write_text(FAKE_GH_NO_CHECKS.replace('sha-ok"}', 'sha-red"}'), encoding="utf-8")
+        self.assertEqual(pr_ops._failing(self.d, "stage/x"), ["ci"])
+        self.assertEqual(pr_ops._pr_checks(self.d, "stage/x").returncode, 1)
+
+    def test_no_workflows_means_no_checks_reported(self):
+        Path(self.root, "bin", "gh").write_text(FAKE_GH_NO_CHECKS.replace('sha-ok"}', 'sha-none"}'), encoding="utf-8")
+        c = pr_ops._pr_checks(self.d, "stage/x", 5)
+        self.assertEqual((c.returncode, c.stdout), (1, "no checks reported"))
+
+    def test_unrelated_gh_error_is_not_swallowed(self):
+        Path(self.root, "bin", "gh").write_text('#!/bin/sh\necho "boom" >&2\nexit 1\n', encoding="utf-8")
+        self.assertEqual(pr_ops._pr_checks(self.d, "stage/x").returncode, 1)
 
 
 if __name__ == "__main__":
