@@ -1,0 +1,9 @@
+Runner for `$ARGUMENTS` (a feature with `Plan.md` phases, or one planned stage). You decide nothing and launch no agents yourself.
+
+The only way to run planned work is a driver; it does next/dispatch/report/wait itself with headless sessions. Never call the Agent tool for dispatches, never loop `orch.py next` by hand.
+
+1. Pick the driver: `.work/$ARGUMENTS/Plan.md` exists -> kind `Feature`, driver `cs-wave feature --feature $ARGUMENTS` (plans each unplanned phase, runs it, runs `done_when`, marks it done). Otherwise `.work/$ARGUMENTS/TASKS.md` exists -> kind `Stage`, driver `cs-wave run --stage $ARGUMENTS` (a small plan, or a resume of one phase stage). Neither exists -> print `$ARGUMENTS has no plan: run cs-plan run first.` and stop.
+2. Print exactly: `<kind> $ARGUMENTS started.`
+3. From the project root (never `--dir` a sub-folder), run the driver in the background (Bash `run_in_background: true`, never piped). End the turn; the harness re-invokes you when it exits. No sleep, no polling. For a Feature also schedule `ScheduleWakeup` at 1200 s or more as a hung-driver fallback.
+4. On exit: 0 -> print `<kind> $ARGUMENTS finished: <last line>`. The driver already merged the stage PR (step `master-merged`) and deleted the branch: never list a merge as pending; verify with `gh pr list --state all --head <stage>` and `git branch --list 'stage/*'`, and republish only if the artifact is older than the merge. 3 (limit) or 4 (blocked, see `.work/$ARGUMENTS/BLOCKED.md` or the phase folder) -> print `<kind> $ARGUMENTS needs main session: <last line>`. Anything else -> print `<kind> $ARGUMENTS error: <last line>`.
+5. Needs main session: the main session reads the named report, fixes the cause in the pipeline (not only the task), runs `orch.py retry|skip --stage <stage> --step <step> [--note ...]`, then `/run-feature $ARGUMENTS` again. Dispatches logged but never run (context clear): `retry` those steps first. Only the main session may ask the owner.

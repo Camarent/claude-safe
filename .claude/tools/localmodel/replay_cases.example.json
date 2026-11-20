@@ -1,0 +1,20 @@
+[
+  {
+    "name": "example pass case",
+    "task_file": "/path/to/project/.work/feature/phases/01-setup/task-1.md",
+    "failure_files": [],
+    "notes_file": "/path/to/project/.work/feature/plan-notes.md",
+    "rules_file": "/path/to/project/AGENTS.md",
+    "expected": "PASS"
+  },
+  {
+    "name": "example fail case",
+    "task_file": "/path/to/project/.work/feature/phases/01-setup/task-2.md",
+    "failure_files": [
+      "/path/to/project/.work/feature/phases/01-setup/reports/report-a1.md"
+    ],
+    "notes_file": "/path/to/project/.work/feature/plan-notes.md",
+    "rules_file": "/path/to/project/AGENTS.md",
+    "expected": "FAIL"
+  }
+]
