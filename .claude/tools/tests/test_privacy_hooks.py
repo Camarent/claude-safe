@@ -1,5 +1,6 @@
 """git/hooks pre-commit + commit-msg read privacy.blocklist from git config; no config -> notice and pass."""
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -21,7 +22,9 @@ class PrivacyHooks(unittest.TestCase):
 
     def git(self, *args):
         cmd = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args]
-        return subprocess.run(cmd, cwd=self.repo, check=False, capture_output=True, text=True)
+        # the machine's own global/system config may define privacy.blocklist: ignore it
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+        return subprocess.run(cmd, cwd=self.repo, check=False, capture_output=True, text=True, env=env)
 
     def commit(self, text, msg="clean"):
         (self.repo / "f.txt").write_text(text + "\n")
