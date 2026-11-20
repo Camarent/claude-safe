@@ -7,7 +7,7 @@ Rule: **the orchestrator can never change what counts as green, and a red base h
 Dispatch: dev tasks by hand or `cs-plan`; Sonnet for logic (tasks 1 to 4), Haiku for task 5 docs; one reviewer per group, then tester (`ptest.py`), then `scripts/release.sh`. Order matters: 0, 1, 2, 3, 4, 5.
 
 ## Task 0 (done): remove the bypass
-Commit `b8b7a46` on `dev`: `--allow-red-base`, `preflight-red.json`, `recorded_base_red`, `clear_recorded`, `BASE_RED_NOTE` are gone; the preflight message ends `fix the base first`. Kept, not rewritten: tasks 1 to 4 build on it. Review it with the rest.
+Landed before the 2026-11-20 history squash: `--allow-red-base`, `preflight-red.json`, `recorded_base_red`, `clear_recorded`, `BASE_RED_NOTE` are gone; the preflight message ends `fix the base first`. Kept, not rewritten: tasks 1 to 4 build on it. Review it with the rest.
 
 ## Task 1. Green base before every dispatch
 - After each `merge-w<N>` (and a late merge), the driver runs the merge gates on the stage branch once (`merge_wave.py` already does this at merge; reuse its result, do not run twice). Red: the driver dispatches no new task, opens one fix task on the stage branch (existing fix-plan path), and blocks the next wave until `merge_wave` or a gates run is green.
@@ -40,7 +40,7 @@ Commit `b8b7a46` on `dev`: `--allow-red-base`, `preflight-red.json`, `recorded_b
 - Memory: one `project` note for the rule above.
 
 ## Out of scope
-- Pushing, tagging, `release.sh --merge`: unchanged, owner's word.
+- Tags and releases: unchanged, owner's word. PR squash-merges on green CI need no confirmation.
 - Changing what the gates check; this plan only protects their verdict.
 
 ## Risks
