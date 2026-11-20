@@ -24,6 +24,7 @@ STEPS = [
     "audio",
     "postgres",
     "claude",
+    "claude-config",
     "config",
 ]
 
