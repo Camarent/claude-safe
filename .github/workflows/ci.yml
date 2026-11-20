@@ -21,8 +21,6 @@ jobs:
           git config --global user.name ci
           git config --global user.email ci@example.invalid
           git config --global init.defaultBranch master
-      - name: rust-analyzer for the language server tests
-        run: rustup component add rust-analyzer
       - run: scripts/dev.sh sync
       - run: scripts/dev.sh check
       - run: scripts/dev.sh cov
