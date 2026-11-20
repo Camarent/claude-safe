@@ -10,6 +10,7 @@ from .configuration import (
     PHASES_DIR,
     PLAN_FILE,
     PLAN_MAX_PHASES,
+    QRUN_PATTERN,
     STARTED_EVENTS,
     TASKS_FILE,
     WORK_DIR,
@@ -19,6 +20,7 @@ from .stagedir import resolve_stage
 from .util import read_jsonl, read_text, write_text
 
 QRUN = f"{tool_cmd('qrun.py')} -- "
+QRUN_HEAD = re.compile(rf"\s*{QRUN_PATTERN}(?:\s|$)")  # a command that already starts with qrun, in the path form or as the cs- wrapper
 CHECKLIST_HEAD = "## Acceptance checklist"  # `plan-init` writes it empty; `check` fails until it holds `- cmd:` / `- eyes:` lines
 
 
@@ -403,21 +405,26 @@ TASK_FIELDS = {
 }
 
 
+def with_qrun(cmd):
+    """-> CMD run through qrun once: unchanged when it already starts with `python3 -I .../qrun.py` or the `cs-qrun` wrapper."""
+    return cmd if QRUN_HEAD.match(cmd) else QRUN + cmd
+
+
 def set_task_field(txt, tid, field, value):
     """-> task-N.md text with one field replaced (title also updates the Goal line)."""
     if field == "title":
         txt = re.sub(r"(?m)^# " + tid + r": .*$", lambda m: f"# {tid}: {value}", txt, count=1)
         txt = re.sub(r"(?m)^Goal: .*$", lambda m: f"Goal: {value}", txt, count=1)
         return re.sub(r"(?m)^Goal: " + re.escape(value) + r"\n", "", txt, count=1)  # a Goal equal to the title is not written
-    if field == "test" and "qrun.py" not in value:
-        value = QRUN + value
+    if field == "test":
+        value = with_qrun(value)
     pre = TASK_FIELDS[field] or ""  # None only for "title", handled above
     pat = r"Predicted paths: " if field == "paths" else re.escape(pre)
     return re.sub(r"(?m)^" + pat + r".*$", lambda m: pre + value, txt, count=1)
 
 
 def render_task(e, a, paths):
-    cmd = a.test if "qrun.py" in a.test else QRUN + a.test
+    cmd = with_qrun(a.test)
     pat = a.pattern or (paths[0] + ":1" if paths else "")
     aff = f"Affected tests: {a.affected}\n" if getattr(a, "affected", "") else ""
     return (
