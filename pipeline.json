@@ -1,0 +1,9 @@
+{
+  "audit_file": "AUDIT.md",
+  "branch_work": "dev",
+  "branch_release": "master",
+  "gates": [
+    {"name": "check", "cmd": "scripts/dev.sh check"},
+    {"name": "test", "cmd": "scripts/dev.sh test"}
+  ]
+}

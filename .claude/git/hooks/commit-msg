@@ -1,0 +1,2 @@
+#!/bin/sh
+if grep -qi 'unirect' "$1"; then echo "commit-msg: message contains the personal address" >&2; exit 1; fi

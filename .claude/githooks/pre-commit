@@ -1,0 +1,6 @@
+#!/bin/sh
+# block commits authored/committed with the personal email
+if git var GIT_AUTHOR_IDENT | grep -q 'unirect@gmail.com' || git var GIT_COMMITTER_IDENT 2>/dev/null | grep -q 'unirect@gmail.com'; then
+  echo "pre-commit: personal email in identity; use Camarent noreply (git -c user.name=Camarent -c user.email=3629354+Camarent@users.noreply.github.com)" >&2
+  exit 1
+fi

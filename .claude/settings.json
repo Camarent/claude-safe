@@ -1,0 +1,146 @@
+{
+  "agentPushNotifEnabled": true,
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Local `git add` and `git commit` in /workspace repos are pre-authorized by the owner (finished, tested stages). The commit must use the configured Camarent noreply identity and the global privacy hooks; never bypass them. Pushing is NOT authorized."
+    ],
+    "environment": [
+      "### Org-wide",
+      "**Organization**: None configured",
+      "**Cloud provider(s)**: None configured",
+      "**Repository visibility**: assume private unless the remote host and repo name indicate otherwise, or a visibility check in the transcript shows public",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: None configured",
+      "**Default / protected branches**: (unknown — no remotes configured, origin/HEAD unset)",
+      "**CI/CD deploy targets**: None configured",
+      "**Network posture**: None configured",
+      "**Host containment**: None configured — assume Claude Code runs on an ordinary developer machine or CI runner with open internet",
+      "**Source control**: No git remotes configured in this repo — no trusted source-control scope to define",
+      "**Trusted internal domains**: None configured",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: None configured",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations \u0026 audiences**: any file or store holding personal data, confidential business data, credentials, regulated data, or similarly sensitive material; preserve exact handles when known and share only with audiences cleared at the [named+specifics] bar",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace, host, or container whose name carries `prod` or `production` as a whole word or name segment (hyphen/underscore/dot-delimited — e.g. matches `prod-db`, not `producer`)",
+      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development",
+      "**Trusted repo**: /workspace (the project working directory; repos below it may have git remotes, pushing stays the owner's step)",
+      "**Org-specific CLIs**: None configured"
+    ]
+  },
+  "enabledPlugins": {
+    "ponytail@ponytail": false,
+    "pyright-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
+  "env": {
+    "TZ": "UTC"
+  },
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": {
+        "repo": "DietrichGebert/ponytail",
+        "source": "github"
+      }
+    }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/usr/local/bin/snip hook",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "command -v cs-cmd-guard \u003e/dev/null 2\u003e\u00261 \u0026\u0026 exec cs-cmd-guard || exit 2",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "command -v cs-review-guard \u003e/dev/null 2\u003e\u00261 \u0026\u0026 exec cs-review-guard || exit 2",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|NotebookEdit|Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "command -v cs-model-guard \u003e/dev/null 2\u003e\u00261 \u0026\u0026 exec cs-model-guard || exit 2",
+            "type": "command"
+          }
+        ],
+        "matcher": "Agent"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "for f in PLAN.md PROGRESS.md; do [ -f \"$f\" ] \u0026\u0026 { echo \"=== $f (re-injected after compact)\"; cat \"$f\"; }; done; true",
+            "type": "command"
+          }
+        ],
+        "matcher": "compact"
+      }
+    ]
+  },
+  "inputNeededNotifEnabled": true,
+  "model": "sonnet",
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "medium"
+    },
+    "claude-sonnet-5-5": {
+      "autoCompactWindow": "auto",
+      "effortLevel": "medium"
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cs-docs-index:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git merge:*)"
+    ]
+  },
+  "skillOverrides": {
+    "anthropic-skills:built-in-browser": "off",
+    "anthropic-skills:chrome-browser": "off",
+    "anthropic-skills:computer-use": "off",
+    "anthropic-skills:deep-research": "off",
+    "anthropic-skills:docs": "off",
+    "anthropic-skills:docx": "name-only",
+    "anthropic-skills:google-workspace": "off",
+    "anthropic-skills:import-memory": "off",
+    "anthropic-skills:morning": "off",
+    "anthropic-skills:pdf": "name-only",
+    "anthropic-skills:pptx": "name-only",
+    "anthropic-skills:xlsx": "name-only",
+    "claude-in-chrome": "off",
+    "dataviz": "name-only",
+    "keybindings-help": "off",
+    "plugin-authoring": "off"
+  },
+  "theme": "dark"
+}

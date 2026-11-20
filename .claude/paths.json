@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "prefix": "cs-",
+  "roots": {
+    "home": {
+      "container": "/root/.claude",
+      "host": "@home"
+    },
+    "workspace": {
+      "container": "/workspace",
+      "host": "@projects_dir"
+    },
+    "projects_dir": {
+      "side": "host",
+      "host": "~/workspace"
+    }
+  },
+  "commands": {
+    "qrun": {
+      "script": "tools/qrun.py"
+    },
+    "wave": {
+      "script": "tools/wave.py"
+    },
+    "plan": {
+      "script": "tools/plan.py"
+    },
+    "orch": {
+      "script": "tools/orch.py"
+    },
+    "wt": {
+      "script": "tools/wt.py"
+    },
+    "xtools": {
+      "script": "tools/xtools.py"
+    },
+    "docs-index": {
+      "script": "tools/docs_index.py"
+    },
+    "ptest": {
+      "script": "tools/ptest.py"
+    },
+    "servectl": {
+      "script": "tools/servectl.py"
+    },
+    "brieflint": {
+      "script": "tools/brieflint.py"
+    },
+    "commit": {
+      "script": "tools/commit.py"
+    },
+    "audit": {
+      "script": "tools/audit/audit_run.py"
+    },
+    "audit-report": {
+      "script": "tools/audit/audit_report.py"
+    },
+    "final-check": {
+      "script": "tools/audit/final_check.py"
+    },
+    "scans": {
+      "script": "tools/audit/scans.py"
+    },
+    "qualityrun": {
+      "script": "tools/audit/qualityrun.py"
+    },
+    "ctxpack": {
+      "script": "tools/search/ctxpack.py"
+    },
+    "ux-run": {
+      "script": "tools/ux_run.py"
+    },
+    "retro": {
+      "script": "tools/retro/retro_numbers.py"
+    },
+    "ledger": {
+      "script": "tools/retro/ledger.py"
+    },
+    "agent-cost": {
+      "script": "tools/retro/agent_cost.py"
+    },
+    "lead-cost": {
+      "script": "tools/retro/lead_cost.py"
+    },
+    "prepare-repo": {
+      "script": "tools/pipeline/prepare_repo.py"
+    },
+    "merge-wave": {
+      "script": "tools/merge_wave.py"
+    },
+    "testrun": {
+      "script": "tools/testrun.py"
+    },
+    "ops": {
+      "script": "tools/ops_steps.py"
+    },
+    "pr": {
+      "script": "tools/pr_steps.py"
+    },
+    "index-step": {
+      "script": "tools/index_step.py"
+    },
+    "localdev": {
+      "script": "tools/localmodel/localdev.py"
+    },
+    "context-eval": {
+      "script": "tools/localmodel/context_eval.py"
+    },
+    "ux-shots": {
+      "script": "tools/ux_shots.js",
+      "runner": "node"
+    },
+    "lp": {
+      "script": "tools/search/local.py",
+      "name": "lp",
+      "aliases": [
+        "local.py"
+      ]
+    },
+    "run": {
+      "script": "run.sh",
+      "base": "repo",
+      "side": "host",
+      "runner": "bash"
+    },
+    "image-build": {
+      "script": "run.sh",
+      "base": "repo",
+      "side": "host",
+      "runner": "bash",
+      "args": [
+        "--rebuild",
+        "--cmd",
+        "true"
+      ]
+    },
+    "image-test": {
+      "script": "scripts/image_test.sh",
+      "base": "repo",
+      "side": "host",
+      "runner": "bash"
+    },
+    "release": {
+      "script": "scripts/release.sh",
+      "base": "repo",
+      "side": "host",
+      "runner": "bash"
+    },
+    "dev": {
+      "script": "scripts/dev.sh",
+      "base": "repo",
+      "side": "host",
+      "runner": "bash"
+    },
+    "host-agents": {
+      "script": "scripts/host_agents.py",
+      "base": "repo",
+      "side": "host",
+      "runner": "python3 -I"
+    },
+    "cmd-guard": {
+      "script": "tools/cmd_guard.py",
+      "side": "container"
+    },
+    "review-guard": {
+      "script": "tools/review_guard.py",
+      "side": "container"
+    },
+    "model-guard": {
+      "script": "tools/model_guard.py",
+      "side": "container"
+    }
+  }
+}

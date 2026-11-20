@@ -1,0 +1,60 @@
+# Mounted Claude home for the container: credentials, history, sessions, caches.
+# Nothing in here is infrastructure, and some of it is secret.
+.claude/*
+!.claude/settings.json
+# ...except the pipeline itself: rules, agents, commands, practices, tools, our own skills, hooks, localdev policy.
+# Everything else in here (credentials, history, sessions, plugins, projects, caches, backups) stays out.
+!.claude/CLAUDE.md
+!.claude/ORCHESTRATOR.md
+!.claude/EXTRA-TOOLS.md
+!.claude/agents/
+!.claude/commands/
+!.claude/practices/
+!.claude/tools/
+!.claude/paths.json
+!.claude/bin/
+!.claude/bin-host/
+!.claude/skills/
+.claude/skills/synced/
+!.claude/githooks/
+!.claude/localdev/
+# global git config + the privacy commit hooks (install.sh puts them in place); parked memory/skills archive
+!.claude/git/
+!.claude/parked/
+# container memory (notes the agents keep between sessions): tracked; the session logs next to it stay out
+!.claude/projects/
+.claude/projects/*
+!.claude/projects/-workspace/
+.claude/projects/-workspace/*
+!.claude/projects/-workspace/memory/
+
+# Working files passed in/out of the container
+scratch/
+
+# Chrome profile: cookies and session state, regenerated on demand
+browser-profile/
+
+# Strata models/state (tens of GB)
+strata-data/
+.claude-local/
+
+# shared vector cache for local.py find (rebuildable)
+.claude/.code-cache/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Dev tooling (scripts/dev.sh keeps everything in .uv)
+.uv/
+.work/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+__pycache__/
+.audits/
+
+# Ollama models/state
+ollama-data/
