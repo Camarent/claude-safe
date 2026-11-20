@@ -168,9 +168,18 @@ class SubprocessServerTests(unittest.TestCase):
         self.proc.wait(10)
 
     def nav(self):
-        c = socket.socket(socket.AF_UNIX)
-        c.settimeout(30)
-        c.connect(self.sock)
+        deadline = time.monotonic() + 30
+        while True:  # the socket file appears at bind(), before listen(): retry until the server accepts
+            c = socket.socket(socket.AF_UNIX)
+            c.settimeout(30)
+            try:
+                c.connect(self.sock)
+                break
+            except (ConnectionRefusedError, FileNotFoundError):
+                c.close()
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.05)
         req = {"argv": ["hover", "a.py", "1"], "ver": codesrv.version(), "kind": "nav", "cwd": self.root}
         c.sendall(json.dumps(req).encode() + b"\n")
         buf = b""
