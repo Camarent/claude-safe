@@ -23,18 +23,18 @@ class IgnoredTest(unittest.TestCase):
         write(self.d, "src/a.py", "def pub(): pass\n")
         write(self.d, "src/b.secret.py")
         write(self.d, "src/sub/c.py")
-        write(self.d, "workspace/n5/q.py", "def leak(): pass\n")
+        write(self.d, "workspace/course-a/q.py", "def leak(): pass\n")
 
     def test_ignored_files_and_dirs_absent(self):
         idx = docs_index.build_index(self.d)
         self.assertIn("src/a.py", idx)
         self.assertIn("src/sub/c.py", idx)
         self.assertNotIn("workspace", idx)
-        self.assertNotIn("n5", idx)
+        self.assertNotIn("course-a", idx)
         self.assertNotIn("secret", idx)
 
     def test_ignored_module_in_modules_txt(self):
-        write(self.d, "docs/modules.txt", "src\nworkspace/n5\n")
+        write(self.d, "docs/modules.txt", "src\nworkspace/course-a\n")
         self.assertEqual(docs_index.modules_of(self.d), ["src"])
 
     def test_tracked_file_stays_even_if_matches_ignore(self):

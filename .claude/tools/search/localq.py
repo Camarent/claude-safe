@@ -2,7 +2,7 @@
 """Fair concurrency limiter for the local model, shared by every process in the container (file locks, no server).
 
     from search.localq import slot
-    with slot("call"):   # one model request       (LOCALQ_CALLS slots, default 1: one request fits the 128k window; overlapping calls ran ~2x slower each in the n5 log)
+    with slot("call"):   # one model request       (LOCALQ_CALLS slots, default 1: one request fits the 128k window; overlapping calls ran ~2x slower each in a past run log)
         ...
     with slot("job"):    # one whole claude -p job (LOCALQ_JOBS slots, default 2)
         ...

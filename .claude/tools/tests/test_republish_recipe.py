@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline.configuration import PUBLISH_KEY, SCRATCH_DIR, WORK_DIR, ConfigError, publish_entries
 from pipeline.phases import _publish_steps
 
-URL = "https://claude.ai/artifact/n5-page"
+URL = "https://claude.ai/artifact/course-a-page"
 OTHER = "https://claude.ai/artifact/other"
 PUB_LINE = f" {URL}\n"
 ENTRY = {
@@ -59,11 +59,11 @@ class RepublishRecipe(unittest.TestCase):
         self.assertIn("VERDICT: DONE|FAIL", text)
 
     def test_out_placeholder_in_page_and_files_is_the_scratch_dir(self):
-        entry = {"build": "make", "page": "{out}/n5/index.html", "files": {"app.js": "{out}/n5/app.js"}}
+        entry = {"build": "make", "page": "{out}/course-a/index.html", "files": {"app.js": "{out}/course-a/app.js"}}
         text = self.prompt({URL: entry})
         out_dir = os.path.join(os.path.abspath(self.d), WORK_DIR, "s1", SCRATCH_DIR)
-        self.assertIn(f"`{out_dir}/n5/index.html`", text)
-        self.assertIn(f"`app.js` from `{out_dir}/n5/app.js`", text)
+        self.assertIn(f"`{out_dir}/course-a/index.html`", text)
+        self.assertIn(f"`app.js` from `{out_dir}/course-a/app.js`", text)
         self.assertNotIn("{out}", text)
 
     def test_url_without_entry_gets_no_recipe_rule(self):

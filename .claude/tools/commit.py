@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the s
 from pipeline import commit_subject
 from pipeline.configuration import DEFAULT_WORKSPACE, ConfigError, project
 
-TYPES = ("feat", "fix", "refactor", "test", "docs", "chore", "perf", "build", "style")  # same list as dojo-kit/.githooks/commit-msg
+TYPES = ("feat", "fix", "refactor", "test", "docs", "chore", "perf", "build", "style")  # same list as the repo commit-msg hook
 SUBJECT_RE = commit_subject.policy("|".join(TYPES), r"[A-Za-z0-9][A-Za-z0-9._-]*", area_required=True, min_tail=0)
 
 

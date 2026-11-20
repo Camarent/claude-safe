@@ -12,7 +12,7 @@ from tests.support.tmpdirs import tracked_mkdtemp
 class StageNameSync(unittest.TestCase):
     def test_numbered_phase_dirs_match(self):
         for nn in (1, 12):
-            for slug in ("p3-n5-tools", "finish", "build.v2", "a_b-c"):
+            for slug in ("p3-course-a-tools", "finish", "build.v2", "a_b-c"):
                 stage = f"feat/phases/{nn:02d}-{slug}"
                 self.assertIsNotNone(util.STAGE_NAME_RE.fullmatch(stage), stage)
 
@@ -22,8 +22,8 @@ class StageNameSync(unittest.TestCase):
 
     def test_stage_root_finds_numbered_phase(self):
         root = tracked_mkdtemp()
-        os.makedirs(os.path.join(root, ".work", "feat", "phases", "03-p3-n5-tools"))
-        self.assertEqual(util.stage_root(root, "feat/phases/03-p3-n5-tools"), root)
+        os.makedirs(os.path.join(root, ".work", "feat", "phases", "03-p3-course-a-tools"))
+        self.assertEqual(util.stage_root(root, "feat/phases/03-p3-course-a-tools"), root)
 
 
 if __name__ == "__main__":

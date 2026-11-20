@@ -61,15 +61,15 @@ class T(unittest.TestCase):
         self.assertEqual(self.findings("python3 tool.py target/x.bin"), [])
 
     def test_bare_word_one_match_suggests(self):
-        self.make("workspace/n5/x.txt", "tool")
-        got = self.findings("./tool validate n5")
+        self.make("workspace/course-a/x.txt", "tool")
+        got = self.findings("./tool validate course-a")
         self.assertEqual(len(got), 1)
         self.assertTrue(got[0].startswith(plan_commands.WARN_PREFIX))
-        self.assertIn("did you mean workspace/n5?", got[0])
+        self.assertIn("did you mean workspace/course-a?", got[0])
 
     def test_bare_word_two_matches_no_suggestion(self):
-        self.make("workspace/n5/a.txt", "other/n5/b.txt", "tool")
-        self.assertEqual(self.findings("./tool validate n5"), [])
+        self.make("workspace/course-a/a.txt", "other/course-a/b.txt", "tool")
+        self.assertEqual(self.findings("./tool validate course-a"), [])
 
     def test_bare_word_after_option_no_suggestion(self):
         self.make("workspace/dojo-core/x.txt", "tool")
@@ -78,8 +78,8 @@ class T(unittest.TestCase):
         self.assertEqual(self.findings("cs-qrun -- ./tool -p dojo-core hint_leak"), [])
 
     def test_system_tools_no_suggestion(self):
-        self.make("workspace/n5/x.txt", "workspace/hint_leak/y.txt")
-        for cmd in ("cargo test -p dojo-core hint_leak", "npm run n5", "git status n5", "pytest -k n5"):
+        self.make("workspace/course-a/x.txt", "workspace/hint_leak/y.txt")
+        for cmd in ("cargo test -p dojo-core hint_leak", "npm run course-a", "git status course-a", "pytest -k course-a"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(self.findings(cmd), [])
 
@@ -99,10 +99,10 @@ class T(unittest.TestCase):
         self.assertIn("runs ./gone", got[0])
 
     def test_nested_repo_root_and_cd(self):
-        self.make("workspace/n5/bin/run.sh", "workspace/n5/.git/")
-        nested = os.path.join(self.repo, "workspace/n5")
+        self.make("workspace/course-a/bin/run.sh", "workspace/course-a/.git/")
+        nested = os.path.join(self.repo, "workspace/course-a")
         self.assertEqual(self.findings("bin/run.sh", nested=[nested]), [])
-        self.assertEqual(self.findings("cd workspace/n5 && bin/run.sh"), [])
+        self.assertEqual(self.findings("cd workspace/course-a && bin/run.sh"), [])
         self.assertEqual(len(self.findings("bin/run.sh")), 1)  # not in the main repo: no nested root given
 
     def test_git_and_gh_arguments_are_refs_not_paths(self):

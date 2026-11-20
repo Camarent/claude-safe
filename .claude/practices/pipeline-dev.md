@@ -64,18 +64,18 @@ In the container the full suite also runs as `cs-ptest`. After a stage-sequence 
 - Host-only commands (`run`, `dev`, `release`, `image-build`) keep their `scripts/*.sh` form.
 
 ## Release and agents (claude-safe repo only)
-- `scripts/release.sh` is the gate for dev -> master: ruff, mypy, tests with the coverage floor, vulture, bandit, the whole suite in the container image (`RELEASE_IMAGE`, default `claude-safe:rust`), gitleaks on files and history. Dry run by default; `--merge` fast-forwards master to dev (`--ff-only`) in the master worktree (the live copy). Never pushes.
+- `scripts/release.sh` is the pre-PR gate on the current branch: ruff, mypy, tests with the coverage floor, vulture, bandit, the whole suite in the container image (`RELEASE_IMAGE`, default `claude-safe:rust`), gitleaks on files and history. It never merges and never pushes. GitHub CI (`.github/workflows/ci.yml`) runs the host checks and gitleaks again on every PR; it does not run the container suite.
 - `scripts/host_agents.py` writes host-ready `pl-*` copies of the agents to `~/.claude/agents` (no `lp`, no container paths, only tools that exist on the host). Dry run by default; re-run with `--apply` after changing an agent or after merging to master (`--home` points the text at the live copy).
 - A container run needs no setup: `docker run --rm --network none -v "$PWD":/src:ro -w /src --entrypoint python3 claude-safe:rust -I /src/.claude/tools/ptest.py`.
 
-## Branch flow of the claude-safe repo only (dev + `--ff-only` into master; project repos use stage branches, `practices/branches.md`)
-Work on `dev` in the worktree `../claude-safe-dev` (never edit the live `/root/.claude` tools while a stage runs). One commit per meaning (`type(area): what`, `TZ=UTC`, `-F msgfile`). Before `dev` -> `master`: `check`, `test`, `sec`, `dead` clean, gitleaks clean (`gitleaks detect --source . --no-banner --redact` in the image), then one `--ff-only` merge on the owner's word (rebase dev first if master moved).
+## Branch flow of the claude-safe repo
+Same one flow as every repo (`practices/branches.md`): `master` is the only long-lived branch, work happens on a short branch, a PR carries it, CI must be green, squash-merge. The main checkout stays on `master`: the container mounts it as `/root/.claude`, so never switch it to a branch while a stage runs. Work in a separate worktree: `git worktree add ../claude-safe-<topic> -b <topic> origin/master`. One commit per meaning (`type(area): what`, `TZ=UTC`, `-F msgfile`). Before the PR: `scripts/release.sh` clean. Then `git push -u origin <topic>`, `gh pr create`, wait for the `ci` checks, `gh pr merge N --squash --delete-branch` (no confirmation needed once green; tags and releases need the owner's word). Afterwards `git pull --ff-only` in the main checkout, `git worktree remove` the topic worktree, `scripts/host_agents.py --apply` if an agent changed.
 
 ## Who edits the pipeline code (claude-safe sessions)
 The session you talk to (the lead) keeps a thin context: it plans, decides, reviews and merges. It does not write pipeline code itself when a gate can judge the change.
 - **Code change with a test** (fix, new tool, refactor): dispatch the `dev` agent (Agent tool, `subagent_type: dev`; Haiku first, Sonnet only after it ESCALATEs or fails, see `agents/dev.md`) with a brief. In a host session the same agent is called `pl-dev` (the copy `scripts/host_agents.py` writes to `~/.claude/agents`). One agent per change, in its own worktree (`isolation: worktree`), never two on the same files.
 - **Lead does itself**: docs and backlog text, one-line config values, a merge, a decision. Reading code to decide is fine; use `lp nav` / `lp find` or the `scout` agent (`pl-scout` on the host), not grep.
-- After the agent returns: `git diff --stat`, then `scripts/dev.sh check` and `scripts/dev.sh test`. Read the diff only where the stat looks wrong. Red: send the output back to the same agent, not a fix by hand. Commit on `dev` (one commit per meaning), merge on the owner's word.
+- After the agent returns: `git diff --stat`, then `scripts/dev.sh check` and `scripts/dev.sh test`. Read the diff only where the stat looks wrong. Red: send the output back to the same agent, not a fix by hand. Commit on the topic branch (one commit per meaning), open the PR, squash-merge when CI is green.
 
 Brief template (paste into the prompt, fill every line):
 ```
@@ -90,7 +90,7 @@ Out of scope: <what not to touch>
 ## Mechanical changes
 Moves, renames and rewrites go through a script with a dry run first (print the plan, `--apply` to execute), then the tests decide.
 
-## Lesson: red base gates and nested course repos (test-hygiene, n5-quality-fixes)
+## Lesson: red base gates and nested course repos
 - A job worktree holds a nested repo (`workspace/<course>`) as a link to the main copy unless the task lists its files. A link is not read-only: a dev that edits through it changes the shared repo, and the merge step fails later. Snapshot the link at dev start, compare after (`linkguard.py`), revert tracked changes with a patch kept, report the rest, and give the dev `wt.py add-repo` for the real need; never ask the lead.
 - Parallel task gates share the linked repo: a test that writes a fixed file in its own folder collides with the same test in another task (ENOENT on `tools/test-*.jsonl`). The base check cannot clear it (the base run is alone and green). A task that changed nothing skips the gates, which removes most of these runs.
 - A dev that sees a red gate on the base must not stop with BLOCKED or fix it; the brief and `agents/dev.md` say so. A rule that sends a base-red test to BLOCKED contradicts the driver's base clearing: check both when changing either.

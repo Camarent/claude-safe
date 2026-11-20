@@ -178,7 +178,7 @@ class T(unittest.TestCase):
 
     def _nested_fixture(self):
         repo = os.path.join(self.d, "repo")
-        nested = os.path.join(repo, "workspace", "n5")
+        nested = os.path.join(repo, "workspace", "course-a")
         os.makedirs(os.path.join(nested, "content"))
         git(repo, "init", "-q")
         git(nested, "init", "-q")
@@ -193,7 +193,7 @@ class T(unittest.TestCase):
 
     def test_nested_repo_paths_judged_in_nested_repo(self):
         repo = self._nested_fixture()
-        pre = "workspace/n5/"
+        pre = "workspace/course-a/"
         self.task("task-1.md", f"Predicted paths: {pre}mat/x.txt, {pre}content/tracked.jsonl, {pre}content/loose.jsonl, {pre}content/new.jsonl\n")
         got = plan_rules.check_untracked(self.d, "task-1", repo)
         self.assertEqual(len(got), 2, got)
@@ -203,8 +203,8 @@ class T(unittest.TestCase):
 
     def test_nested_repo_missing_or_decoy_prefix(self):
         repo = self._nested_fixture()
-        os.makedirs(os.path.join(repo, "workspace", "n5x"))  # decoy: shares the prefix, holds no repo
-        self.task("task-1.md", "Predicted paths: workspace/n5x/a.jsonl\n")
+        os.makedirs(os.path.join(repo, "workspace", "course-ax"))  # decoy: shares the prefix, holds no repo
+        self.task("task-1.md", "Predicted paths: workspace/course-ax/a.jsonl\n")
         self.assertEqual(len(plan_rules.check_nested_repo_paths(self.d, "task-1", repo, "workspace/")), 1)
         self.task("task-2.md", "Predicted paths: workspace/none/a.jsonl\n")
         self.assertEqual(len(plan_rules.check_nested_repo_paths(self.d, "task-2", repo, "workspace/")), 1)
@@ -219,7 +219,7 @@ class T(unittest.TestCase):
         from unittest import mock
 
         repo = self._nested_fixture()
-        self.task("task-1.md", "Predicted paths: workspace/n5/content/loose.jsonl, workspace/n5/content/tracked.jsonl, a.py\n")
+        self.task("task-1.md", "Predicted paths: workspace/course-a/content/loose.jsonl, workspace/course-a/content/tracked.jsonl, a.py\n")
         with mock.patch.object(plan_rules.gitx, "run", wraps=plan_rules.gitx.run) as run:
             plan_rules.check_untracked(self.d, "task-1", repo)
         self.assertLessEqual(run.call_count, 6)  # per repo: rev-parse, ls-files, check-ignore

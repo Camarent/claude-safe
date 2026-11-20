@@ -15,7 +15,7 @@ Evidence: the three newest real stages of one real project, measured 2026-11-06 
 | 8 | Token efficiency: all-in USD (pipeline + lead + lead-spawned agents) per merged task | <= $0.15 | >= $1.50 |
 
 ## Baseline
-| Metric | n5-dup-items | n5-reading-drills | optional-modules |
+| Metric | stage 1 | stage 2 | stage 3 |
 |---|---|---|---|
 | Wall / active | 3h59 / 17% | 2h22 / 78% | 12h32 / 42% |
 | Cost metered | $2.03 | $4.75 | $11.29 (real about 3-4x) |

@@ -108,7 +108,7 @@ class VerdictTest(unittest.TestCase):
     def test_flows_path_must_stay_in_the_repo(self):
         self.assertTrue(ux_flows.path_problem("../x/f.json"))
         self.assertTrue(ux_flows.path_problem("/etc/passwd"))
-        self.assertEqual(ux_flows.path_problem("workspace/n5/ux/f.json"), "")
+        self.assertEqual(ux_flows.path_problem("workspace/course-a/ux/f.json"), "")
 
     def test_ux_clean_with_unverified_is_fixes(self):
         self.assertEqual(verdicts.verdict("ux-reviewer", "VERDICT: CLEAN\nUNVERIFIED: finish screen: add flow")[0], "FIXES")
@@ -155,9 +155,9 @@ class FlowsTest(unittest.TestCase):
 class NestedFlowsTest(unittest.TestCase):
     def test_placeholder_path_in_a_nested_repo(self):
         cfg = {"ux_flows": "workspace/<course>/ux/flows.json"}
-        v = ux_flows.variables("UX-VARS: course=n5\n")
-        self.assertEqual(ux_flows.flows_rel(cfg, v), "workspace/n5/ux/flows.json")
-        self.assertEqual(ux_flows.flows_file("/r", cfg, v), "/r/workspace/n5/ux/flows.json")
+        v = ux_flows.variables("UX-VARS: course=course-a\n")
+        self.assertEqual(ux_flows.flows_rel(cfg, v), "workspace/course-a/ux/flows.json")
+        self.assertEqual(ux_flows.flows_file("/r", cfg, v), "/r/workspace/course-a/ux/flows.json")
         self.assertIn("<course>", ux_flows.flows_rel(cfg, {}))  # unfilled: stays visible
         self.assertEqual(ux_flows.flows_rel({}, v), "")
 
@@ -205,9 +205,9 @@ class PlanCheckTest(unittest.TestCase):
     def test_unfilled_placeholder_is_not_checked_and_a_filled_one_is(self):
         cfg = {"ux_flows": "workspace/<course>/flows.json"}
         self.assertEqual(self.run_check(cfg, ["web/a.js"]), [])
-        Path(self.d, "TASKS.md").write_text("UX-VARS: course=n5\n", encoding="utf-8")
-        os.makedirs(os.path.join(self.root, "workspace", "n5"))
-        Path(self.root, "workspace", "n5", "flows.json").write_text(json.dumps(GOOD), encoding="utf-8")
+        Path(self.d, "TASKS.md").write_text("UX-VARS: course=course-a\n", encoding="utf-8")
+        os.makedirs(os.path.join(self.root, "workspace", "course-a"))
+        Path(self.root, "workspace", "course-a", "flows.json").write_text(json.dumps(GOOD), encoding="utf-8")
         got = self.run_check(cfg, ["web/other.js"])
         self.assertEqual(len(got), 1)
         self.assertIn("web/other.js", got[0])

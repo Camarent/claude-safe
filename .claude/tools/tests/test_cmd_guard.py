@@ -283,8 +283,8 @@ class HeredocStripTest(unittest.TestCase):
 
         cmds = (
             '"/usr/local/bin/snip" run -- ls .work/x; head -40 a.js',
-            '"/usr/local/bin/snip" run -- git -C /workspace/dojo-kit log --oneline -3 && cat .notes 2>/dev/null',
-            'cd /workspace/.wt/x/task-5/dojo-kit; "/usr/local/bin/snip" run -- grep -n "cloze" crates/a.rs | head -20',
+            '"/usr/local/bin/snip" run -- git -C /workspace/example-app log --oneline -3 && cat .notes 2>/dev/null',
+            'cd /workspace/.wt/x/task-5/example-app; "/usr/local/bin/snip" run -- grep -n "cloze" crates/a.rs | head -20',
             'cat /workspace/.work/x/task-5.md | head -60; "/usr/local/bin/snip" run -- ls',
             '"snip" run -- wc -l a.js',
         )
@@ -313,7 +313,7 @@ class HeredocStripTest(unittest.TestCase):
         self.assertEqual(cmd_guard.verdict("mkdir -p out/x && cat out/x/f"), "")
 
     def test_cd_then_git_denied_with_rewrite(self):
-        d = "/workspace/.wt/n5-furigana/task-18/dojo-kit"
+        d = "/workspace/.wt/course-a-furigana/task-18/example-app"
         why = cmd_guard.verdict(f"cd {d} && git -c safe.directory='*' status --short")
         self.assertIn(f"git -C {d}", why)
         for cmd in (f"cd {d}; git status", f'cd {d} && "/usr/local/bin/snip" run -- git diff', "cd d && snip run -- git log"):
