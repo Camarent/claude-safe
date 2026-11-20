@@ -57,6 +57,12 @@ class ProvisionScriptTest(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("nope", r.stderr)
 
+    def test_first_step_name_always_accepted(self):
+        # grep -q on a pipe raced with SIGPIPE under pipefail and rejected valid names under load
+        for _ in range(40):
+            r = run("--dry-run", "--skip", "base")
+            self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_unknown_argument_rejected(self):
         self.assertNotEqual(run("--bogus").returncode, 0)
 
