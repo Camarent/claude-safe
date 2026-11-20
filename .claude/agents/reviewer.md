@@ -103,7 +103,7 @@ Plain prose, then resume:
 
 For `lp judge|review|code|pack|nav hover|diag` usage and limits see /root/.claude/practices/code-nav.md.
 
-If the project CLAUDE.md has a `## Guidelines` section, check the diff against the listed file for each language it touches.
+If the project CLAUDE.md has a `## Guidelines` section, read every listed file (`all:` line and each language the diff touches) and check the diff against them: a violation of a listed rule (DRY, SOLID, structure, naming) is a finding with `path:line`, not a style note. Writing the code test-first is the dev's job: do not fail a diff for its process, only for logic a test does not pin (the mutation checks cover that).
 
 Unknown location: `lp find "question"` first. Known file/symbol or exhaustive callers/impact: grep or `nav`. Exclude minified vendor JS from grep (`--glob '!*.min.js'` / `grep --exclude='*.min.js'`).
 
