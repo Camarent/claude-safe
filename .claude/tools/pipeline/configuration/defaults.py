@@ -64,6 +64,8 @@ PROJECT_DEFAULTS: dict = {
     "webtest_build": None,  # optional build command: the web-tester runs it first on the stage branch checkout and serves only that fresh build, naming the commit in its report; None = brief unchanged
     "docs_dir": "docs",  # folder below the repo that prepare-repo names in a `## Docs` section of CLAUDE.md (written only when the folder exists)
     "acceptance_prep": [],  # setup commands (npm ci, a venv, a build) the acceptance step runs first in its fresh worktree, before the checklist commands; a failing one fails the step
+    "worktree_setup": [],  # commands (venv, npm ci) run with sh -c in each NEW job worktree right after it is created, so a dev starts with a ready environment; a failing one removes the worktree and stops task creation; [] = none
+    "worktree_setup_timeout": 900,  # seconds one worktree_setup command may run
     "seed_build": [],  # repo-relative build outputs copied (mtime kept) from the main checkout into each new worktree, so tests work before the first build; [] = none
     "branch_work": "stage/{feature}",  # tasks are merged and tested here; {feature} = feature (or stage) name; a fixed name wins
     "branch_release": None,  # the lead merges work -> release; only release is pushed. None = detected per repo (release_branch); project() fills the main repo's

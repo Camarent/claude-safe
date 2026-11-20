@@ -21,6 +21,7 @@ from .configuration import (
     MERGE_TREE_MIN_GIT,
     METRICS_LOG,
     ORCH_LOG,
+    PROJECT_DEFAULTS,
     WORK_DIR,
     project,
     repo_dir,
@@ -236,6 +237,21 @@ def _copy_mtimes(src, dst):
             pass
 
 
+def _run_setup(a_dir, stage, task, root, cfg):
+    """Run the project's `worktree_setup` commands (pipeline.json; sh -c, cwd = the new worktree) in order. The first failure removes the fresh worktree and raises with its output tail, so no dev starts in a half-ready one."""
+    commands = cfg.get("worktree_setup") or []
+    limit = float(cfg.get("worktree_setup_timeout") or PROJECT_DEFAULTS["worktree_setup_timeout"])  # a cfg without the key (older callers) gets the default
+    for cmd in commands:
+        try:
+            r = subprocess.run(["sh", "-c", cmd], cwd=root, capture_output=True, text=True, timeout=limit, check=False)
+            why = f"exit {r.returncode}: {(r.stdout + r.stderr).strip()[-300:]}" if r.returncode else ""
+        except subprocess.TimeoutExpired:
+            why = f"timed out after {limit:.0f}s"
+        if why:
+            remove(a_dir, stage, task, force=True)
+            raise RuntimeError(f"worktree_setup `{cmd}` failed in the new worktree of {task} ({why}); the worktree was removed")
+
+
 def link_private(repo, root, prefix, skip=(), nested=None):
     """Symlink every nested repo below PREFIX (pipeline.json `nested_repo_dir_prefix`; "" = off) that ROOT has no worktree of (SKIP = their relative paths) to the main checkout's copy, so a dev or an acceptance command can read a gitignored private repo. NESTED = the nested repos of REPO when the caller has them already. -> the links made. A link stays only when git ignores it in ROOT (`check-ignore`): otherwise it would show as an untracked path, make the worktree dirty and could be committed, so it is removed again (any project). A write through a link reaches the main checkout: tasks that edit a nested repo must name its files (they get a worktree of their own)."""
     made = []
@@ -360,6 +376,7 @@ def create(a_dir, stage, task):
         _seed_index(repo, root)
         _seed_build(repo, root, cfg.get("seed_build") or [])
         _copy_mtimes(repo, root)
+        _run_setup(a_dir, stage, task, root, cfg)
     for name in LINK:
         src, dst = os.path.join(repo, name), os.path.join(root, name)
         if os.path.isdir(src) and not os.path.lexists(dst):
