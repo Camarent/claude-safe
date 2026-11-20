@@ -13,6 +13,7 @@ ASK_VENV_PY = "/opt/ask-venv/bin/python"  # the embedding library's own venv (en
 VERDICT_PREFIX = "VERDICT: "  # first line of a step's output: the driver reads the verdict word after it
 AGENTS_DIR = os.path.join(HOME, "agents")
 PRACTICES_DIR = os.path.join(HOME, "practices")
+GUIDELINES_DIR = os.path.join(PRACTICES_DIR, "guidelines")  # guidelines.py / prepare_repo.py: one <lang>.md per language plus base.md
 
 
 def tool_cmd(script):

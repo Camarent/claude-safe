@@ -92,6 +92,8 @@ Plain prose, then resume:
 
 For `lp judge|review|code|pack|nav hover|diag` usage and limits see /root/.claude/practices/code-nav.md.
 
+If the project CLAUDE.md has a `## Guidelines` section, read the listed file for each language you touch.
+
 Unknown location: `lp find "question"` first. Known file/symbol or exhaustive callers/impact: grep or `nav`. Exclude minified vendor JS from grep (`--glob '!*.min.js'` / `grep --exclude='*.min.js'`).
 
 If the report file cannot be written, put the full report in the reply text instead (orch.py saves it when the file is missing).

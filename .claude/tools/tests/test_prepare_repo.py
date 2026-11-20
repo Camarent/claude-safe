@@ -356,3 +356,47 @@ class PrepareExtrasTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def claude(self):
+        with open(os.path.join(self.repo, "CLAUDE.md")) as fh:
+            return fh.read()
+
+    def test_guidelines_section_written_for_new_claude_md(self):
+        write(self.repo, "Cargo.toml", "")
+        write(self.repo, "package.json", "{}")
+        self.run_main()
+        text = self.claude()
+        self.assertIn("## Guidelines", text)
+        self.assertIn("rust: read ", text)
+        self.assertIn("js: read ", text)
+        self.assertIn("all: ", text)
+        self.assertIn("CLAUDE.md", lines(self.repo))
+
+    def test_no_language_no_guidelines_section(self):
+        self.run_main()
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "CLAUDE.md")))
+
+    def test_guidelines_not_written_when_claude_md_exists_but_reported(self):
+        write(self.repo, "Cargo.toml", "")
+        write(self.repo, "CLAUDE.md", "# mine\n")
+        out = self.run_main()
+        self.assertEqual(self.claude(), "# mine\n")
+        self.assertIn("no `## Guidelines` section", out)
+        self.assertIn("rust", out)
+
+    def test_guidelines_dry_run_writes_nothing(self):
+        write(self.repo, "Cargo.toml", "")
+        before = snapshot(self.repo)
+        out = self.run_main("--dry-run")
+        self.assertIn("rust: read ", out)
+        self.assertEqual(snapshot(self.repo), before)
+
+    def test_docs_and_guidelines_in_one_new_file(self):
+        os.makedirs(os.path.join(self.repo, "docs"))
+        write(self.repo, "pyproject.toml", "")
+        self.run_main()
+        text = self.claude()
+        self.assertIn("## Docs", text)
+        self.assertIn("## Guidelines", text)
+        self.assertIn("python: read ", text)
+        self.assertEqual(lines(self.repo).count("CLAUDE.md"), 1)
