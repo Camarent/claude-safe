@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -12,6 +13,10 @@ from . import gitx, pr_mode, worktree
 from .configuration import (
     BLOCKED,
     CHECKS_TIMEOUT_S,
+    CI_EMPTY_POLLS,
+    CI_POLL_S,
+    CI_RUNS_LIMIT,
+    CI_TOKEN_ERROR,
     DONE,
     GIT_LONG_TIMEOUT_S,
     GIT_NETWORK_TIMEOUT_S,
@@ -148,8 +153,61 @@ def _landed(repo, rel, br, pr=True):
     return f"{br} has work that is not in {rel} and its PR is not MERGED; merge it first, then skip master-merged again"
 
 
+def _ci_runs(repo, sha):
+    """-> [{name, status, conclusion}] (upper case, like a status rollup) of the workflow runs of one commit; [] when unreadable.
+    Fallback for a token without checks:read (fine-grained tokens have none): it reads Actions runs only."""
+    if not sha:
+        return []
+    r = _run(["gh", "run", "list", "--commit", sha, "--limit", str(CI_RUNS_LIMIT), "--json", "name,status,conclusion"], repo)
+    try:
+        rows = json.loads(r.stdout or "[]") if r.returncode == 0 else []
+    except ValueError:
+        return []
+    return [
+        {"name": x.get("name", ""), "status": (x.get("status") or "").upper(), "conclusion": (x.get("conclusion") or "").upper()}
+        for x in rows
+        if isinstance(x, dict)
+    ]
+
+
+def _ci_wait(repo, br, limit):
+    """-> the finished workflow runs of the PR head, polling every CI_POLL_S; Blocked after `limit` s. An empty list is re-read CI_EMPTY_POLLS times when the repo has workflows (the runs may not exist yet)."""
+    sha = _view(repo, br, "headRefOid")
+    has_workflows = (Path(repo) / ".github" / "workflows").is_dir()
+    deadline, empty = time.monotonic() + limit, 0
+    while True:
+        runs = _ci_runs(repo, sha)
+        empty = empty + 1 if not runs else 0
+        if runs and all(x["status"] == "COMPLETED" for x in runs):
+            return runs
+        if not runs and (not has_workflows or empty > CI_EMPTY_POLLS):
+            return runs
+        if time.monotonic() >= deadline:
+            raise Blocked(f"gh pr checks {br} --watch timed out after {limit}s")
+        time.sleep(CI_POLL_S)
+
+
+def _ci_failed(runs):
+    return [x["name"] for x in runs if x["conclusion"] in ("FAILURE", "CANCELLED", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED")]
+
+
+def _pr_checks(repo, br, limit=None):
+    """`gh pr checks BR` (with --watch and a time limit when `limit` is set) -> CompletedProcess. A token that cannot read check runs
+    falls back to the workflow runs of the PR head, answered in the same shape: rc 0 green, 1 red or none, 8 pending."""
+    c = _run(["gh", "pr", "checks", br, *(["--watch"] if limit else [])], repo, *([limit] if limit else []))
+    if not c.returncode or CI_TOKEN_ERROR not in c.stdout + c.stderr:
+        return c
+    runs = _ci_wait(repo, br, limit) if limit else _ci_runs(repo, _view(repo, br, "headRefOid"))
+    pending = any(x["status"] != "COMPLETED" for x in runs)
+    bad = _ci_failed(runs)
+    rc, out = (8, "pending") if pending else (1, ", ".join(bad)) if bad else (0, "") if runs else (1, "no checks reported")
+    return subprocess.CompletedProcess(c.args, rc, out, "")
+
+
 def _failing(repo, br):
     r = _run(["gh", "pr", "checks", br, "--json", "name,bucket"], repo)
+    if r.returncode and CI_TOKEN_ERROR in r.stdout + r.stderr:
+        return _ci_failed(_ci_runs(repo, _view(repo, br, "headRefOid")))
     try:
         return [c["name"] for c in json.loads(r.stdout or "[]") if isinstance(c, dict) and c.get("bucket") in ("fail", "cancel")]
     except (ValueError, TypeError, KeyError):
@@ -165,7 +223,7 @@ def _ready(repo, cfg, br):
         note = "already ready"
     limit = int(checks_timeout(cfg))
     try:
-        c = _run(["gh", "pr", "checks", br, "--watch"], repo, limit)
+        c = _pr_checks(repo, br, limit)
     except Blocked:
         raise Blocked(f"checks of {br} not finished after {limit}s; still running: {_failing(repo, br) or 'see the PR'}") from None
     if c.returncode:
@@ -237,10 +295,10 @@ def _squash_forbidden(repo):
 def _checks_gate(repo, cfg, br):
     """Waits for pending checks, then raises Blocked unless they are green and squash merges are allowed."""
     try:
-        _run(["gh", "pr", "checks", br, "--watch"], repo, checks_timeout(cfg))
+        _pr_checks(repo, br, checks_timeout(cfg))
     except Blocked:
         raise Blocked(f"checks of {br} still pending after the wait: merge by hand when green, then skip master-merged") from None
-    c = _run(["gh", "pr", "checks", br], repo)
+    c = _pr_checks(repo, br)
     if c.returncode and "no checks reported" not in (c.stdout + c.stderr):
         names = _failing(repo, br)
         raise Blocked(f"checks of {br} are not green ({', '.join(names) or 'pending'}): merge by hand when they are, then skip master-merged")
@@ -684,13 +742,20 @@ def _sweep_ff(repo, rel):
 
 def _sweep(repo, cfg):
     rel = release_branch(repo, cfg)
-    r = _run(["gh", "pr", "list", "--author", "app/dependabot", "--state", "open", "--json", "number,title,statusCheckRollup"], repo)
+    listing = ["gh", "pr", "list", "--author", "app/dependabot", "--state", "open", "--json"]
+    r = _run([*listing, "number,title,statusCheckRollup"], repo)
+    token_gap = bool(r.returncode) and CI_TOKEN_ERROR in r.stdout + r.stderr
+    if token_gap:  # the token cannot read check runs: list without them and read the workflow runs of each head
+        r = _run([*listing, "number,title,headRefOid"], repo)
     if r.returncode:
         raise Blocked(f"gh pr list failed: {r.stderr.strip()[-300:]}")
     try:
         prs = json.loads(r.stdout or "[]")
     except ValueError:
         prs = []
+    if token_gap:
+        for p in prs:
+            p["statusCheckRollup"] = _ci_runs(repo, p.get("headRefOid"))
     lines, merged, red, pending, failed = [], 0, 0, 0, 0
     for p in prs:
         n, title, roll = p.get("number"), p.get("title", ""), p.get("statusCheckRollup") or []
