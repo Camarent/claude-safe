@@ -16,7 +16,6 @@
 !.claude/bin-host/
 !.claude/skills/
 .claude/skills/synced/
-!.claude/githooks/
 !.claude/localdev/
 # global git config + the privacy commit hooks (install.sh puts them in place); parked memory/skills archive
 !.claude/git/
@@ -58,3 +57,4 @@ __pycache__/
 
 # Ollama models/state
 ollama-data/
+.claude/git/privacy.gitconfig

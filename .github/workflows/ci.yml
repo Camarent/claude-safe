@@ -41,3 +41,29 @@ jobs:
         run: |
           curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
           ./gitleaks detect --source . --no-banner --redact
+
+  privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: personal-address blocklist
+        env:
+          PRIVACY_BLOCKLIST: ${{ secrets.PRIVACY_BLOCKLIST }}
+        run: |
+          if [ -z "$PRIVACY_BLOCKLIST" ]; then
+            echo "::notice::PRIVACY_BLOCKLIST secret not set, check skipped"
+            exit 0
+          fi
+          rc=0
+          if git grep -lIiE "$PRIVACY_BLOCKLIST"; then
+            echo "::error::blocklisted pattern found in the files listed above"
+            rc=1
+          fi
+          if git log --all --format='%an %ae %cn %ce%n%B' | grep -qiE "$PRIVACY_BLOCKLIST"; then
+            echo "::error::blocklisted pattern found in git history (authors or messages)"
+            rc=1
+          fi
+          exit $rc
