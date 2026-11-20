@@ -156,7 +156,8 @@ container suite, which CI does not run (it needs the `claude-safe:rust` image).
 
 1. Clone the repo, then `scripts/dev.sh sync` (needs `uv` and a system Python 3.11+).
 2. Docker host (the PC with a GPU): `./run.sh --rebuild`, add `--with strata`, `ollama` or `cluster` as needed.
-3. No-container host (a VM): install the toolchains directly (see `provision-dev-vm.sh` once it exists). The
+3. No-container host (a VM): install the toolchains directly with `scripts/provision-dev-vm.sh` (`--list` shows the steps, `--dry-run`
+   shows what would change without sudo). The
    `strata`, `ollama` and `cluster` profiles are PC-only: they need a CUDA GPU or a privileged container.
 4. Per-machine values stay out of git: host paths come from `~` or `$HOME` in `.claude/paths.json`, tokens from the
    environment or an untracked `~/.config/secrets.env` (`chmod 600`), never from the repo.
