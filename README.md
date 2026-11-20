@@ -160,3 +160,5 @@ container suite, which CI does not run (it needs the `claude-safe:rust` image).
    `strata`, `ollama` and `cluster` profiles are PC-only: they need a CUDA GPU or a privileged container.
 4. Per-machine values stay out of git: host paths come from `~` or `$HOME` in `.claude/paths.json`, tokens from the
    environment or an untracked `~/.config/secrets.env` (`chmod 600`), never from the repo.
+5. Privacy blocklist: copy `.claude/git/privacy.gitconfig.example` to `.claude/git/privacy.gitconfig` (untracked) and set
+   your own regex; optionally add the same regex as repo secret `PRIVACY_BLOCKLIST` for the CI `privacy` job.

@@ -1,0 +1,3 @@
+# Copy to privacy.gitconfig (untracked) and set your own regex per machine.
+[privacy]
+	blocklist = your-private-address
