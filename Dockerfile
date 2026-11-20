@@ -162,8 +162,7 @@ RUN UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin sh -c '\
     && npm install -g "esbuild@${ESBUILD_VERSION}" "web-ext@${WEB_EXT_VERSION}" "@vscode/vsce@${VSCE_VERSION}" \
     && mypy --version && (hf version || hf --help | head -1) && esbuild --version && web-ext --version && vsce --version
 
-ARG CLAUDE_CODE_VERSION=2.1.325
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+RUN npm install -g "@anthropic-ai/claude-code@latest"
 
 # `lp` = short alias for the code-navigation / local-model entry point: every argument is forwarded
 # unchanged, so `lp find "q"` is `python3 -I /root/.claude/tools/search/local.py find "q"` (the tool itself

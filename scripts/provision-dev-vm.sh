@@ -36,7 +36,6 @@ ESLINT_VERSION=10.15.0
 ESBUILD_VERSION=0.28.2
 WEB_EXT_VERSION=10.8.0
 VSCE_VERSION=4.1.1
-CLAUDE_CODE_VERSION=2.1.325
 WASM_PACK_VERSION=0.15.1
 CARGO_AUDIT_VERSION=0.22.2
 CARGO_DENY_VERSION=0.20.2
@@ -69,7 +68,8 @@ STEPS=(
   "office|LibreOffice, pandoc, typst, tesseract (eng+fra), poppler"
   "audio|ffmpeg, yt-dlp and faster-whisper in /opt/audio-venv (CPU only)"
   "postgres|PostgreSQL 17 from PGDG plus pgvector and /opt/pg-venv (service NOT started)"
-  "claude|Claude Code (npm global, pinned)"
+  "claude|Claude Code, native installer in ~/.local (self-updating; replaces any npm global copy)"
+  "claude-config|copy .claude/ (agents, skills, tools, CLAUDE.md...) into ~/.claude, link cs-* bins, merge settings.json"
   "config|~/.config/secrets.env, ~/.profile hook, git include of privacy.gitconfig"
 )
 
@@ -354,8 +354,68 @@ step_postgres() {
   /opt/pg-venv/bin/python -c "import fastapi, uvicorn, sqlalchemy, psycopg, httpx"
 }
 
-check_claude() { npm_g_has @anthropic-ai/claude-code "$CLAUDE_CODE_VERSION"; }
-step_claude() { sd npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"; }
+# Native installer (latest): user-owned ~/.local/bin/claude, so Claude Code can update itself (an npm -g copy is
+# root-owned and cannot).
+check_claude() { [ -x "$HOME/.local/bin/claude" ] && ! npm_g_has_any @anthropic-ai/claude-code; }
+npm_g_has_any() { have npm && [ -n "$(pkg_json_ver "$(npm root -g)/$1")" ]; }
+step_claude() {
+  if npm_g_has_any @anthropic-ai/claude-code; then sd npm uninstall -g @anthropic-ai/claude-code; fi
+  if [ ! -x "$HOME/.local/bin/claude" ]; then
+    curl -fsSL https://claude.ai/install.sh | bash
+  fi
+  "$HOME/.local/bin/claude" --version
+}
+
+# claude-config: source is the .claude/ dir of this checkout. Everything is copied except container-only
+# state; existing files are never overwritten (your edits and credentials stay), settings.json is merged
+# with existing keys winning. Copies keep /root/.claude paths on purpose: paths.json maps them per host.
+SRC_CLAUDE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.claude"
+CLAUDE_CONFIG_SKIP=(.work logs parked projects bin-host settings.json)
+claude_config_items() {
+  local f n s
+  for f in "$SRC_CLAUDE"/* "$SRC_CLAUDE"/.[!.]*; do
+    [ -e "$f" ] || continue
+    n="$(basename "$f")"
+    for s in "${CLAUDE_CONFIG_SKIP[@]}"; do [ "$n" = "$s" ] && continue 2; done
+    echo "$n"
+  done
+}
+check_claude_config() {
+  local n b
+  [ -d "$SRC_CLAUDE" ] || return 1
+  for n in $(claude_config_items); do [ -e "$HOME/.claude/$n" ] || return 1; done
+  for b in "$SRC_CLAUDE"/bin/*; do [ -e "$HOME/.local/bin/$(basename "$b")" ] || return 1; done
+  [ -f "$HOME/.claude/settings.json" ] && jq -e '.hooks' "$HOME/.claude/settings.json" >/dev/null 2>&1 \
+    && ! grep -qE '(^|[^/])cs-[a-z]+-guard' "$HOME/.claude/settings.json"
+}
+# Hooks call cs-*-guard by bare name and end in "|| exit 2", which blocks every tool call when ~/.local/bin is
+# not on PATH (fresh VM before re-login). Rewrite them to absolute paths; idempotent (lookbehind skips done ones).
+absolutize_hooks() {
+  local f="$1" tmp
+  tmp="$(mktemp)"
+  jq '(.. | strings) |= gsub("(?<![/])(?<n>cs-[a-z]+-guard)"; "$HOME/.claude/bin/\(.n)")' "$f" >"$tmp" && cat "$tmp" >"$f"
+  rm -f "$tmp"
+}
+step_claude_config() {
+  local n b dst="$HOME/.claude"
+  [ -d "$SRC_CLAUDE" ] || { say "error: $SRC_CLAUDE not found" >&2; return 1; }
+  mkdir -p "$dst" "$HOME/.local/bin"
+  if ! grep -qF "provision-dev-vm: local-bin" "$HOME/.profile" 2>/dev/null; then
+    printf '%s\n' 'case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac  # provision-dev-vm: local-bin' >>"$HOME/.profile"
+  fi
+  for n in $(claude_config_items); do
+    rsync -a --ignore-existing "$SRC_CLAUDE/$n" "$dst/"
+  done
+  for b in "$SRC_CLAUDE"/bin/*; do ln -sfn "$dst/bin/$(basename "$b")" "$HOME/.local/bin/$(basename "$b")"; done
+  if [ ! -f "$dst/settings.json" ]; then
+    cp "$SRC_CLAUDE/settings.json" "$dst/settings.json"
+  else
+    cp "$dst/settings.json" "$dst/settings.json.bak"
+    jq -s '.[0] * .[1]' "$SRC_CLAUDE/settings.json" "$dst/settings.json.bak" >"$dst/settings.json"
+  fi
+  absolutize_hooks "$dst/settings.json"
+  say "reminder: hooks in settings.json need snip (step snip) and ~/.local/bin on PATH; restart Claude Code to pick them up"
+}
 
 # shellcheck disable=SC2088 # literal tilde on purpose: git expands it
 PRIVACY_INCLUDE='~/.config/privacy.gitconfig' # literal tilde: git expands it
