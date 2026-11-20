@@ -28,7 +28,17 @@ SYMBOL = "helper"
 
 def need(tool):
     """Skip a test on a host without the language server or runtime the container image carries."""
-    return unittest.skipUnless(shutil.which(tool), f"container only: {tool} not installed")
+    return unittest.skipUnless(_usable(tool), f"container only: {tool} not installed or not runnable")
+
+
+def _usable(tool):
+    path = shutil.which(tool)
+    if not path:
+        return False
+    try:
+        return subprocess.run([path, "--version"], capture_output=True, timeout=20, check=False).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def alive(pid):

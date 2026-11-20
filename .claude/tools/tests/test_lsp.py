@@ -2,8 +2,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from search import lsp
@@ -14,7 +16,17 @@ LSP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 
 def need(tool):
     """Skip a test on a host without the language server or runtime the container image carries."""
-    return unittest.skipUnless(shutil.which(tool), f"container only: {tool} not installed")
+    return unittest.skipUnless(_usable(tool), f"container only: {tool} not installed or not runnable")
+
+
+def _usable(tool):
+    path = shutil.which(tool)
+    if not path:
+        return False
+    try:
+        return subprocess.run([path, "--version"], capture_output=True, timeout=20, check=False).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def diag(name, text):
@@ -118,6 +130,26 @@ class DiagTest(unittest.TestCase):
             lsp.SERVERS["py"] = saved
         self.assertEqual(rc, 3)
         self.assertIn("NOT CHECKED", buf.getvalue())
+
+
+class NeedTests(unittest.TestCase):
+    """need() skips when the tool is missing or its --version exits non-zero, and runs it when it exits 0."""
+
+    def _skipped(self):
+        return getattr(need("faketool")(lambda self: None), "__unittest_skip__", False)
+
+    def test_skip_unless_runnable(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        patcher = mock.patch.dict(os.environ, {"PATH": td.name + os.pathsep + os.environ.get("PATH", "")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        exe = Path(td.name) / "faketool"
+        exe.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        exe.chmod(0o755)
+        self.assertTrue(self._skipped())
+        exe.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        self.assertFalse(self._skipped())
 
 
 class PollTests(unittest.TestCase):
