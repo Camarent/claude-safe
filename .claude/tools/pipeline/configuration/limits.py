@@ -52,6 +52,18 @@ PIPELINE_JSON = "pipeline.json"  # prepare_repo.py: project settings file name
 CLAUDE_FILE = "CLAUDE.md"  # prepare_repo.py: workspace notes file that may get the `## Docs` section
 DOCS_HEADING = "## Docs"  # heading final-docs looks for in CLAUDE_FILE
 DOCS_SECTION_TEMPLATE = "{heading}\n\nDocs folder: `{dir}/`\n"  # prepare_repo.py: the section written when the repo has a docs folder
+GUIDELINES_HEADING = "## Guidelines"  # heading of the CLAUDE.md section that points agents at the language guidelines
+GUIDELINES_SECTION_TEMPLATE = "{heading}\n\n{lines}\n"  # prepare_repo.py: the section written for the detected languages
+GUIDELINES_LANG_LINE = "{lang}: read {dir}/{lang}.md before editing {lang} files"  # one line per detected language
+GUIDELINES_BASE_LINE = "all: {dir}/base.md"  # always listed
+LANG_MARKERS = (
+    ("cpp", ("CMakeLists.txt", "meson.build", "*.cpp", "*.cc", "*.hpp"), ("", "src")),
+    ("rust", ("Cargo.toml",), ("",)),
+    ("typescript", ("tsconfig.json",), ("",)),
+    ("js", ("package.json",), ("",)),
+    ("python", ("pyproject.toml", "setup.py", "requirements.txt"), ("",)),
+    ("csharp", ("*.csproj", "*.sln"), ("",)),
+)  # guidelines.py: language slug -> (file name patterns, repo subfolders searched, top level only); "" = the repo root
 TOOL_PROBE_TIMEOUT_S = 30  # prepare_repo.py: one `<python> -c "import pytest"` probe
 SHELL_KEYWORDS = frozenset(
     {"if", "then", "elif", "else", "fi", "for", "while", "until", "do", "done", "case", "esac", "in", "function", "select", "time", "!", "{", "}", "(", ")"}

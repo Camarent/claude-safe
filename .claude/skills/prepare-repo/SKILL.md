@@ -23,6 +23,7 @@ Run `cs-prepare-repo --dir <repo>` to write these entries (idempotent, append-on
 8. **Run.** `wave.py run --stage F --dir <repo>` with `run_in_background`, plus a `ScheduleWakeup` fallback of 1200 s or more.
 
 ## Known traps
+- prepare-repo detects languages by root marker files (`pipeline/guidelines.py`) and writes a `## Guidelines` section (one `<lang>: read <dir>/<lang>.md ...` line each, plus `all: .../base.md`) into a new CLAUDE.md, like `## Docs`; an existing CLAUDE.md without it is only reported. Nothing is loaded by default.
 - A dev agent cannot run `chmod` (classifier): the lead sets executable bits on hooks and scripts and commits them.
 - `git commit` by the dev needs the hooks it just wrote not to block it; enable `core.hooksPath` only after the stage.
 - Public-repo history rewrite (squash, force-push, tag move) is a lead step after the PR lands; it needs the owner's word and a backup bundle outside the repo first.

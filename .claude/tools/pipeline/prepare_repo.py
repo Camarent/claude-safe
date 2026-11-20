@@ -1,4 +1,4 @@
-"""prepare-repo: add the pipeline's local files to `.git/info/exclude` and the tracked `.gitignore` of the repo (`nested_repo_excludes` to every nested repo), the `.gitignore` lines of the detected languages, and a git-excluded CLAUDE.md `## Docs` section when the repo has a docs folder. Only appends: an existing line is never changed or moved. Idempotent.
+"""prepare-repo: add the pipeline's local files to `.git/info/exclude` and the tracked `.gitignore` of the repo (`nested_repo_excludes` to every nested repo), the `.gitignore` lines of the detected languages, and a git-excluded CLAUDE.md with a `## Docs` section (repo has a docs folder) and a `## Guidelines` section (detected languages). Only appends: an existing line is never changed or moved. Idempotent.
 It also REPORTS (writes nothing): malformed AUDIT.md audit-tools lines, a missing `worktrees` setting (`--add-worktrees` adds `"worktrees": true` to pipeline.json), gate tools missing from PATH.
 `--dry-run` prints what would be added and changes nothing.
 
@@ -18,12 +18,18 @@ from pipeline.configuration import (  # noqa: E402
     DOCS_SECTION_TEMPLATE,
     EXCLUDE_FILE,
     GITIGNORE_FILE,
+    GUIDELINES_BASE_LINE,
+    GUIDELINES_DIR,
+    GUIDELINES_HEADING,
+    GUIDELINES_LANG_LINE,
+    GUIDELINES_SECTION_TEMPLATE,
     LANG_IGNORES,
     PIPELINE_EXCLUDES,
     PIPELINE_JSON,
     WORKTREES_KEY,
     project,
 )
+from pipeline.guidelines import detect  # noqa: E402
 from pipeline.prepare_checks import malformed_audit_lines, toolchain_problems, worktrees_missing  # noqa: E402
 from pipeline.util import read_text  # noqa: E402
 from pipeline.worktree import nested_repos  # noqa: E402
@@ -92,17 +98,34 @@ def _is_tracked(repo, name):
     return gitx.run(repo, "ls-files", "--error-unmatch", name).returncode == 0
 
 
-def _docs_section(repo, dry):
-    """-> 'file: line' strings for the CLAUDE.md `## Docs` section and its exclude line; [] unless there is a docs folder, no such section, and CLAUDE.md is not tracked."""
+def _docs_text(repo):
+    """-> the `## Docs` section text, "" when the repo has no docs folder."""
     docs = str(project(repo).get("docs_dir") or "")
+    if not docs or not os.path.isdir(os.path.join(repo, docs)):
+        return ""
+    return DOCS_SECTION_TEMPLATE.format(heading=DOCS_HEADING, dir=docs.strip("/"))
+
+
+def _guidelines_text(repo):
+    """-> the `## Guidelines` section text for the detected languages, "" when none is detected."""
+    langs = detect(repo)
+    if not langs:
+        return ""
+    lines = [GUIDELINES_LANG_LINE.format(lang=lang, dir=GUIDELINES_DIR) for lang in langs] + [GUIDELINES_BASE_LINE.format(dir=GUIDELINES_DIR)]
+    return GUIDELINES_SECTION_TEMPLATE.format(heading=GUIDELINES_HEADING, lines="\n".join(lines))
+
+
+def _claude_sections(repo, dry):
+    """-> 'file: line' strings for a new CLAUDE.md (`## Docs`, `## Guidelines`) and its exclude line; [] unless there is a section to write, no CLAUDE.md, and it is not tracked."""
     path = os.path.join(repo, CLAUDE_FILE)
-    if not docs or not os.path.isdir(os.path.join(repo, docs)) or os.path.lexists(path) or _is_tracked(repo, CLAUDE_FILE):
-        return []  # an existing (or tracked) CLAUDE.md is the owner's: `report` names the missing section
-    section = DOCS_SECTION_TEMPLATE.format(heading=DOCS_HEADING, dir=docs.strip("/"))
-    added = [f"{CLAUDE_FILE}: {ln}" for ln in section.splitlines() if ln]
+    sections = [s for s in (_docs_text(repo), _guidelines_text(repo)) if s]
+    if not sections or os.path.lexists(path) or _is_tracked(repo, CLAUDE_FILE):
+        return []  # an existing (or tracked) CLAUDE.md is the owner's: `report` names the missing sections
+    text = "\n".join(sections)
+    added = [f"{CLAUDE_FILE}: {ln}" for ln in text.splitlines() if ln]
     if not dry:
         with open(path, "x", encoding="utf-8") as fh:  # never clobbers a file that appeared meanwhile
-            fh.write(section)
+            fh.write(text)
     exclude = gitx.out(repo, "rev-parse", "--git-path", EXCLUDE_FILE)
     exclude = exclude if os.path.isabs(exclude) else os.path.join(repo, exclude)
     return added + [os.path.join(".git", EXCLUDE_FILE) + ": " + e for e in _append(exclude, [CLAUDE_FILE], dry=dry)]
@@ -135,7 +158,7 @@ def prepare(repo, dry_run=False, add_worktrees=False):
     added = _entries_in(repo, PIPELINE_EXCLUDES, "", dry_run)
     langs = _lang_ignores(repo)
     added += [GITIGNORE_FILE + ": " + e for e in _append(os.path.join(repo, GITIGNORE_FILE), langs, blank_line=True, dry=dry_run)]
-    added += _docs_section(repo, dry_run)
+    added += _claude_sections(repo, dry_run)
     if add_worktrees:
         added += _add_worktrees(repo, dry_run)
     excludes = tuple(project(repo).get("nested_repo_excludes") or ())  # pipeline.json: [] = no entries in nested repos
@@ -152,7 +175,7 @@ def report(repo):
         out.append(
             f'{PIPELINE_JSON}: no `{WORKTREES_KEY}` setting: parallel tasks in one checkout see each other\'s half-done files; rerun with --add-worktrees to add `"{WORKTREES_KEY}": true`'
         )
-    return out + _docs_section_missing(repo) + toolchain_problems(repo)
+    return out + _docs_section_missing(repo) + _guidelines_section_missing(repo) + toolchain_problems(repo)
 
 
 def _docs_section_missing(repo):
@@ -162,6 +185,15 @@ def _docs_section_missing(repo):
     if not docs or not os.path.isdir(os.path.join(repo, docs)) or not text or re.search(r"^" + re.escape(DOCS_HEADING) + r"\b", text, re.M):
         return []
     return [f"{CLAUDE_FILE}: no `{DOCS_HEADING}` section: add one naming `{docs.strip('/')}/` so final-docs has a target (this file is not edited here)"]
+
+
+def _guidelines_section_missing(repo):
+    """-> a report line when languages are detected and an existing CLAUDE.md has no `## Guidelines` section (it is never edited here)."""
+    langs = detect(repo)
+    text = read_text(os.path.join(repo, CLAUDE_FILE))
+    if not langs or not text or re.search(r"^" + re.escape(GUIDELINES_HEADING) + r"\b", text, re.M):
+        return []
+    return [f"{CLAUDE_FILE}: no `{GUIDELINES_HEADING}` section: add one pointing at the guidelines for {', '.join(langs)} (this file is not edited here)"]
 
 
 def main(argv=None):
