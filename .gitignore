@@ -54,6 +54,10 @@ __pycache__/
 htmlcov/
 __pycache__/
 .audits/
+.wt/
+.pipeline/
+.code-index/
+.notes/
 
 # Ollama models/state
 ollama-data/
