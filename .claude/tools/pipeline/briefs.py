@@ -15,6 +15,7 @@ from .configuration import (
     PRE_EXISTING_RED,
     QRUN_CHAIN_READ_ONLY,
     QRUN_WRAPPER,
+    SCOPE_HINT_NOTE,
     SCRATCH_DIR,
     SERVE_DIR_NAME,
     TASKS_FILE,
@@ -379,7 +380,7 @@ def prompt_for(a, task, role, rework_file, rid):
             + lead_note(t)
         )
         return f"Stage {a.stage}: take the task in {t} (read it there, not in the worktree; index .work/{a.stage}/TASKS.md).{extra} Mark nothing yourself. {_where(a, task)}{out}"
-    return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"
+    return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{SCOPE_HINT_NOTE}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"
 
 
 def plan_fix_prompt(a, task, rid, why, report):

@@ -384,6 +384,7 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     PREREQ_WARN_PREFIX,
     REGISTRY_WORDS,
     SCOPE_ALLOW_ALL,
+    SCOPE_HINT_NOTE,
     SCOPE_MODES,
     SCOPE_NOTES_DIR,
     SCOPE_SHOWN,
