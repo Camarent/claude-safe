@@ -287,6 +287,39 @@ class WtTest(unittest.TestCase):
         self.assertIn("stray.txt", msg)
         self.assertIn("--allow-dirty", msg)
 
+    def _job_with_node_modules_link(self):
+        open(f"{self.m}/.gitignore", "w").write("node_modules/\n")  # trailing slash: matches a directory, not a symlink
+        sh("-C", self.m, "add", ".gitignore")
+        sh("-C", self.m, "commit", "-qm", "ignore")
+        os.makedirs(f"{self.m}/node_modules")
+        return wt.create(self.t, "s", "task-2")["repos"]["main"]
+
+    def _exclude_file(self, w):
+        ex = sh_out(w, "rev-parse", "--git-path", "info/exclude")
+        return ex if os.path.isabs(ex) else os.path.join(w, ex)
+
+    def test_create_excludes_the_node_modules_link_idempotently(self):
+        w = self._job_with_node_modules_link()
+        self.assertTrue(os.path.islink(f"{w}/node_modules"))
+        wt.create(self.t, "s", "task-2")
+        self.assertEqual(open(self._exclude_file(w)).read().splitlines().count("node_modules"), 1)
+        self.assertEqual(sh_out(w, "status", "--porcelain"), "")
+
+    def test_commit_never_stages_the_node_modules_link(self):
+        w = self._job_with_node_modules_link()
+        open(f"{w}/new.txt", "w").write("x")
+        wt.commit(self.t, "s", "task-2", "feat(x): add new")
+        files = sh_out(w, "ls-tree", "-r", "--name-only", "HEAD")
+        self.assertNotIn("node_modules", files)
+        self.assertIn("new.txt", files)
+
+    def test_commit_skips_a_link_even_when_the_exclude_entry_is_gone(self):
+        w = self._job_with_node_modules_link()
+        open(self._exclude_file(w), "w").write("")
+        open(f"{w}/new.txt", "w").write("x")
+        wt.commit(self.t, "s", "task-2", "feat(x): add new")
+        self.assertNotIn("node_modules", sh_out(w, "ls-tree", "-r", "--name-only", "HEAD"))
+
     def test_node_modules_symlink_is_not_dirty_even_with_a_dir_ignore(self):
         open(f"{self.m}/.gitignore", "w").write("node_modules/\n")
         sh("-C", self.m, "add", ".gitignore")

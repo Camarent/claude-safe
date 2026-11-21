@@ -37,6 +37,17 @@ def git(repo, *args, check=True):
     return gitx.out(repo, *args, timeout=GIT_LONG_TIMEOUT_S, check=check)
 
 
+def _exclude_link(root, name):
+    """Make git ignore the pipeline-made symlink NAME in ROOT: a `name/` rule of the project's .gitignore matches a directory only, so `git add -A` would commit the link (an absolute, machine-local target). Appends NAME (no trailing slash) to the exclude file of the checkout (`git rev-parse --git-path info/exclude`); idempotent."""
+    path = git(root, "rev-parse", "--git-path", "info/exclude")
+    path = path if os.path.isabs(path) else os.path.join(root, path)
+    old = pathlib.Path(path).read_text(encoding="utf-8") if os.path.isfile(path) else ""
+    if name in old.splitlines():
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    pathlib.Path(path).write_text(old + ("" if not old or old.endswith("\n") else "\n") + name + "\n", encoding="utf-8")
+
+
 def nested_repos(repo):
     """Relative paths of git repos nested in `repo` (depth <= 3), not the repo itself."""
     found = []
@@ -381,6 +392,8 @@ def create(a_dir, stage, task):
         src, dst = os.path.join(repo, name), os.path.join(root, name)
         if os.path.isdir(src) and not os.path.lexists(dst):
             os.symlink(src, dst)
+        if os.path.islink(dst):
+            _exclude_link(root, name)
     text = ""
     tf = os.path.join(a_dir, WORK_DIR, stage, f"{task}.md")
     if os.path.isfile(tf):
@@ -620,6 +633,9 @@ def commit(a_dir, stage, task, subject):
         # a nested repo is excluded so it is not added as a gitlink; a gitignored one is already skipped (and git errors on an exclude of it)
         skip = [f":(exclude){n}" for n in inner if gitx.run(w, "check-ignore", "-q", n).returncode != 0]
         git(w, "add", "-A", "--", ".", *skip)
+        for name in LINK:
+            if os.path.islink(os.path.join(w, name)):
+                git(w, "reset", "-q", "--", name)  # a pipeline-made link is never part of a job commit, whatever the .gitignore says
         git(w, "commit", "-q", "-m", subject)
         out[rel or "."] = git(w, "rev-parse", "--short", "HEAD")
     return out
