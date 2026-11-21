@@ -12,6 +12,7 @@ NO_REVIEW_ROOT = "/nonexistent/review-root"  # ENV_REVIEW_DIR value when the rev
 ENV_TIMEOUT = "WAVE_TIMEOUT"  # seconds per headless session
 ENV_SCRIPT_TIMEOUT = "ORCH_SCRIPT_TIMEOUT"  # seconds per no-model script step (SCRIPT_TIMEOUT_S default)
 ENV_NO_INDEX = "ORCH_NO_INDEX"  # set: skip the post-merge index refresh
+ENV_QRUN_NO_RECORD = "QRUN_NO_RECORD"  # set: qrun writes no gate-run record (pipeline/gate_record.py)
 ENV_GATED = "ORCH_GATED"  # comma list of agents the lead may only start after approval
 ENV_AGENTS_DIR = "ORCH_AGENTS_DIR"
 ENV_MAX_DISPATCH = "ORCH_MAX_DISPATCH"

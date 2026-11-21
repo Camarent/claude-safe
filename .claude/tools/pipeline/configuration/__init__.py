@@ -41,6 +41,7 @@ from .env import (  # noqa: F401  (re-export: the facade keeps every name import
     ENV_NO_INDEX,
     ENV_NO_LEADS,
     ENV_PROJECT_ROOT,
+    ENV_QRUN_NO_RECORD,
     ENV_REVIEW_DIR,
     ENV_SCRATCH_DIR,
     ENV_SCRIPT_TIMEOUT,

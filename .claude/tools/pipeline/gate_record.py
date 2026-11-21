@@ -57,9 +57,14 @@ def _head(cwd):
     return _git(cwd, "rev-parse", "HEAD")
 
 
-def record(cwd, argv, rc, now=None):
-    """Append {run, cmd, tree, base, rc, ts} for this gate run; writes nothing when there is no tree or no log path."""
-    tree = tree_hash(cwd)
+_TREE_NOW = object()  # record(tree=...) default: hash the tree at the call
+
+
+def record(cwd, argv, rc, now=None, tree=_TREE_NOW):
+    """Append {run, cmd, tree, base, rc, ts} for this gate run; writes nothing when there is no tree or no log path.
+    tree: the tree hash taken before the run (a test may write files during it); default: taken now."""
+    if tree is _TREE_NOW:
+        tree = tree_hash(cwd)
     path = _log_path(cwd)
     if tree is None or path is None:
         return
