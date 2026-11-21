@@ -24,6 +24,7 @@ from .configuration import (
     HAIKU_DEV_TRIES,
     MAX_ROUNDS,
     MAX_TRIES,
+    METRICS_LOG,
     MODEL_HAIKU,
     MODEL_SONNET,
     PASS,
@@ -46,7 +47,7 @@ from .configuration import (
 )
 from .plan_files import paths_in, task_type
 from .stagedir import resolve_stage
-from .util import read_text, work_path, write_text
+from .util import append_jsonl, now, paths, read_text, work_path, write_text
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
 
@@ -373,6 +374,24 @@ def straight_to_sonnet(a, task, mine):
     return None
 
 
+UNCLEAR_REASONS = ("no clear verdict", "no report file written")  # the dev reasons the auto retry (cli_orch _auto_retry) has already run for
+
+
+def _test_run(a, tid):
+    """The task's Test lines run in its job worktree -> (verdict, note). Lazy import: testrun imports wt, which imports this package."""
+    import testrun
+
+    return testrun.run(a.stage, tid, os.path.abspath(getattr(a, "dir", ".")))
+
+
+def _evidence_green(a, task, last):
+    """True when the dev's unclear BLOCKED left a commit and its Test lines run green: the reviewer judges the commit, no synthetic DONE is written."""
+    if last["verdict"] != BLOCKED or last.get("reason") not in UNCLEAR_REASONS or not job_diff(a, task["id"]):
+        return False
+    v, note = _test_run(a, task["id"])
+    return v == DONE and "skipped" not in note
+
+
 def _after_dev_other(a, task, mine, rid, s, last):
     if (
         why := _no_fix(last)
@@ -399,6 +418,12 @@ def _after_dev_other(a, task, mine, rid, s, last):
             f"Decide: the finding {rev['file']} is out of scope (file it in the backlog, then `orch.py skip`) or fix it by hand; report {last['file']}"
             + hint(a, task["id"]),
         }
+    if _evidence_green(a, task, last):
+        append_jsonl(
+            os.path.join(paths(a)[0], METRICS_LOG),
+            {"ev": "note", "ts": now(), "stage": a.stage, "task": task["id"], "text": "verdict from evidence: commit + green Test lines"},
+        )
+        return _to_review(a, task, mine, rid, s)
     return {
         "action": "ask_main",
         "message": f"{task['id']}: dev verdict {last['verdict']} ({last.get('reason', '')}); report {last['file']}" + hint(a, task["id"]),
