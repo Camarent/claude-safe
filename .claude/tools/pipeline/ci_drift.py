@@ -8,10 +8,42 @@ from .configuration import all_gates_of, repo_dir
 
 RUN_RE = re.compile(r"^\s*(?:-\s+)?run:\s*(.*?)\s*$")
 SETUP_ONLY = ("npm ci", "npm install")
+BLOCK_OPEN = {"if": "fi", "for": "done", "while": "done", "until": "done", "case": "esac"}
+HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
 
 
 def _norm(cmd):
     return " ".join(cmd.split())
+
+
+def _logical(block):
+    """-> [command] from the lines of one `run:` block: backslash continuations are joined; comments, heredoc bodies and compound statements (if/for/while/case ... fi/done/esac) are not single commands and are skipped."""
+    out, cur, closers, heredoc = [], "", [], None
+    for raw in block:
+        line = raw.strip()
+        if heredoc:
+            heredoc = None if line == heredoc else heredoc
+            continue
+        if not line or (line.startswith("#") and not cur):
+            continue
+        cur = f"{cur} {line}" if cur else line
+        if cur.endswith("\\"):
+            cur = cur[:-1].rstrip()
+            continue
+        m = HEREDOC_RE.search(cur)
+        if m:
+            heredoc = m.group(2)
+        tokens = re.split(r"[;\s]+", cur)
+        closer = BLOCK_OPEN.get(tokens[0])
+        if closer:
+            if closer not in tokens[1:]:
+                closers.append(closer)
+        elif closers and tokens[0] == closers[-1]:
+            closers.pop()
+        elif not closers:
+            out.append(cur)
+        cur = ""
+    return out
 
 
 def ci_run_lines(yml_text):
@@ -25,10 +57,11 @@ def ci_run_lines(yml_text):
         val = m.group(1)
         if val[:1] in ("|", ">"):
             indent = len(lines[i - 1]) - len(lines[i - 1].lstrip())
+            block = []
             while i < len(lines) and (not lines[i].strip() or len(lines[i]) - len(lines[i].lstrip()) > indent):
-                if lines[i].strip():
-                    out.append(lines[i].strip())
+                block.append(lines[i])
                 i += 1
+            out.extend(_logical(block))
         elif val:
             out.append(val.strip("\"'") if val[:1] in "\"'" and val[-1:] == val[:1] else val)
     return out
