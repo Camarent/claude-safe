@@ -2,7 +2,7 @@
 """review_guard: PreToolUse hook for Edit, Write, NotebookEdit and Bash. Lets the reviewer run mutation checks in its scratch copy only.
 
 Active when the env var PIPELINE_REVIEW_DIR (pipeline.configuration.ENV_REVIEW_DIR) holds the job worktree path, and for any session whose hook input names the `reviewer` agent
-(`agent_type`): without the variable that session has no worktree, so it may write only report files and run no mutating command (fail closed). Every other session is untouched.
+(`agent_type`): without the variable that session has no worktree, so it may write only report files and run no mutating command (fail closed). Every other session is untouched, except that Edit/Write/NotebookEdit naming a file in the main checkout from inside a linked worktree is denied (main_checkout_why).
 Then
 1. Edit/Write/NotebookEdit are allowed only for real paths (symlinks and `..` resolved) under the job worktree, or a report file `.work/<stage>/reports/<file>`;
 2. a Bash command is denied when it visibly writes outside the job worktree (`mktemp` may create files under the scratch dir env TMPDIR,
@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -121,6 +122,8 @@ GIT_ENV = re.compile(r"^GIT_\w+=")
 TARGET_DIR_CMDS = {"cp", "install", "ln"}  # `-t DIR` names the destination
 REDIRECT = re.compile(r"^(?:\d*|&)>>?\|?(.*)$")
 DEVNULL = "/dev/null"
+GIT_BIN = "git"  # probes the worktree layout for main_checkout_why
+GIT_TIMEOUT = 10  # seconds; a stuck git must not hang the hook
 
 
 def under(path, root):
@@ -149,6 +152,32 @@ def malformed(data):
 
 def outside(why_path, root):
     return f"Reviewer sessions may write only inside the job worktree {root} or the stage scratch dir (env {ENV_SCRATCH_DIR}); {why_path} is outside both. Edit the job worktree only, never the main checkout or another folder."
+
+
+def main_checkout_why(path, cwd):
+    """Deny text when PATH (a file the Edit/Write tool names) is in the main checkout of the linked worktree CWD is in, outside that worktree; '' otherwise (never raises)."""
+    try:
+        out = subprocess.run(
+            [GIT_BIN, "-C", cwd, "rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return ""
+    lines = out.stdout.splitlines()
+    if out.returncode != 0 or len(lines) != 3:
+        return ""
+    git_dir, common, top = (os.path.realpath(os.path.join(cwd, x)) for x in lines)
+    if git_dir == common:  # the main checkout itself: nothing to redirect
+        return ""
+    main = os.path.dirname(common)
+    real = resolve(path, cwd)
+    if under(real, top) or not under(real, main):
+        return ""
+    rel = os.path.relpath(real, main)  # the same file, as a path inside the worktree
+    return f"Edit the job worktree, not the main checkout: {path} is in {main}, outside this worktree {top}. Use the worktree-relative path {rel} (under {top}) instead."
 
 
 def file_verdict(tool, tool_input, root):
@@ -462,12 +491,27 @@ def verdict(data, root):
     return ""
 
 
+def main_checkout_deny(data):
+    """Deny text for an Edit/Write/NotebookEdit call naming a file in the main checkout (see main_checkout_why); '' otherwise."""
+    if not isinstance(data, dict) or data.get("tool_name") not in PATH_KEYS or not isinstance(data.get("tool_input"), dict):
+        return ""
+    p = data["tool_input"].get(PATH_KEYS[data["tool_name"]])
+    cwd = data.get("cwd") or os.getcwd()
+    if not isinstance(p, str) or not p or not isinstance(cwd, str):
+        return ""
+    return main_checkout_why(p, cwd)
+
+
 def main():
     root = os.environ.get(ENV_REVIEW_DIR)
     try:
         data = json.load(sys.stdin)
     except ValueError:
         data = None
+    why = main_checkout_deny(data)  # every session: a linked worktree never writes the main checkout
+    if why:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why}}))
+        return 0
     if not root:
         if not (isinstance(data, dict) and _is_reviewer(data.get("agent_type"))):
             return 0  # not a reviewer session

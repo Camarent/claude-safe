@@ -20,7 +20,8 @@ def run_hook(stdin_text, root=None):
     env = {k: v for k, v in os.environ.items() if k != ENV_REVIEW_DIR}
     if root:
         env[ENV_REVIEW_DIR] = root
-    return subprocess.run([sys.executable, "-I", GUARD], check=False, input=stdin_text, capture_output=True, text=True, timeout=30, env=env)
+    # cwd is the root dir: outside any repo, so a payload without `cwd` is not read as a linked worktree (main_checkout_why)
+    return subprocess.run([sys.executable, "-I", GUARD], check=False, input=stdin_text, capture_output=True, text=True, timeout=30, env=env, cwd=os.sep)
 
 
 class GuardTest(unittest.TestCase):
@@ -381,6 +382,57 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(pre[i]["matcher"], "Edit|Write|NotebookEdit|Bash")
         with mock.patch.dict(os.environ, {}, clear=False):
             self.assertGreater(i, 0)
+
+
+class MainCheckoutTest(unittest.TestCase):
+    """A linked worktree never writes the main checkout; the worktree lives inside it (.wt/), as in the real layout."""
+
+    def setUp(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        self.t = os.path.realpath(t.name)
+        self.main = f"{self.t}/main"
+        self.wt = f"{self.main}/.wt/job"
+        os.makedirs(self.main)
+        self.git("init", "-q", cwd=self.main)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init", cwd=self.main)
+        self.git("worktree", "add", "-q", "-b", "job", self.wt, cwd=self.main)
+
+    def git(self, *args, cwd):
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+    def test_main_path_denied_with_relative_path(self):
+        why = review_guard.main_checkout_why(f"{self.main}/src/a.py", self.wt)
+        self.assertIn("Use the worktree-relative path src/a.py", why)
+        self.assertIn(self.wt, why)
+
+    def test_relative_path_resolves_against_cwd(self):
+        self.assertIn("Use the worktree-relative path src/a.py", review_guard.main_checkout_why("../../src/a.py", self.wt))
+
+    def test_worktree_path_allowed(self):
+        self.assertEqual(review_guard.main_checkout_why(f"{self.wt}/src/a.py", self.wt), "")
+
+    def test_sibling_sharing_main_prefix_allowed(self):
+        os.makedirs(f"{self.main}-x")
+        self.addCleanup(os.rmdir, f"{self.main}-x")
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}-x/a.py", self.wt), "")
+
+    def test_main_checkout_itself_allowed(self):
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}/a.py", self.main), "")
+
+    def test_plain_repo_and_missing_cwd_allowed(self):
+        plain = f"{self.t}/plain"
+        os.makedirs(plain)
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}/a.py", plain), "")
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}/a.py", f"{self.t}/missing"), "")
+
+    def test_hook_denies_main_edit_for_plain_session(self):
+        payload = {"tool_name": "Edit", "tool_input": {"file_path": f"{self.main}/src/a.py"}, "cwd": self.wt}
+        out = run_hook(json.dumps(payload))
+        self.assertEqual(out.returncode, 0, out.stderr)
+        decision = json.loads(out.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("src/a.py", decision["permissionDecisionReason"])
 
 
 if __name__ == "__main__":
