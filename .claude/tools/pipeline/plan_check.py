@@ -44,6 +44,7 @@ from .configuration import (
     ui_paths,
 )
 from .plan_commands import command_findings
+from .plan_depends import depends_line_problems
 from .plan_files import (
     PATH_DIRS,
     PATH_NAME,
@@ -395,6 +396,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         if not os.path.exists(f)
         else [f"{e['id']}: {m}" for m in _lint(read_text(f), repo, git)]
         + check_refs(d, e["id"], repo)
+        + depends_line_problems(d, [e])
         + check_test_refs(d, e["id"], repo)
         + check_test_globs(d, e["id"], repo)
         + ptest_selector_problems(d, e["id"], repo)
