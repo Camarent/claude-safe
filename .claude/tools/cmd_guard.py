@@ -14,6 +14,7 @@
    joined by `&&` or `;`, and no later segment up to the next cd depends on the cwd (see `cwd_dependent`: relative path or bare word argument, no argument,
    redirect, substitution). The rewrite is printed as `updatedInput` (no permissionDecision: normal permission rules still judge the new text) and
    only when `verdict()` of the new text is clean. Otherwise the call is denied with the message `git -C <dir> <args>`.
+   A `cd` into the hook's own cwd (the job worktree) is not denied: it is dropped by the rewrite (`cd . && git x` -> `git x`).
 
 Quoted text and heredoc bodies are data, not commands, except the body of `sh -c` / `bash -c`.
 Known limit: `$(...)` subshells and `(...)` groups are not split; a hook crash exits 1 and the call is allowed (fail open).
@@ -211,6 +212,11 @@ def git_words(seg):
     return words if words and words[0] == "git" else []
 
 
+def in_cwd(directory):
+    """-> True when DIRECTORY is the hook's cwd (the job worktree): a plain `cd` there changes nothing."""
+    return not UNSAFE_DIR.search(directory) and os.path.realpath(directory) == os.path.realpath(os.getcwd())
+
+
 def cd_git_why(segs):
     """-> deny reason for a `cd <dir>` segment followed by a git command in the same command line, else ''."""
     cd_dir = ""
@@ -218,6 +224,8 @@ def cd_git_why(segs):
         words = seg.split()
         if words[:1] == ["cd"]:
             cd_dir = words[1] if len(words) > 1 else "<dir>"
+            if in_cwd(cd_dir):
+                cd_dir = ""
         elif cd_dir and git_words(seg):
             return (
                 f"No `cd {cd_dir}` before git: Claude Code denies a cd before a version-control command (untrusted hooks). "
@@ -280,7 +288,7 @@ def rewrite_cd_git(cmd):
     # heredoc / continuation strip changes offsets; groups are not split; a background command is not rewritten
     if len(text) != len(cmd) or re.search(r"[(){}]|<<", text) or "&" in pieces[1::2]:
         return ""
-    out, pos, cd_dir, rewrote = [], 0, "", False
+    out, pos, cd_dir, rewrote, cd_seen = [], 0, "", False, False
     for i in range(0, len(pieces), 2):
         seg_text, orig = pieces[i], cmd[pos : pos + len(pieces[i])]
         op = pieces[i + 1] if i + 1 < len(pieces) else ""
@@ -290,13 +298,14 @@ def rewrite_cd_git(cmd):
         if words[:1] == ["cd"]:
             if not plain_cd(words, op):
                 return ""
-            cd_dir = words[1]
+            cd_dir = "" if in_cwd(words[1]) else words[1]  # a cd into the cwd is dropped: the cwd does not change
+            cd_seen = True
             continue
         if cd_dir:
             orig = after_cd_segment(seg_text, orig, cd_dir, prev == "|")
             if not orig:
                 return ""
-            rewrote = rewrote or bool(git_words(seg_text))
+        rewrote = rewrote or (cd_seen and bool(git_words(seg_text)))
         out.append(orig)
         if op:
             out.append(op)
@@ -379,7 +388,7 @@ def main():
         return 0
     cmd = cmd if isinstance(cmd, str) else ""
     why = verdict(cmd)
-    if why and git_cd_reason(why):
+    if not why or git_cd_reason(why):  # a cd into the cwd is allowed by verdict but still rewritten: Claude Code denies any cd before git
         new = rewrite_cd_git(cmd)
         if new and not verdict(new):
             ti = dict(tool_input)

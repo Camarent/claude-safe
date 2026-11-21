@@ -381,6 +381,45 @@ class CdGitRewriteTest(unittest.TestCase):
         self.assertTrue(cmd_guard.verdict(cmd))
         self.assertEqual(self._run(cmd)["hookSpecificOutput"]["permissionDecision"], "deny")
 
+    def _enter_cwd_worktree(self):
+        """chdir into a fresh temp dir (the job worktree stand-in); restored and removed at cleanup."""
+        import tempfile
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        wt = os.path.realpath(tmp.name)
+        old = os.getcwd()
+        os.chdir(wt)
+        self.addCleanup(os.chdir, old)
+        return wt
+
+    def test_cd_to_cwd_git_not_denied(self):  # C1: the cwd already IS the worktree, so the cd changes nothing
+        wt = self._enter_cwd_worktree()
+        self.assertEqual(cmd_guard.verdict(f"cd {wt} && git status --short"), "")
+        self.assertEqual(cmd_guard.verdict("cd . && git status --short"), "")
+
+    def test_cd_to_cwd_git_rewritten_to_plain_git(self):  # C1: the cd is dropped, git stays plain
+        wt = self._enter_cwd_worktree()
+        self.assertEqual(cmd_guard.rewrite_cd_git(f"cd {wt} && git status --short"), "git status --short")
+        self.assertEqual(cmd_guard.rewrite_cd_git(f"cd {wt} && git log && cat f"), "git log && cat f")
+        got = self._run(f"cd {wt} && git status --short")
+        self.assertEqual(got["hookSpecificOutput"]["updatedInput"]["command"], "git status --short")
+        self.assertNotIn("permissionDecision", got["hookSpecificOutput"])
+
+    def test_cd_to_cwd_qrun_not_denied(self):  # C1: a cd into the cwd before a qrun call stays allowed
+        wt = self._enter_cwd_worktree()
+        self.assertEqual(cmd_guard.verdict(f"cd {wt} && {Q} x"), "")
+
+    def test_cd_elsewhere_still_denied(self):
+        wt = self._enter_cwd_worktree()
+        other = os.path.dirname(wt)
+        self.assertIn("No `cd", cmd_guard.verdict(f"cd {other} && git status"))
+
+    def test_cd_git_denial_text_gives_git_c_not_cd(self):  # C2: the replacement is `git -C D args`, never a cd
+        why = cmd_guard.verdict("cd /wt/x && git status --short")
+        self.assertIn("Run `git -C /wt/x status --short` instead", why)
+        self.assertNotIn("Run `cd", why)
+
     def _run(self, cmd, extra=None):
         import io
         import json
