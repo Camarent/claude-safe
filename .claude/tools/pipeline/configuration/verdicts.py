@@ -5,6 +5,7 @@ PASS, FAIL, DONE, ESCALATE, BLOCKED = "PASS", "FAIL", "DONE", "ESCALATE", "BLOCK
 NEED = "NEED"  # merger status line `NEED: <what>`: a denied commit or missing brief item; the verdict is BLOCKED, the stage is flagged
 CLEAN, FIXES = "CLEAN", "FIXES"  # auditors
 LANDED, MISSING = "LANDED", "MISSING"  # architect checking a fix
+PLAN_ERROR = "PLAN-ERROR"  # reviewer report line `PLAN-ERROR: <what to fix in which task file>`: the task file (a Done-line symbol or path) is wrong, not the dev; the architect fixes it, no dev retry
 SKIPPED = "SKIPPED"  # script step that did not do its work (local pre-review skipped): never a pass
 
 # role names

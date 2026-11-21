@@ -446,6 +446,43 @@ class CheckRefsTest(unittest.TestCase):
         self.assertTrue(any("gone/x.py:3" in m and "not found" in m for m in p))
 
 
+class CheckRefsShortPathTest(unittest.TestCase):
+    def _run(self, files, anchor):
+        from pipeline import plan_check
+        from tests.support.gitrepo import git
+
+        d = tracked_mkdtemp()
+        repo = os.path.join(d, "repo")
+        os.makedirs(os.path.join(d, ".work", "S"))
+        os.makedirs(repo)
+        git(repo, "init", "-q")
+        for f in files:
+            os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
+            Path(os.path.join(repo, f)).write_text("x\ny\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        Path(os.path.join(d, ".work", "S", "task-1.md")).write_text(f"see {anchor}\n", encoding="utf-8")
+        err = io.StringIO()
+        with redirect_stderr(err):
+            probs = plan_check.check_refs(os.path.join(d, ".work", "S"), "task-1", repo)
+        return probs, err.getvalue()
+
+    def test_unique_short_path_passes_with_warning(self):
+        probs, err = self._run(["svc/api/routes/jobs.py"], "routes/jobs.py:2")
+        self.assertEqual(probs, [])
+        self.assertIn("warn:", err)
+        self.assertIn("svc/api/routes/jobs.py", err)
+
+    def test_ambiguous_short_path_fails(self):
+        probs, _ = self._run(["a/routes/jobs.py", "b/routes/jobs.py"], "routes/jobs.py:2")
+        self.assertEqual(len(probs), 1)
+        self.assertIn("not found", probs[0])
+
+    def test_short_path_line_beyond_file_fails(self):
+        probs, _ = self._run(["svc/routes/jobs.py"], "routes/jobs.py:9")
+        self.assertEqual(len(probs), 1)
+        self.assertIn("only 2 lines", probs[0])
+
+
 class CheckTestGlobsTest(unittest.TestCase):
     def _run(self, paths, test_line, files=()):
         from pipeline import plan_check

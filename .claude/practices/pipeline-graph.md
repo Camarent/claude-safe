@@ -32,7 +32,7 @@ for each wave of the task graph (waves run in order, tasks inside a wave in para
         BLOCKED "done task(s) ... still have an unmerged worktree branch" (graph `_unmerged_done`): a done task whose job branch has commits ahead of the stage branch, or uncommitted work, asks the lead. A done task with no commits ahead and nothing uncommitted (e.g. a retried scout that wrote only files outside git) has its job worktree and branch removed by the driver and does not block.
 before the first wave (feature level): deps-sweep (merge green Dependabot PRs); the draft PR opens at the first `pr-push-w<N>` (no `pr-open` step any more)
 final phases, in this order:
-   final-test        script `final_check.py` when `gates` are set, else tester (agent: haiku); red result -> one bounded fix round -> final-test-2
+   final-test        script `final_check.py` when `gates` are set, else tester (agent: haiku); red result on a stage head that moved since the run -> one automatic final-test-rerun; still red -> one bounded fix round -> final-test-2
    [final-webtest    web-tester (agent: sonnet, one step per batch of 4 UI tasks), flag `ui`; fix round + re-check of FAIL/UNVERIFIED batches; fix tasks checked in their own batch]
    [docs             docs-writer (agent: haiku), flag `docs`]
    audits, only when flag `audit` is on and, for a middle phase of a big plan, enough tasks piled up (`audit_every_tasks`, default 25; the last phase is always audited):

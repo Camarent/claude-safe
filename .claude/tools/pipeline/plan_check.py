@@ -310,6 +310,26 @@ def check_work_paths(d, tid):
     return [f"{tid}: output `{hits[0]}` is a relative .work path: the task worktree is deleted afterwards, so use the absolute main-tree path {main}/..."]
 
 
+def _suffix_matches(repo, short):
+    """-> the tracked files of REPO that end with `/short`; [] when REPO is no git work tree."""
+    try:
+        r = gitx.run(repo, "ls-files", "-z")
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if r.returncode:
+        return []
+    return [f for f in r.stdout.split("\0") if f.endswith("/" + short)]
+
+
+def _resolve_short(repo, f, tid, line):
+    """-> the repo-relative path for a short anchor path F when exactly one tracked file ends with it (prints a `warn:` naming the full path), else ''."""
+    hits = _suffix_matches(repo, f)
+    if len(hits) != 1:
+        return ""
+    print(f"warn: {tid}: anchor {f}:{line} is not repo-relative; use {hits[0]}:{line}", file=sys.stderr)
+    return hits[0]
+
+
 def check_refs(d, tid, repo):
     """Problems for one task file: an anchor `path/file.ext:N` whose file is missing or shorter than N lines (stale since the plan was written). New files in Predicted paths are fine."""
     text = read_text(os.path.join(d, tid + ".md"))
@@ -319,8 +339,11 @@ def check_refs(d, tid, repo):
         if not os.path.isfile(full):
             if any(f == p.rstrip("/") or f.startswith(p.rstrip("/") + "/") for p in paths_in(text)):
                 continue  # the task creates it
-            probs.append(f"{tid}: anchor {f}:{line}: file not found in {repo}")
-            continue
+            short = _resolve_short(repo, f, tid, line)
+            if not short:
+                probs.append(f"{tid}: anchor {f}:{line}: file not found in {repo}")
+                continue
+            full = os.path.join(repo, short)
         try:
             with open(full, encoding="utf-8", errors="replace") as fh:
                 n = sum(1 for _ in fh)

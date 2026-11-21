@@ -371,6 +371,17 @@ def prompt_for(a, task, role, rework_file, rid):
     return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"
 
 
+def plan_fix_prompt(a, task, rid, why, report):
+    """Architect brief for a reviewer PLAN-ERROR: correct the task file, never the code."""
+    t = os.path.join(os.path.abspath(getattr(a, "dir", ".")), WORK_DIR, a.stage, f"{task['id']}.md")
+    return (
+        f"Stage {a.stage}: the reviewer found a plan error in the task file {t} (the dev's code is not at fault): {why} Review report: {report}. "
+        "Edit ONLY that task file so its Done/Test lines match the code the diff's routes and callers actually use; touch no other task, no TASKS.md row, no code. "
+        "If the report shows no plan error, change nothing and reply BLOCKED."
+        + tail(a, rid, "|".join(ROLES["architect"][0][:2]), "a 3-line summary of the change to the task file")
+    )
+
+
 def testrun_on(a):
     return bool(project(getattr(a, "dir", ".")).get("testrun", True))
 

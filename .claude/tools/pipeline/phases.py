@@ -6,7 +6,7 @@ import re
 import shlex
 from pathlib import Path
 
-from . import pr_mode
+from . import gitx, pr_mode
 from .audit_phases import (
     _wb,
     audit_base,
@@ -23,6 +23,7 @@ from .configuration import (
     EV_DISPATCH,
     FAIL,
     FINAL_GATES_KEY,
+    FINAL_TEST_RERUN_STEP,
     FIX_WEB_STEP,
     MERGE_GATES_KEY,
     MODEL_HAIKU,
@@ -461,17 +462,42 @@ def _web_test_phases(a, cfg, tasks, evs):
     yield [_serve_stop_step(a, f"{WEBTEST_STEP}-stop")]
 
 
+def _stage_head(a, cfg):
+    """-> the commit the stage's work branch points at, "" when git cannot say."""
+    try:
+        return gitx.out(a.dir, "rev-parse", _wb(a, cfg))
+    except (RuntimeError, OSError):
+        return ""
+
+
+def _with_head(a, cfg, st):
+    """STEP with the stage head it is about to run on (logged on its dispatch event)."""
+    return {**st, "head": _stage_head(a, cfg)}
+
+
+def _head_moved(a, cfg, evs, sid):
+    """True when the dispatch of step SID recorded a stage head and the branch is on another commit now."""
+    rec = next((e.get("head") for e in history(evs, sid) if e["ev"] == EV_DISPATCH and e.get("head")), "")
+    return bool(rec) and bool(_stage_head(a, cfg)) and rec != _stage_head(a, cfg)
+
+
 def _test_phases(a, cfg, flags, tasks, evs):
     """Final verification, each with one bounded fix round when it comes back FAIL."""
     ids = ", ".join(t["id"] for t in tasks)
-    yield [_final_test_step(a, cfg, ids, "final-test", {DONE, FAIL}, {PASS, FAIL})]  # a red result is not a stop: one bounded fix round first, then the lead
-    if last_verdict(evs, "final-test") == "FAIL":
+    yield [
+        _with_head(a, cfg, _final_test_step(a, cfg, ids, "final-test", {DONE, FAIL}, {PASS, FAIL}))
+    ]  # a red result is not a stop: one bounded fix round first, then the lead
+    latest = "final-test"
+    if last_verdict(evs, latest) == "FAIL" and _head_moved(a, cfg, evs, latest):  # the report is old: judge the code as it is now before planning fixes
+        latest = FINAL_TEST_RERUN_STEP
+        yield [_with_head(a, cfg, _final_test_step(a, cfg, ids, latest, {DONE, FAIL}, {PASS, FAIL}))]
+    if last_verdict(evs, latest) == "FAIL":
         yield [
             fix_step(
                 a,
                 tasks,
                 "fix-plan-test",
-                [last_report(evs, "final-test")],
+                [last_report(evs, latest)],
                 "the final verification (full test suite and checks) failed.",
                 "fix-plan-test",
                 "final-test FAILED",

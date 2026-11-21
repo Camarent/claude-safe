@@ -4,10 +4,11 @@ import hashlib
 import os
 import re
 
-from .briefs import ENV_DRY_NO_CCN, prompt_for, qualityrun_on, testrun_on, webtest_prompt
+from .briefs import ENV_DRY_NO_CCN, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
 from .ccn import review_ccn_hit
 from .classify import STOP, classify_test_run
 from .configuration import (
+    ARCHITECT,
     BLOCKED,
     DIFF_SHA_LEN,
     DONE,
@@ -27,6 +28,7 @@ from .configuration import (
     MODEL_SONNET,
     PASS,
     PHASES_DIR,
+    PLAN_ERROR,
     PLAN_NOTES_FILE,
     PREREVIEW_DIFF_CHARS,
     PREREVIEW_FREE_ROUNDS,
@@ -103,11 +105,26 @@ def _reviewer_reports(mine, verdict):
     return sum(1 for e in mine if e["ev"] == EV_REPORT and e["role"] == "reviewer" and e["verdict"] == verdict)
 
 
+PLAN_ERROR_RE = re.compile(rf"^\s*{PLAN_ERROR}:\s*(.*)$", re.MULTILINE)  # reviewer report line: the task file is wrong, not the dev
+
+
+def _plan_error(e):
+    """-> the reviewer's `PLAN-ERROR:` text when report event E is a reviewer FAIL that carries one, else None."""
+    if e["ev"] != EV_REPORT or e.get("role") != "reviewer" or e["verdict"] != FAIL:
+        return None
+    m = PLAN_ERROR_RE.search(read_text(e["file"]))
+    return (m.group(1)[:300] or "no detail given") if m else None
+
+
 def _failed_rounds(mine):
-    """Failed review rounds: every reviewer FAIL, plus an ESCALATE from a Sonnet reviewer (nobody stronger is left, so it counts as a FAIL)."""
+    """Failed review rounds: every reviewer FAIL (a PLAN-ERROR is no dev round), plus an ESCALATE from a Sonnet reviewer (nobody stronger is left, so it counts as a FAIL)."""
     sonnet_ids = {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "reviewer" and e["model"] == MODEL_SONNET}
     return sum(
-        1 for e in mine if e["ev"] == EV_REPORT and e["role"] == "reviewer" and (e["verdict"] == FAIL or (e["verdict"] == ESCALATE and e["id"] in sonnet_ids))
+        1
+        for e in mine
+        if e["ev"] == EV_REPORT
+        and e["role"] == "reviewer"
+        and ((e["verdict"] == FAIL and _plan_error(e) is None) or (e["verdict"] == ESCALATE and e["id"] in sonnet_ids))
     )
 
 
@@ -471,11 +488,42 @@ def _after_taskgates(a, task, mine, rid, s, last):
 def _after_reviewer(a, task, mine, rid, s, last):
     if last["verdict"] == ESCALATE and not task["review_sonnet"] and not sonnet_review_dispatched(mine):
         return _disp(a, task, rid, "reviewer", True)  # a Haiku reviewer ESCALATE goes straight to the Sonnet reviewer
+    if (why := _plan_error(last)) is not None:
+        return _plan_fix(a, task, mine, rid, last, why)
     if last["verdict"] in (FAIL, ESCALATE):
         if s.rounds > MAX_ROUNDS - 1:
             return {"action": "ask_main", "message": f"{task['id']}: review failed {s.rounds} rounds; findings {last['file']}" + hint(a, task["id"])}
         return _disp(a, task, rid, "dev", True, rework=last["file"])  # owner 2026-10-29: Haiku dev+review, one FAIL -> Sonnet dev+review, a second FAIL -> lead
     return None
+
+
+def _plan_fix(a, task, mine, rid, last, why):
+    """Reviewer PLAN-ERROR: one architect round on the task file (not a dev try), then the reviewer runs again; a second plan error goes to the lead."""
+    if any(e["ev"] == EV_DISPATCH and e["role"] == ARCHITECT for e in mine):
+        return {
+            "action": "ask_main",
+            "message": f"{task['id']}: plan error again after the architect fix: {why}; findings {last['file']}" + hint(a, task["id"]),
+        }
+    return {
+        "free": True,
+        "action": "dispatch",
+        "id": rid,
+        "agent": ARCHITECT,
+        "model": None,
+        "task": task["id"],
+        "role": ARCHITECT,
+        "prompt": plan_fix_prompt(a, task, rid, why, last["file"]),
+        "why": "reviewer found a plan error in the task file",
+    }
+
+
+def _after_plan_fix(a, task, mine, rid, s, last):
+    if last["verdict"] != DONE:
+        return {"action": "ask_main", "message": f"{task['id']}: the architect could not fix the plan error; report {last['file']}" + hint(a, task["id"])}
+    d = _disp_reviewer(a, task, rid, s, mine)
+    if d["agent"] == "reviewer":
+        d["free"] = True  # the same code is judged against the fixed task file: not a reviewer try
+    return d
 
 
 def _tries(mine, role, model=None):
@@ -628,6 +676,8 @@ def _next_step(a, task, mine, rid):
         return _disp(a, task, rid, "dev", task["owner_sonnet"])
     if last["ev"] == EV_DISPATCH:
         return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
+    if last["role"] == ARCHITECT:
+        return _after_plan_fix(a, task, mine, rid, s, last)
     if last["role"] == "dev":
         return _after_dev(a, task, mine, rid, s, last)
     if last["role"] == "script":
@@ -686,6 +736,7 @@ def _phase_dispatch(st, rid):
         "effort": st["effort"],
         "why": st["why"],
         "prompt": st["prompt"].replace("{rid}", rid),
+        **({"head": st["head"]} if st.get("head") else {}),  # logged on the dispatch event (the stage head a final-test ran on)
     }
 
 
