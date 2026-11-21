@@ -8,8 +8,9 @@ import sys
 from . import claude, metrics
 from .configuration import ENV_NO_CONTEXT, MODEL_OPUS, MODEL_SONNET, PLAN_FILE, REQUEST_FILE, project, repo_dir, tool_cmd
 from .ctx import Ctx
-from .plan_check import check_feature, check_stage, errors_of, publish_problems_in, publish_urls, tasks_files
-from .plan_files import feature_dir
+from .plan_check import check_feature, check_stage, errors_of, publish_problems_in, publish_urls, repo_of, tasks_files
+from .plan_files import feature_dir, read_phases
+from .plan_testrun import testrun_stage
 from .run import Run
 from .util import TOOLS, read_text, swallowed, write_text
 
@@ -88,6 +89,13 @@ def check_now(a, goal=""):
     ensure_publish(a, goal)
     n, probs = check_feature(a, d) if os.path.exists(os.path.join(d, PLAN_FILE)) else check_stage(d)
     return n, [*probs, *publish_problems(a, goal)]
+
+
+def testrun_problems(a):
+    """-> problems of `testrun` over every stage of the plan (Plan.md: each phase folder; else the one stage), run once per Test line."""
+    d = feature_dir(a)
+    dirs = [os.path.join(d, "phases", p["dir"]) for p in read_phases(a)] if os.path.exists(os.path.join(d, PLAN_FILE)) else [d]
+    return [p for sd in dirs for p in testrun_stage(sd, repo_of(sd))[1]]
 
 
 def explore_stats():
@@ -180,6 +188,21 @@ def run(a):
             a, c, model, build_prompt(a, model, goal, "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)), "plan-fix"
         )
         n, probs = check_now(a, goal)
+    if not errors_of(probs) and (tr := testrun_problems(a)):
+        session(
+            a,
+            c,
+            model,
+            build_prompt(
+                a,
+                model,
+                goal,
+                "The plan you wrote passed `check`, but `testrun` rejects these Test lines; fix them through plan.py commands:\n" + "\n".join(tr),
+            ),
+            "plan-fix",
+        )
+        n, probs = check_now(a, goal)
+        probs = [*probs, *testrun_problems(a)] if not errors_of(probs) else probs
     if errors_of(probs):
         print("\n".join(probs))
         return 2

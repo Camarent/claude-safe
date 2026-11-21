@@ -12,6 +12,7 @@
     cs-plan edit-task --stage S --id N --field F --value V [--field F2 --value V2]   replace fields of task-N.md (title paths pattern test done turns); TASKS.md kept in sync
     cs-plan check --stage S | --feature F                 `OK n tasks` or one problem per line (exit 2)
     cs-plan dryrun --stage S                              run each task's `Dry run: <cmd>  # expect > N changes` in a temp worktree; exit 2 when a tool is a no-op
+    cs-plan testrun --stage S                             run each task's `Test:` line once in a temp worktree of HEAD; exit 2 when no test matches or the command cannot run (a failing test is accepted)
     cs-plan run --feature F --prompt-file P [--model sonnet|opus] [--dry-run]   one architect session (default Sonnet, ESCALATE -> Opus; --model opus starts on Opus when known ahead), check, one rerun
 Every command takes --dir (default .). --stage S = folder .work/S or .work/F/phases/NN-name. Exit 2 on invalid input.
 """
@@ -20,7 +21,7 @@ import argparse
 import os
 import sys
 
-from . import plan_check, plan_dryrun, plan_insert, pr_mode
+from . import plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
 from . import plan_files as pf
 from .branches import dirty_block, red_base_block
 from .configuration import BLOCKED_FILE, EXIT_BLOCKED, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
@@ -243,6 +244,13 @@ def cmd_dryrun(a):
     return 2 if probs else 0
 
 
+def cmd_testrun(a):
+    d = pf.stage_dir(a)
+    n, probs = plan_testrun.testrun_stage(d, plan_check.repo_of(d))
+    print("\n".join(probs) if probs else f"OK {n} test lines")
+    return 2 if probs else 0
+
+
 def _blocked(a, msg):
     """Print MSG, write it to the feature's BLOCKED.md and -> the configured blocked exit code."""
     print(msg)
@@ -318,6 +326,7 @@ def build():
     )
     add("check", cmd_check, stage="", feature="")
     add("dryrun", cmd_dryrun, stage=True)
+    add("testrun", cmd_testrun, stage=True)
     add("run", cmd_run, feature=True, prompt_file=True)
     sub.choices["run"].add_argument("--dry-run", action="store_true")
     sub.choices["run"].add_argument("--model", choices=[MODEL_SONNET, MODEL_OPUS], default=MODEL_SONNET)
