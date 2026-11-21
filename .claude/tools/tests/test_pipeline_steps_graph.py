@@ -16,6 +16,7 @@ from unittest import mock
 os.environ["PIPELINE_NO_LEADS"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import graph, steps, worktree
+from pipeline.configuration import EXTRA_ROUND_WHY
 
 TASK = {"id": "task-1", "owner_sonnet": False, "review_sonnet": False}
 
@@ -261,9 +262,13 @@ class NextStepTest(unittest.TestCase):
         self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
         self.assertIn("Rework: fix the findings in r1.md first.", r["prompt"])
         d2 = [*d1, dispatch("a3", "dev", "sonnet"), dev_rep("a3", "DONE"), rev_rep("a4", "FAIL", "r2.md")]
-        r = self.nxt(d2)
+        r = self.nxt(d2)  # second FAIL: one extra dev round with the verbatim findings
+        self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
+        self.assertIn("reviews-all-task-1", r["prompt"])
+        d3 = [*d2, dispatch("a5", "dev", "sonnet", why=EXTRA_ROUND_WHY), dev_rep("a5", "DONE"), rev_rep("a6", "FAIL", "r3.md")]
+        r = self.nxt(d3)  # the extra round failed too: back to the lead
         self.assertEqual(r["action"], "ask_main")
-        self.assertTrue(r["message"].startswith("task-1: review failed 2 rounds; findings r2.md; fix the cause"))
+        self.assertTrue(r["message"].startswith("task-1: review failed 3 rounds; findings r3.md; fix the cause"))
 
     def test_reviewer_escalate_then_sonnet_reviewer(self):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "DONE"), dispatch("a2", "reviewer"), rev_rep("a2", "ESCALATE", "r1.md")]

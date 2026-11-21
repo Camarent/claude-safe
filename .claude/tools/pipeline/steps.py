@@ -18,6 +18,7 @@ from .configuration import (
     EV_REPORT,
     EV_RETRY,
     EV_SKIP,
+    EXTRA_ROUND_WHY,
     FAIL,
     GATE_FREE_ROUNDS,
     GATE_PLAN_ERROR,
@@ -26,6 +27,7 @@ from .configuration import (
     MAX_TRIES,
     METRICS_LOG,
     MODEL_HAIKU,
+    MODEL_OPUS,
     MODEL_SONNET,
     PASS,
     PHASES_DIR,
@@ -35,6 +37,8 @@ from .configuration import (
     PREREVIEW_FREE_ROUNDS,
     PREREVIEW_SKIP_ASK,
     PREREVIEW_SKIP_REVIEWER,
+    REVIEW_EXTRA_OPUS_AFTER,
+    REVIEW_EXTRA_ROUNDS,
     RULES_FILE,
     SKIPPED,
     WEB_TESTER,
@@ -117,16 +121,25 @@ def _plan_error(e):
     return (m.group(1)[:300] or "no detail given") if m else None
 
 
-def _failed_rounds(mine):
-    """Failed review rounds: every reviewer FAIL (a PLAN-ERROR is no dev round), plus an ESCALATE from a Sonnet reviewer (nobody stronger is left, so it counts as a FAIL)."""
+def _failed_review_reports(mine):
+    """Failed review reports, oldest first: every reviewer FAIL (a PLAN-ERROR is no dev round), plus an ESCALATE from a Sonnet reviewer (nobody stronger is left, so it counts as a FAIL)."""
     sonnet_ids = {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "reviewer" and e["model"] == MODEL_SONNET}
-    return sum(
-        1
+    return [
+        e
         for e in mine
         if e["ev"] == EV_REPORT
         and e["role"] == "reviewer"
         and ((e["verdict"] == FAIL and _plan_error(e) is None) or (e["verdict"] == ESCALATE and e["id"] in sonnet_ids))
-    )
+    ]
+
+
+def _failed_rounds(mine):
+    return len(_failed_review_reports(mine))
+
+
+def _extra_rounds_ran(mine):
+    """Extra dev rounds the task already got (dispatches with the EXTRA_ROUND_WHY reason)."""
+    return sum(1 for e in mine if e["ev"] == EV_DISPATCH and e.get("why") == EXTRA_ROUND_WHY)
 
 
 def _reports(mine, role, verdict, ids=None):
@@ -165,13 +178,13 @@ def is_report(a, task):
     return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "report"
 
 
-def _disp(a, task, rid, role, sonnet, rework=None, free=False):
+def _disp(a, task, rid, role, sonnet, rework=None, free=False, model=None):
     return {
         "free": free,  # logged on the dispatch event: a rework after a local pre-review FAIL is not a dev try
         "action": "dispatch",
         "id": rid,
         "agent": role,
-        "model": MODEL_SONNET if sonnet else MODEL_HAIKU,
+        "model": model or (MODEL_SONNET if sonnet else MODEL_HAIKU),
         "task": task["id"],
         "role": role,
         "prompt": prompt_for(a, task, role, rework, rid),
@@ -510,6 +523,17 @@ def _after_taskgates(a, task, mine, rid, s, last):
     return _disp(a, task, rid, "dev", True, rework=_taskgates_all(a, task, rid, fails))
 
 
+def _extra_round(a, task, mine, rid):
+    """One extra dev round after the last failed review round: one rework file with the verbatim text of every failed review; Opus once REVIEW_EXTRA_OPUS_AFTER Sonnet devs ran."""
+    fails = _failed_review_reports(mine)
+    f = work_path(os.path.join(getattr(a, "dir", "."), WORK_DIR, a.stage), f"reviews-all-{task['id']}-{rid}.md", create=True)
+    write_text(f, "".join(f"## review {i}\n{read_text(e['file'])}\n" for i, e in enumerate(fails, 1)))
+    sonnet_devs = sum(1 for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "dev" and e["model"] == MODEL_SONNET)
+    d = _disp(a, task, rid, "dev", True, rework=f, model=MODEL_OPUS if sonnet_devs >= REVIEW_EXTRA_OPUS_AFTER else None)
+    d["why"] = EXTRA_ROUND_WHY  # the log keeps the reason; _extra_rounds_ran counts these dispatches
+    return d
+
+
 def _after_reviewer(a, task, mine, rid, s, last):
     if last["verdict"] == ESCALATE and not task["review_sonnet"] and not sonnet_review_dispatched(mine):
         return _disp(a, task, rid, "reviewer", True)  # a Haiku reviewer ESCALATE goes straight to the Sonnet reviewer
@@ -517,6 +541,8 @@ def _after_reviewer(a, task, mine, rid, s, last):
         return _plan_fix(a, task, mine, rid, last, why)
     if last["verdict"] in (FAIL, ESCALATE):
         if s.rounds > MAX_ROUNDS - 1:
+            if _extra_rounds_ran(mine) < REVIEW_EXTRA_ROUNDS:
+                return _extra_round(a, task, mine, rid)
             return {"action": "ask_main", "message": f"{task['id']}: review failed {s.rounds} rounds; findings {last['file']}" + hint(a, task["id"])}
         return _disp(a, task, rid, "dev", True, rework=last["file"])  # owner 2026-10-29: Haiku dev+review, one FAIL -> Sonnet dev+review, a second FAIL -> lead
     return None
