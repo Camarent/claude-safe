@@ -12,7 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import testrun
-from pipeline import worktree
+from pipeline import gate_record, worktree
 from pipeline.classify import classify_test_run
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -28,7 +28,36 @@ def box(test_lines, worktrees=False):
     return d
 
 
+def git_box(test_lines):
+    d = box(test_lines)
+    subprocess.run(["git", "init", "-q", d], check=True)
+    return d
+
+
 class TestRun(unittest.TestCase):
+    def test_line_green_on_identical_tree_is_skipped_with_run_id(self):
+        d = git_box("Test: true\n")
+        gate_record.record(d, ["cs-qrun", "--", "true"], 0)
+        run_id = gate_record._entries(gate_record._log_path(d))[-1]["run"]
+        calls = []
+        v, note = testrun.run("s", "task-1", d, runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""))
+        self.assertEqual(v, "DONE")
+        self.assertEqual(calls, [])
+        self.assertIn(f"skipped true: identical passed tree, run {run_id}", note)
+
+    def test_red_record_or_other_tree_runs_the_line(self):
+        d = git_box("Test: true\n")
+        gate_record.record(d, ["true"], 1)  # red run: never a skip
+        calls = []
+        v, _note = testrun.run("s", "task-1", d, runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""))
+        self.assertEqual((v, len(calls)), ("DONE", 1))
+        gate_record.record(d, ["true"], 0)
+        with open(f"{d}/new.txt", "w") as f:  # tree changed after the green record: run again
+            f.write("x")
+        calls.clear()
+        v, _note = testrun.run("s", "task-1", d, runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""))
+        self.assertEqual((v, len(calls)), ("DONE", 1))
+
     def test_green_red_and_none(self):
         d = box("Test: `true`\n")
         self.assertEqual(testrun.run("s", "task-1", d)[0], "DONE")

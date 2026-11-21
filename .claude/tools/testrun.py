@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402
-from pipeline import gitx, linkguard, maincheck  # noqa: E402
+from pipeline import gate_record, gitx, linkguard, maincheck  # noqa: E402
 from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd  # noqa: E402
 from pipeline.plan_files import task_type  # noqa: E402
 from pipeline.util import read_text, work_path  # noqa: E402
@@ -74,8 +74,24 @@ def outside_writes(d, stage, task):
     return "\n".join(n for n in notes if n)
 
 
+def _tree(cwd):
+    """Tree hash of cwd for the gate-run record, or None: a record error never blocks the run."""
+    try:
+        return gate_record.tree_hash(cwd)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return None
+
+
+def _passed(cwd, c, tree):
+    """The green record of Test line c on this tree (skip it), or None: a record error runs the line as before."""
+    try:
+        return gate_record.find_passed(cwd, shlex.split(c), tree)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return None
+
+
 def run(stage, task, d, runner=subprocess.run):
-    """-> (verdict word, note). `runner` is injectable for tests."""
+    """-> (verdict word, note). `runner` is injectable for tests. A Test line already green on the identical tree is skipped, noted with its run id."""
     try:
         cmds = test_lines(Path(d, WORK_DIR, stage, f"{task}.md").read_text(encoding="utf-8", errors="replace"))
     except OSError as e:
@@ -88,7 +104,13 @@ def run(stage, task, d, runner=subprocess.run):
     cwd = workdir(d, stage, task)
     if cwd is None:
         return BLOCKED, "no job worktree for this task: the Test lines would run on the main checkout, so they were not run"
+    tree = _tree(cwd)  # taken once, before any line runs: each line is keyed on the tree the dev left
+    skipped = []
     for c in cmds:
+        hit = _passed(cwd, c, tree) if tree else None
+        if hit:
+            skipped.append(f"skipped {c}: identical passed tree, run {hit['run']}")
+            continue
         try:
             p = runner(shlex.split(c), cwd=cwd, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_S)
         except (OSError, ValueError, subprocess.TimeoutExpired) as e:
@@ -104,7 +126,7 @@ def run(stage, task, d, runner=subprocess.run):
             if p.returncode in BLOCKED_EXIT or "command not found" in full:
                 return BLOCKED, f"`{c}` cannot run (exit {p.returncode}; missing command):\n{out}"
             return FAIL, f"`{c}` exited {p.returncode}:\n{out}"
-    return DONE, f"{len(cmds)} Test line(s) green in {cwd}"
+    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *skipped])
 
 
 def main(argv=None):

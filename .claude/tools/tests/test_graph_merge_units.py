@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import unittest
@@ -580,7 +581,8 @@ class LateTaskBeforeNextWave(Base):
         self.assertEqual((d["task"], d["agent"]), ("merge-w1-late2", "script"))
         self.assertIn("--tasks task-4", d["prompt"])
         self.assertEqual(d["tasks"], ["task-4"])  # logged with the dispatch
-        self.assertNotIn("task-3", d["prompt"])
+        # compare argument tokens, not the line: the worktree path of task-3 also contains "task-3"
+        self.assertNotIn("task-3", shlex.split(d["prompt"]))
 
     def test_a_failed_late_ladder_that_ended_green_does_not_block_the_next_batch(self):
         self.log(
