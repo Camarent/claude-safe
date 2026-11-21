@@ -32,6 +32,8 @@ from .configuration import (
     SEC_AUDIT_WORDS,
     SEC_CODE_EXTS,
     SEVERE_PATTERN,
+    STALE_REPORT_NOTE,
+    STALE_RETRY_STEP,
     TASKS_FILE,
     WORK_DIR,
     allowed,
@@ -139,6 +141,7 @@ def fix_step(a, tasks, sid, reports, what, key, why):
         f"to .work/{S}/TASKS.md in the format it already uses (task numbers after the last existing one, the driver chooses models, every task starts on Haiku), write the task-N.md files, and add ONE line "
         f"`wave {last_wave + 1}: task-a, task-b` (parallel only when they share no paths). Do not touch existing rows. Skip nits. "
         f"If the report shows the tool or environment failed (browser did not start, server unreachable, toolchain missing) and not a defect in the change, plan nothing and reply BLOCKED."
+        + STALE_REPORT_NOTE.format(retry=f"{tool_cmd('orch.py')} retry --stage {S} --step {STALE_RETRY_STEP}")
         + NAV
         + leads_for(a, key, " ".join(read_head(a, os.path.basename(r), 500) for r in reports))
         + tail(a, "{rid}", allowed(DONE, BLOCKED), "a 3-line summary naming the new tasks"),

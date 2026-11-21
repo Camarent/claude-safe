@@ -17,6 +17,7 @@ import testrun  # noqa: E402
 import wt  # noqa: E402
 from pipeline import gitx  # noqa: E402
 from pipeline.configuration import (  # noqa: E402
+    BASE_FLAKE_PREFIX,
     BASE_WHY_BRANCH,
     BASE_WHY_DIRTY,
     BLOCKED,
@@ -24,6 +25,7 @@ from pipeline.configuration import (  # noqa: E402
     DONE,
     FAIL,
     GATE_BASE_CHECK_KEY,
+    GATE_FLAKE_RERUN_KEY,
     GATE_KIND_TASK,
     METRICS_LOG,
     WORK_DIR,
@@ -81,17 +83,23 @@ def _extra(warn, green, env, cwd, git, names=()):
 
 
 def _run_gates(cfg, cmds, cwd, root, env, runner, stage):
-    """-> (results, commands cleared, {red command: why it was not cleared}). The gates run in the job worktree CWD; with `gate_base_check` (default on) a red command that is red on the stage base ROOT too is not this task's failure."""
+    """-> (results, commands cleared, {red command: why it was not cleared}, {flaky command: test ids}). The gates run in the job worktree CWD; with `gate_base_check` (default on) a red command that is red on the stage base ROOT too is not this task's failure; with `gate_flake_rerun` (default on) a red command left over runs once more, unchanged, and one that is green then is a flake."""
     kw = {"runner": runner} if runner else {}
     res = final_check.run_all(cmds, cwd, env, groups=final_check.gate_groups(cfg, cwd), **kw)
-    if not cfg.get(GATE_BASE_CHECK_KEY, True):
-        return res, [], {}
-    problem = _base_problem(cfg, root, stage)
-    base_cmds = set(final_check.commands(cfg, root))
-    if problem:
-        return res, [], final_check.uncleared_reasons(res, [], base_cmds, problem)
-    res, cleared = final_check.clear_base_red(res, root, env, groups=final_check.gate_groups(cfg, root), base_cmds=base_cmds, **kw)
-    return res, cleared, final_check.uncleared_reasons(res, cleared, base_cmds)
+    cleared, why = [], {}
+    if cfg.get(GATE_BASE_CHECK_KEY, True):
+        problem = _base_problem(cfg, root, stage)
+        base_cmds = set(final_check.commands(cfg, root))
+        if problem:
+            why = final_check.uncleared_reasons(res, [], base_cmds, problem)
+        else:
+            res, cleared = final_check.clear_base_red(res, root, env, groups=final_check.gate_groups(cfg, root), base_cmds=base_cmds, **kw)
+            why = final_check.uncleared_reasons(res, cleared, base_cmds)
+    flaky = {}
+    if cfg.get(GATE_FLAKE_RERUN_KEY, True):
+        res, flaky = final_check.rerun_red(res, cwd, env, groups=final_check.gate_groups(cfg, cwd), **kw)
+        why = {c: w for c, w in why.items() if c not in flaky}
+    return res, cleared, why, flaky
 
 
 def _base_problem(cfg, root, stage, git=gitx.try_out):
@@ -117,11 +125,23 @@ def _skip_reason(cfg, d, stage, task, git):
     return "", sha
 
 
-def _gate_text(res, names, cleared, why, root):
-    """The gate report plus one line per command cleared against the stage base and one per red command that was not (and why)."""
+def _flake_line(c, res, names, why):
+    """`base-flake: <failing test ids>` (the command when its output names none) plus WHY it is not the task's."""
+    text = next((t for cmd, _rc, _s, t in res if cmd == c), "")
+    ids = ", ".join(final_check.failing_ids(text)) or c
+    return f"\n{BASE_FLAKE_PREFIX} {ids} (gate {names.get(c, c)}: {why})"
+
+
+def _gate_text(res, names, cleared, why, root, flaky=()):
+    """The gate report plus one line per command cleared against the stage base, one per flaky command, and one per red command that was not cleared (and why)."""
     return (
         final_check.report(res, names)
-        + "".join(f"\ngate {names.get(c, c)}: red on the stage base too ({root}), not counted against this task: {c}" for c in cleared)
+        + "".join(
+            f"\ngate {names.get(c, c)}: red on the stage base too ({root}), not counted against this task: {c}"
+            + _flake_line(c, res, names, "red on the stage base too")
+            for c in cleared
+        )
+        + "".join(_flake_line(c, res, names, "red once, green on an unchanged rerun in the job worktree; not counted against this task") for c in flaky)
         + "".join(f"\ngate {names.get(c, c)}: not cleared against the stage base: {w}" for c, w in why.items())
     )
 
@@ -144,10 +164,10 @@ def run(stage, task, d, runner=None, git=gitx.try_out):
     env = {**os.environ, **test_env(cfg, d)}
     root, watch = repo_dir(d, cfg), cfg.get("gate_watch") or []
     before = gatewatch.snapshot(root, watch)
-    res, cleared, why = _run_gates(cfg, cmds, cwd, root, env, runner, stage)
+    res, cleared, why, flaky = _run_gates(cfg, cmds, cwd, root, env, runner, stage)
     names = final_check.gate_names(cfg)
-    final_check.log_gate_cmds(os.path.join(d, WORK_DIR, stage, METRICS_LOG), GATE_KIND_TASK, res, names, task, cleared)
-    text = _gate_text(res, names, cleared, why, root)
+    final_check.log_gate_cmds(os.path.join(d, WORK_DIR, stage, METRICS_LOG), GATE_KIND_TASK, res, names, task, [*cleared, *flaky])
+    text = _gate_text(res, names, cleared, why, root, flaky)
     green = text.startswith("VERDICT: DONE")
     if green and sha:
         write_text(sha_file(d, stage, task), sha + "\n")

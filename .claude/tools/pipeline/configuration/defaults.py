@@ -58,6 +58,13 @@ PROJECT_DEFAULTS: dict = {
     "sec_audit_paths": SEC_AUDIT_PATHS,  # see above; a project list replaces it
     "repo": None,  # repo folder below the workspace; None = autodetect the one that holds AUDIT.md
     "repos": None,  # all repo folders below the workspace for the phase digest (git diff --stat each); None = just `repo`
+    "test_command_hint": None,  # the project's real test command, e.g. a wrapper that sets up the environment; a task `Test:` line that runs bare pytest/python -m pytest gets a `testcmd:` warning naming it; None = take the first `gates` command that runs pytest behind a wrapper
+    "scope_guard": "strict",  # off | warn | strict: files a job changed outside the task's Predicted paths (and not named in the task text) go to the reviewer brief; strict = must-address, FAIL unless the task text justifies them; warn = mention only
+    "scope_allow": [
+        "tests",
+        "docs",
+        "notes",
+    ],  # kinds of outside file that are no finding: tests (path holds a predicted file's name stem), docs (under docs_dir, or .md), notes (.notes/); [] = every outside file counts
     "audit_file": "AUDIT.md",
     "nested_repo_excludes": [],  # globs (repo-relative) written to every nested git repo's .git/info/exclude and .gitignore by prepare-repo, e.g. ["materials/", "sources/*/pages/"]; [] = none
     "nested_repo_dir_prefix": "",  # prefix (ends with "/") of the dirs that are nested repos a job worktree cannot hold, e.g. "workspace/"; a Predicted path or Test text naming one is a plan problem (only a lead step, `owner: ops`, may name it) and a task naming one without a git repo stops; "" = rule off
@@ -76,6 +83,7 @@ PROJECT_DEFAULTS: dict = {
     "quality_tools": None,  # {".ext": ["tool", ...]} for the advisory quality run (audit/qualityrun.py); None = QUALITY_TOOLS. Python/C++ tools run only when listed here, e.g. {".py": ["ruff", "mypy"], ".cpp": ["clang-tidy", "cppcheck"]}
     "prereview_skip": PREREVIEW_SKIP_REVIEWER,  # a skipped local pre-review (diff too big, no diff, server problem): "reviewer" = the paid reviewer reviews, the skip is logged; "ask_main" = the lead decides
     "max_tasks": 30,  # most tasks one stage may plan that have not started; more work goes into phases (Plan.md) or a second stage. Tasks that have started and fix tasks of a fix round do not count
+    "gate_flake_rerun": True,  # a task gate run that is red reruns its red commands once, unchanged, in the job worktree; a command green on the rerun is a flake, not the task's failure (the report names it `base-flake: <test ids>`); False = every red counts
     "gate_base_check": True,  # a task gate run that is red also runs its red commands on the stage base (the main checkout); a command red there too is not counted against the task (the report names it); False = every red counts
     "gate_watch": [],  # folders below the main checkout (e.g. ["workspace/progress"]) a task gate must not change: the gate report warns, naming the changed paths and the tests that mention them; [] = off
     "preflight_gates": True,  # plan.py run / wave.py run / wave.py feature run the gates on the base first and refuse a red base; false = no check
@@ -86,5 +94,6 @@ PROJECT_DEFAULTS: dict = {
         "ffprobe",
     ],  # binaries a red-base failure names when its output has MISSING_BINARY_MARK (the red-base message adds a line listing them)
 }
+GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above

@@ -7,7 +7,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from . import linkguard
+from . import linkguard, maincheck
 from .configuration import (
     ENV_NO_LEADS,
     LOCAL_FIND_TIMEOUT_S,
@@ -26,6 +26,7 @@ from .configuration import (
     work_branch,
 )
 from .plan_files import paths_in, task_affected_tests
+from .scopeguard import scope_note
 from .util import TOOLS, read_text, run_py, swallowed, work_path, write_text
 from .ux_flows import flows_rel, variables
 from .verdicts import ROLES
@@ -258,6 +259,7 @@ def _where(a, task):
     except RuntimeError as e:  # no fallback to the main checkout: the dev stops and the wave hands the task back to the lead
         return f"The job worktree could not be created: {str(e)[:400]}. Edit NOTHING. Reply at once with VERDICT: BLOCKED and that reason."
     if info:
+        maincheck.snapshot(getattr(a, "dir", "."), a.stage, task["id"])  # a dev that writes to the main checkout is named after its run
         linkguard.snapshot(getattr(a, "dir", "."), a.stage, task["id"])  # the dev starts now: what its linked repos hold is not its doing
     if not info:
         return f"Work in place on `{work_branch(project(getattr(a, 'dir', '.')), getattr(a, 'feature', None) or getattr(a, 'stage', ''))}` (no job branch) unless the task file names a branch; commit only after the tests pass."
@@ -366,7 +368,7 @@ def prompt_for(a, task, role, rework_file, rid):
             (f" Rework: fix the findings in {rework_file} first." if rework_file else "") + NO_CHECKOUT_NOTE + gates_note(a) + affected_note(t, AFFECTED_DEV)
         )
         return f"Stage {a.stage}: take the task in {t} (read it there, not in the worktree; index .work/{a.stage}/TASKS.md).{extra} Mark nothing yourself. {_where(a, task)}{out}"
-    return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{review_note(a, task['id'])}{out}"
+    return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"
 
 
 def testrun_on(a):

@@ -29,8 +29,10 @@ from .configuration import (
     PUBLISH_PAGE,
     PUBLISH_RE,
     REQUEST_FILE,
+    SCOPE_TEST_RE,
     SHARED_MIN,
     TASKS_FILE,
+    TESTCMD_WARN_PREFIX,
     WEBTEST_WARN_PREFIX,
     WORK_DIR,
     ConfigError,
@@ -85,6 +87,7 @@ from .plan_rules import (
     protected_gates,
     release_flag_problems,
 )
+from .plan_testcmd import check_bare_test_runner
 from .shellwords import split_commands
 from .stagedir import workspace_of
 from .tasks import parse_flags, parse_tasks
@@ -134,7 +137,7 @@ def _repo_root(d):
     return repo_dir(top, project(top))
 
 
-TEST_FILE_RE = re.compile(r"(?i)(?:^|[/._-])(?:tests?|spec)(?:[/._-]|$)")
+TEST_FILE_RE = re.compile(SCOPE_TEST_RE)
 SYMBOL_RE = re.compile(r"`([A-Za-z_][\w]{3,})`")
 SKIP_DIRS = {".git", "node_modules", "target", WORK_DIR, "dist", "__pycache__"}
 
@@ -350,6 +353,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_repo_prefix(d, e["id"], repo)
         + check_warning_count(d, e["id"])
         + check_denied_commands(d, e["id"], _preflight_denied(d))
+        + check_bare_test_runner(d, e["id"], _workspace(d))
         + check_work_paths(d, e["id"])
         + check_task_size(d, e["id"])
         + check_type_inputs(d, e["id"], repo, _workspace(d))
@@ -603,6 +607,7 @@ def errors_of(probs):
                 NEG_WARN_PREFIX,
                 PREREQ_WARN_PREFIX,
                 WEBTEST_WARN_PREFIX,
+                TESTCMD_WARN_PREFIX,
             )
         )
     ]

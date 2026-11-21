@@ -4,6 +4,7 @@ import os
 
 from pipeline import cmdnames
 
+from .layout import WORK_DIR
 from .paths import _cs_index
 
 # limits
@@ -189,6 +190,24 @@ ADD_REPO_CMD = (
 )
 LINK_BASE_FILE = "linkbase.json"  # per job (next to .branch): the state of the linked main repos when the dev started
 LINK_GIT_MERGE_FILES = ("MERGE_HEAD", "SQUASH_MSG")  # a repo with one of these in its git dir is mid-merge: its staged changes are not a dev's write
+MAIN_BASE_FILE = "mainbase.json"  # per job (next to .branch): the dirty state of the main checkout when the dev started
+MAIN_GUARD_IGNORE = (
+    ".wt",
+    WORK_DIR,
+)  # top-level folders of the main checkout that are the pipeline's own (job worktrees, stage work files), never a dev's write
+MAIN_WRITE_NOTE = (
+    "FAIL: path outside this task's worktree: files in the MAIN checkout changed or appeared while you worked ({files}, +{more} more). "
+    "Nothing was deleted or reverted. The main checkout must stay clean or the merge is blocked. Copy what you need into your own job worktree, "
+    "then remove those files from the main checkout with `git -C <main checkout> checkout -- <file>` (tracked) or `rm` (new). "
+    "Always use paths relative to your worktree, never an absolute path into the main checkout."
+)  # the FAIL note maincheck.check returns
+BASE_FLAKE_PREFIX = "base-flake:"  # report line for a gate failure that is not the task's (red on the stage base too, or green on an unchanged rerun): `base-flake: <failing test ids>`
+FAIL_ID_RES = (  # regexes (group 1 = test id) that read the failing test ids out of a gate's output: pytest summary, unittest header, a plain `FAIL name` line
+    r"(?m)^FAILED\s+(\S+)",
+    r"(?m)^(?:FAIL|ERROR):\s+(\S+(?: \([\w.]+\))?)",
+    r"(?m)^FAIL\s+(\S+)",
+)
+FAIL_IDS_SHOWN = 10  # failing test ids named in a base-flake line
 PRE_EXISTING_RED = "pre-existing red: <command>"  # what a dev reports for a gate that is red on the base too
 LINK_FIX = (
     "If the task needs that repo, run `{add_repo}` (it gives your job worktree a real worktree of it; edit and commit there) and list the files under `Extra files:`; "
@@ -265,3 +284,9 @@ GIT_MIN_VERSION = (2, 38)  # `git merge-tree --write-tree` (pipeline/pr_ops.py `
 PUSH_ERR_HEAD = 200  # chars from the start of a failed push's output kept in the Blocked message (pipeline/pr_ops.py) ...
 PUSH_ERR_TAIL = 600  # ... and from its end
 SCRIPT_OUTPUT_MAX = 3000  # chars of a script step's output kept in its report (the VERDICT first line is always kept)
+
+STALE_REPORT_NOTE = (
+    " First compare the failing report's head (the commit it names, or its timestamp) with the stage branch HEAD now:"
+    " when the stage moved on since the report, the report is old, so plan nothing and request a rerun with `{retry}`, then reply DONE, not BLOCKED."
+)
+STALE_RETRY_STEP = "final-test"  # the step a stale failing report is rerun by

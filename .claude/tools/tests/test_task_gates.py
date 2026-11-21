@@ -140,7 +140,9 @@ class TaskGatesScriptTest(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.d, True)
-        Path(self.d, "pipeline.json").write_text(json.dumps({"worktrees": True, "gates": [{"name": "lint", "cmd": "mylint"}]}), encoding="utf-8")
+        Path(self.d, "pipeline.json").write_text(
+            json.dumps({"worktrees": True, "gate_flake_rerun": False, "gates": [{"name": "lint", "cmd": "mylint"}]}), encoding="utf-8"
+        )
         self.ran: list = []
         self.base_rc = 0  # result on the stage base (the main checkout, self.d)
         self.base_ok = True  # the main checkout is a fair base (clean, on the stage branch)
@@ -196,6 +198,52 @@ class TaskGatesScriptTest(unittest.TestCase):
         self.assertIn("green on the stage base", text)
         _v, text = self.run_it(rc=124, sha="s3")
         self.assertIn("exit 124 (timeout or cannot run) is never cleared", text)
+
+    def set_cfg(self, **kw):
+        Path(self.d, "pipeline.json").write_text(json.dumps({"worktrees": True, "gates": [{"name": "lint", "cmd": "mylint"}], **kw}), encoding="utf-8")
+
+    def test_red_that_is_green_on_an_unchanged_rerun_is_a_flake_not_the_tasks_failure(self):
+        self.set_cfg()
+        outputs = iter([(1, "FAILED tests/test_a.py::test_x - boom\n"), (0, "ok\n")])
+
+        def runner(cmd, **kw):
+            self.ran.append(kw["cwd"])
+            rc, out = next(outputs) if kw["cwd"] == "/job" else (0, "ok")
+            return SimpleNamespace(returncode=rc, stdout=out, stderr="")
+
+        self.rc = 1
+        with (
+            mock.patch.object(taskgates.testrun, "workdir", return_value="/job"),
+            mock.patch.object(taskgates, "content_sha", return_value="aaaa"),
+            mock.patch.object(taskgates, "no_change", return_value=False),
+            mock.patch.object(taskgates, "_base_problem", return_value=""),
+        ):
+            v, text = taskgates.run("s", "task-1", self.d, runner=runner)
+        self.assertEqual(v, "DONE", text)
+        self.assertIn("base-flake: tests/test_a.py::test_x", text)
+        self.assertEqual(self.ran.count("/job"), 2)  # once more, unchanged
+
+    def test_red_on_both_runs_stays_the_tasks_failure_and_the_rerun_is_one(self):
+        self.set_cfg()
+        v, text = self.run_it(rc=1)
+        self.assertEqual(v, "FAIL", text)
+        self.assertNotIn("base-flake", text)
+        self.assertEqual(self.ran.count("/job"), 2)
+
+    def test_rerun_is_off_by_setting_and_never_for_timeouts(self):
+        v, _ = self.run_it(rc=1)  # setUp config: gate_flake_rerun false
+        self.assertEqual((v, self.ran.count("/job")), ("FAIL", 1))
+        self.set_cfg()
+        self.ran.clear()
+        v, _ = self.run_it(rc=124, sha="s9")
+        self.assertEqual((v, self.ran.count("/job")), ("FAIL", 1))
+
+    def test_base_red_line_names_the_failing_tests(self):
+        self.set_cfg(gate_flake_rerun=False)
+        self.base_rc = 1
+        _v, text = self.run_it(rc=1)
+        self.assertIn("red on the stage base too", text)
+        self.assertIn("base-flake: mylint", text)  # no test id in the output: the command is named
 
     def test_command_missing_on_the_base_is_named(self):
         with mock.patch.object(taskgates.final_check, "commands", side_effect=lambda cfg, repo: ["mylint"] if repo == "/job" else []):
@@ -310,7 +358,7 @@ class TaskGatesScriptTest(unittest.TestCase):
 
     def test_gate_base_check_off_keeps_every_red(self):
         Path(self.d, "pipeline.json").write_text(
-            json.dumps({"worktrees": True, "gate_base_check": False, "gates": [{"name": "lint", "cmd": "mylint"}]}), encoding="utf-8"
+            json.dumps({"worktrees": True, "gate_base_check": False, "gate_flake_rerun": False, "gates": [{"name": "lint", "cmd": "mylint"}]}), encoding="utf-8"
         )
         self.base_rc = 1
         v, _ = self.run_it(rc=1)

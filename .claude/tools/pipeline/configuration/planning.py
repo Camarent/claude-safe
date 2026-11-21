@@ -129,6 +129,28 @@ BARE_TAG_RE = (
 WEBTEST_WARN_PREFIX = "webtest:"  # warning prefix of plan_rules.check_webtest_type; plan_check.errors_of never fails on it
 PREREQ_WARN_PREFIX = "prereq:"  # warning prefix of plan_rules.check_unlisted_prereq; plan_check.errors_of never fails on it
 AFFECTED_WARN_PREFIX = "tests-use:"  # warning prefix of plan_rules.check_affected_tests; plan_check.errors_of never fails on it
+SCOPE_MODES = (
+    "off",
+    "warn",
+    "strict",
+)  # pipeline.json `scope_guard`: off = no check; warn = the reviewer is told of files outside the predicted paths; strict = the reviewer must fail the task unless its text justifies each one
+SCOPE_ALLOW_ALL = (
+    "tests",
+    "docs",
+    "notes",
+)  # pipeline.json `scope_allow`: kinds of file outside the predicted paths that are no finding (tests: a test file whose path holds a predicted file's stem; docs: under `docs_dir` or a .md file; notes: under SCOPE_NOTES_DIR)
+SCOPE_NOTES_DIR = ".notes"  # folder of project notes (kind `notes` of `scope_allow`)
+SCOPE_STEM_MIN = 3  # a predicted file's name stem shorter than this ties no test file to it
+SCOPE_TEST_RE = r"(?i)(?:^|[/._-])(?:tests?|spec)(?:[/._-]|$)"  # a test path
+SCOPE_SHOWN = 12  # files named in the scope note
+SCOPE_STRICT_NOTE = (
+    " Scope check (must address): the job changed files outside the task's predicted paths and the task text does not name them: {files}. "
+    "Verdict FAIL unless the task text justifies each file; name every such file in your report."
+)
+SCOPE_WARN_NOTE = " Scope note: the job changed files outside the task's predicted paths and the task text does not name them: {files}. Name them in your report; this alone is not a FAIL."
+TESTCMD_WARN_PREFIX = "testcmd:"  # warning prefix of plan_testcmd.check_bare_test_runner; plan_check.errors_of never fails on it
+TESTCMD_HINT_KEY = "test_command_hint"  # pipeline.json: the project's real test command (what a `Test:` line should run instead of bare pytest); when unset a `gates` command that runs pytest through a wrapper is used
+BARE_RUNNER_RE = r"^(?:pytest|py\.test|(?:python[\d.]*)(?:\s+-\w+)*\s+-m\s+pytest)(?:\s|$)"  # a command that starts pytest with no wrapper
 AFFECTED_MIN_STEM = 4  # a file name stem shorter than this (`io`, `app`) matches too much to say which tests use it
 AFFECTED_MAX_TESTS = 10  # more tests than this mention one name: it is too common to say which assert the old behaviour, no warning
 AFFECTED_CODE_EXTS = (

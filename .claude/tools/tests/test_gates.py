@@ -65,6 +65,17 @@ class DriftTest(unittest.TestCase):
     def test_run_lines(self):
         self.assertEqual(ci_run_lines(CI), ["npm ci", "npm run lint", "echo hi", "npm test", "make build"])
 
+    def test_multiline_shell_is_not_split_into_fragments(self):
+        ci = (
+            "steps:\n  - run: |\n      # comment line\n      npm run lint\n"
+            '      if [ -n "$X" ]; then\n        echo set\n      else\n        echo unset\n      fi\n'
+            "      npm test \\\n        && make build\n"
+            "      cat <<EOF\n      body line\n      EOF\n"
+        )
+        self.assertEqual(ci_run_lines(ci), ["npm run lint", "npm test && make build", "cat <<EOF"])
+        d = make({"gates": G}, ci)
+        self.assertEqual(drift(d, project(d)), ["CI runs `cat <<EOF` (ci.yml) but no gate covers it"])
+
     def test_clean_when_gates_cover_ci(self):
         d = make({"gates": G}, CI)
         self.assertEqual(drift(d, project(d)), [])
