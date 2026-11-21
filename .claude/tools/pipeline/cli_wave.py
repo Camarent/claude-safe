@@ -290,6 +290,9 @@ ASK_STEP_RE = re.compile(r"^(?P<step>[\w.-]+): (?P<cause>.+)$")  # "merge-w1: FA
 ASK_PATH_RE = re.compile(r"\S+\.md\b")  # a report file named in the ask
 ASK_CMD_RE = re.compile(r"`([^`]*\bretry --step \S+)`")  # a command the ask already suggests
 ASK_TAIL_LINES = 5  # last lines of the named report shown as the error tail
+ASK_REVIEW_MARK = "review failed"  # an ask cause that carries the reviewer's findings
+ASK_FINDINGS_LINES = 30  # report lines shown for such an ask (the findings and their fixes)
+ASK_NOTE_HINT = ' --note "<quote the reviewer\'s exact fix text>"'  # a retry after two failed reviews must carry the fix text
 
 
 def _ask_entries(msg):
@@ -310,9 +313,10 @@ def _ask_entries(msg):
 
 def _ask_tail(line):
     """Last lines of the report file the ask names (first one that exists), or a note when it names none."""
+    count = ASK_FINDINGS_LINES if ASK_REVIEW_MARK in line else ASK_TAIL_LINES
     for path in ASK_PATH_RE.findall(line):
         if os.path.isfile(path):
-            tail = [x for x in read_text(path).splitlines() if x.strip()][-ASK_TAIL_LINES:]
+            tail = [x for x in read_text(path).splitlines() if x.strip()][-count:]
             return f"error tail, {path}:\n" + "\n".join(f"    {x}" for x in tail)
     return "error tail: none, the ask names no report file"
 
@@ -331,6 +335,8 @@ def _ask_text(a, msg):
             suggested = f"`{tool_cmd('orch.py')} retry --step {step}`"
         else:
             suggested = f"`{tool_cmd('wave.py')} run --stage {a.stage}` after the fix"
+        if ASK_REVIEW_MARK in cause and step:
+            suggested = f"`{tool_cmd('orch.py')} retry --step {step}{ASK_NOTE_HINT}`"
         out.append(f"  suggested: {suggested}")
     return "\n".join(out)
 

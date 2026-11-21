@@ -94,6 +94,10 @@ class T(unittest.TestCase):
     def test_no_budget(self):
         self.assertTrue(any("budget" in m for m in brieflint.lint(GOOD.replace("turns <= 25", ""))))
 
+    def test_pattern_without_line_names_fix(self):
+        msgs = brieflint.lint(GOOD.replace("web/a.js:24", "x") + "\nPattern: web/b.js\n")
+        self.assertTrue(any("`Pattern: web/b.js` has no line" in m and "grep -n" in m and "web/b.js:<line>" in m for m in msgs))
+
     def test_no_anchor(self):
         self.assertTrue(any("anchor" in m for m in brieflint.lint(GOOD.replace("web/a.js:24", "x"))))
 

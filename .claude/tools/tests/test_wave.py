@@ -134,6 +134,15 @@ class WaveTest(unittest.TestCase):
         self.assertIn("suggested: `", text.split("merge-w2:")[1])  # no retry command named: a default one is suggested
         self.assertIn("error tail: none, the ask names no report file", text)
 
+    def test_review_failed_ask_shows_findings_and_note_hint(self):
+        rep = f"{self.d}/report-review.md"
+        lines = ["VERDICT: FAIL"] + [f"W{i}: fix text {i}" for i in range(1, 11)]
+        Path(rep).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        msg = f"task-1: review failed 2 rounds; findings {rep}; fix the cause, then `orch.py retry --stage s --step task-1` (or `skip`)"
+        text = cli_wave._ask_text(type("A", (), {"stage": "s"})(), msg)
+        self.assertIn("W1: fix text 1", text)  # beyond the 5-line tail
+        self.assertIn('--step task-1 --note "<quote the reviewer\'s exact fix text>"', text)
+
     def test_start_clears_stale_blocked_file(self):
         Path(f"{self.w}/BLOCKED.md").write_text("old block\n", encoding="utf-8")
         self.script = [self.disp("a1", "a2"), {"action": "done", "message": "ok"}]

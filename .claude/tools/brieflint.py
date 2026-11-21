@@ -93,6 +93,14 @@ def _runner_problems(text):
     return p
 
 
+def _anchor_problem(text):
+    """The no-anchor message; names the `Pattern:` path that lacks its line, with the grep that finds it."""
+    m = re.search(r"(?im)^\W*pattern:\s*`?([\w./-]+\.\w+)`?\s*$", text)
+    if not m:
+        return "no file:line anchor (agent will explore; paste path:line)"
+    return f"no file:line anchor: `Pattern: {m[1]}` has no line; find it with `grep -n <symbol> {m[1]}` and write `Pattern: {m[1]}:<line>`"
+
+
 def _brief_problems(text):
     """Problems with the brief's shape: predicted paths, Done line, file:line anchor, absolute cd, owner cite without a path."""
     p = []
@@ -101,7 +109,7 @@ def _brief_problems(text):
     if not re.search(r"(?i)\bdone( when)?\b\s*:", text):
         p.append('no "Done:" criteria line')
     if not re.search(r"[\w./-]+\.\w+:\d+", text):
-        p.append("no file:line anchor (agent will explore; paste path:line)")
+        p.append(_anchor_problem(text))
     if re.search(r"(?<![\w.])cd /(?!root/\.claude)\S+", text):
         p.append("absolute cd in command (use paths relative to repo root)")
     if any(OWNER_CITE_RE.search(ln) and not re.search(r"[\w./-]+\.\w+", ln) for ln in text.splitlines()):
