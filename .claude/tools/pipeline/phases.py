@@ -57,6 +57,7 @@ from .configuration import (
     tool_cmd,
     ui_paths,
     webtest_model,
+    webtest_tools_missing,
 )
 from .phase_audit import DEFAULT_EVERY, audit_due
 from .plan_files import acceptance_items, is_finish_phase, task_paths
@@ -447,6 +448,22 @@ def _split_fix_tasks(evs, tasks):
 
 def _web_test_phases(a, cfg, tasks, evs):
     """Browser check in batches, then one fix round for the FAILs, one re-check of every batch that failed or stayed unverified, and a check of the tasks the fix round added."""
+    if webtest_tools_missing(
+        cfg
+    ):  # no browser tools in headless sessions: record the skip visibly (UNVERIFIED-WEB), do not dispatch a session that can only BLOCK
+        ids = ", ".join(i for b in _ui_batches(a, cfg, tasks) for i in b)
+        yield [
+            step(
+                WEBTEST_STEP,
+                "script",
+                None,
+                f"{tool_cmd('ops_steps.py')} webskip --dir {shlex.quote(os.path.abspath(a.dir))} --stage {a.stage} --ids {shlex.quote(ids)}",
+                {DONE},
+                None,
+                "no browser tools in headless sessions (pipeline.json webtest_tools_available false): the browser check is recorded as skipped (UNVERIFIED-WEB), not run",
+            )
+        ]
+        return
     orig, added = _split_fix_tasks(evs, tasks)
     batches = _ui_batches(a, cfg, orig)
     for k, ids in enumerate(batches):

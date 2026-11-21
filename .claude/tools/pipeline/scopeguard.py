@@ -18,6 +18,7 @@ from .configuration import (
     project,
     work_branch,
 )
+from .generated import generated_among, marker
 from .plan_files import paths_in
 from .util import read_text
 from .worktree import _base_branch, _parts, _predicted, git
@@ -37,21 +38,27 @@ def _allowed(path, kinds, predicted, docs_dir):
     return "notes" in kinds and path.startswith(SCOPE_NOTES_DIR + "/")
 
 
-def unplanned(changed, predicted, text, kinds, docs_dir):
-    """-> the CHANGED paths that are outside PREDICTED, not named in the task TEXT and not of an allowed kind (KINDS, see `scope_allow`)."""
-    return [p for p in changed if not _predicted(p, predicted, "") and p not in text and not _allowed(p, kinds, predicted, docs_dir)]
+def unplanned(changed, predicted, text, kinds, docs_dir, generated=()):
+    """-> the CHANGED paths that are outside PREDICTED, not named in the task TEXT and not of an allowed kind (KINDS, see `scope_allow`). A path in GENERATED (a generated file, see generated.py) is no finding while a predicted source file changed: it is the generator's output."""
+    source_changed = any(_predicted(p, predicted, "") for p in changed if p not in generated)
+    return [
+        p
+        for p in changed
+        if not _predicted(p, predicted, "") and p not in text and not _allowed(p, kinds, predicted, docs_dir) and not (p in generated and source_changed)
+    ]
 
 
-def _changed(a, task_id):
-    """-> workspace-relative paths changed on the job branch (every repo of the job), [] when there is no job."""
+def _changed(a, task_id, rx=None):
+    """-> (workspace-relative paths changed on the job branch (every repo of the job), those of them that are generated files per regex RX), ([], []) when there is no job."""
     d = getattr(a, "dir", ".")
     cfg, branch, parts = _parts(d, a.stage, task_id)
     want = work_branch(cfg, a.stage)
-    out = []
+    out, gen = [], []
     for rel, r, w in parts:
-        names = git(w, "diff", "--name-only", f"{_base_branch(r, want)}...{branch}", check=False).split("\n")
-        out += [os.path.join(rel, n) if rel else n for n in names if n]
-    return out
+        names = [n for n in git(w, "diff", "--name-only", f"{_base_branch(r, want)}...{branch}", check=False).split("\n") if n]
+        out += [os.path.join(rel, n) if rel else n for n in names]
+        gen += [os.path.join(rel, n) if rel else n for n in generated_among(w, names, rx)] if rx else []
+    return out, gen
 
 
 def scope_note(a, task_id):
@@ -67,7 +74,8 @@ def scope_note(a, task_id):
         return ""  # no prediction, nothing to compare with
     kinds = [k for k in (cfg.get("scope_allow") or ()) if k in SCOPE_ALLOW_ALL]
     try:
-        extra = unplanned(_changed(a, task_id), predicted, text, kinds, str(cfg.get("docs_dir") or "docs"))
+        changed, gen = _changed(a, task_id, marker(d))
+        extra = unplanned(changed, predicted, text, kinds, str(cfg.get("docs_dir") or "docs"), gen)
     except (RuntimeError, OSError):
         return ""
     if not extra:

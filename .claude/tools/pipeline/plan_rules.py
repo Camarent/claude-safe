@@ -24,6 +24,7 @@ from .configuration import (
     DONE_WHEN_EXTS,
     DRYRUN_FIELD,
     DRYRUN_FLAGS,
+    GENERATED_WARN_PREFIX,
     NEG_GREP_RE,
     NEG_WARN_PREFIX,
     OUTPUTS_FIELD,
@@ -40,7 +41,9 @@ from .configuration import (
     WEBTEST_WARN_PREFIX,
     WORK_DIR,
 )
+from .generated import generated_among, marker
 from .plan_files import PATH_FILE, acceptance_items, paths_in, task_type
+from .stagedir import workspace_of
 from .util import read_text
 from .worktree import nested_repo_of, nested_repos
 
@@ -117,6 +120,25 @@ def check_webtest_type(d, tid):
             f"{WEBTEST_WARN_PREFIX} {tid}: says {m[0]!r} but is not `Type: webtest`: the driver would give it to a dev, who cannot drive a browser; add the header line `Type: webtest`"
         ]
     return []
+
+
+def _tracked(repo, rels):
+    """-> the paths of RELS that git tracks in REPO; [] when REPO is no git work tree."""
+    try:
+        r = gitx.run(repo, "ls-files", "-z", "--", *rels)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [f for f in r.stdout.split("\0") if f] if not r.returncode else []
+
+
+def check_generated_paths(d, tid, repo):
+    """`generated:` warning (never fails a check): Predicted paths names a tracked file whose header says it is generated (setting `generated_marker`). The dev must regenerate it with its generator, not edit it by hand; list the source file instead."""
+    rels = [p for p in paths_in(read_text(os.path.join(d, tid + ".md"))) if not p.endswith("/")]
+    hits = generated_among(repo, _tracked(repo, rels), marker(workspace_of(d)))
+    return [
+        f"{GENERATED_WARN_PREFIX} {tid}: Predicted paths lists generated file {h}: list its source instead; the dev regenerates it with the generator named in its header"
+        for h in hits
+    ]
 
 
 def _is_test_path(path):

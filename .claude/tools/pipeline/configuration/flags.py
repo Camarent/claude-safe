@@ -146,6 +146,26 @@ def ux_flows(cfg=None):
     return str((cfg or {}).get(UX_FLOWS_KEY) or "")
 
 
+WEBTEST_REQUIRES_KEY = "webtest_requires_tools"  # pipeline.json: tool-name prefixes a headless session needs for the browser check (list; [] or false = no check, the step always runs)
+WEBTEST_AVAILABLE_KEY = "webtest_tools_available"  # pipeline.json: false where no browser MCP server exists for headless sessions: the browser check is then recorded as skipped (UNVERIFIED-WEB), never run
+WEBTEST_TOOL_PREFIXES = ("mcp__chrome-devtools",)  # default of `webtest_requires_tools`
+WEBTEST_SKIP_MARK = "UNVERIFIED-WEB"  # first word of the visible line a skipped browser check leaves in its report, the retro digest and the PR body
+WEBTEST_SKIP_LINE = (
+    WEBTEST_SKIP_MARK
+    + ": skipped: no browser tools ({tools}) in headless sessions; the UI of tasks {ids} was not checked in a browser. Check it by hand or set `"
+    + WEBTEST_AVAILABLE_KEY
+    + "` true where a browser MCP exists."
+)
+
+
+def webtest_tools_missing(cfg=None):
+    """-> the tool-name prefixes the browser check needs that headless sessions do not have, [] when it can run. The code cannot see the session's tools, so the owner states it: `webtest_tools_available` false means none are there; `webtest_requires_tools` [] switches the check off."""
+    cfg = cfg or {}
+    req = cfg.get(WEBTEST_REQUIRES_KEY, WEBTEST_TOOL_PREFIXES)
+    need = [str(x) for x in req] if isinstance(req, (list, tuple)) else []
+    return [] if cfg.get(WEBTEST_AVAILABLE_KEY, True) is not False else need
+
+
 def webtest_model(cfg=None):
     """-> model of the final browser check: cfg `webtest_model` or WEBTEST_MODEL."""
     return str((cfg or {}).get(WEBTEST_MODEL_KEY) or WEBTEST_MODEL)
