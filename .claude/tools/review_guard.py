@@ -151,7 +151,13 @@ def malformed(data):
 
 
 def outside(why_path, root):
-    return f"Reviewer sessions may write only inside the job worktree {root} or the stage scratch dir (env {ENV_SCRATCH_DIR}); {why_path} is outside both. Edit the job worktree only, never the main checkout or another folder."
+    s = scratch_dir(root)
+    where = (
+        f"the stage scratch dir {s} (env {ENV_SCRATCH_DIR} or {SCRATCH_ENV})"
+        if s
+        else f"the stage scratch dir (env {ENV_SCRATCH_DIR} or {SCRATCH_ENV}; none set)"
+    )
+    return f"Reviewer sessions may write only inside the job worktree {root} or {where}; {why_path} is outside both. Write scratch files under {s or 'the stage scratch dir'}; edit the job worktree only, never the main checkout or another folder."
 
 
 def main_checkout_why(path, cwd):
@@ -205,10 +211,9 @@ def report_target(tok, cwd):
 
 
 def in_scratch_write(real, root):
-    """True when REAL (already resolved) is under the stage scratch dir (env ENV_SCRATCH_DIR); an unset or root dir, or one holding the job worktree, allows nothing."""
-    s = os.environ.get(ENV_SCRATCH_DIR, "")
-    s = os.path.realpath(s) if s else ""
-    return s not in ("", os.sep) and not under(root, s) and under(real, s)
+    """True when REAL (already resolved) is under the stage scratch dir (scratch_dir); an unset or root dir, or one holding the job worktree, allows nothing."""
+    s = scratch_dir(root)
+    return bool(s) and under(real, s)
 
 
 def moves_git(args, i):
@@ -326,17 +331,25 @@ def cd_target(args, cwd):
     return resolve(args[0], cwd)
 
 
-def scratch_dir():
-    """-> the real path of the agent scratch dir (env SCRATCH_ENV), or '' when unset or the filesystem root (too broad to trust)."""
-    d = os.environ.get(SCRATCH_ENV, "")
+def real_scratch(d, root):
+    """-> the real path of scratch dir D, or '' when D is empty, the filesystem root, or holds the job worktree ROOT (too broad to trust)."""
     real = os.path.realpath(d) if d else ""
-    return "" if real in ("", os.sep) else real
+    return "" if real in ("", os.sep) or under(root, real) else real
 
 
-def in_scratch(tok, cwd):
-    """True when TOK resolves (symlinks and `..` resolved) under the scratch dir; no variables, globs or substitutions."""
-    s = scratch_dir()
-    return bool(s) and not re.search(r"[$`*?]", tok) and under(resolve(tok, cwd), s)
+def scratch_dir(root):
+    """-> the real stage scratch dir for redirects and Edit/Write: env ENV_SCRATCH_DIR when set (even empty), else SCRATCH_ENV (TMPDIR)."""
+    val = os.environ[ENV_SCRATCH_DIR] if ENV_SCRATCH_DIR in os.environ else os.environ.get(SCRATCH_ENV, "")
+    return real_scratch(val, root)
+
+
+def in_scratch(tok, cwd, root):
+    """True when TOK resolves (symlinks and `..` resolved) under the stage scratch dir or under TMPDIR, where mktemp writes; no variables, globs or substitutions."""
+    if re.search(r"[$`*?]", tok):
+        return False
+    real = resolve(tok, cwd)
+    dirs = (scratch_dir(root), real_scratch(os.environ.get(SCRATCH_ENV, ""), root))
+    return any(s and under(real, s) for s in dirs)
 
 
 def mktemp_verdict(args, cwd, root):
@@ -349,7 +362,7 @@ def mktemp_verdict(args, cwd, root):
             targets.append(a.split("=", 1)[1])
         elif not a.startswith("-") and "/" in a:
             targets.append(a)
-    bad = [t for t in targets if not (target_ok(t, cwd, root) or in_scratch(t, cwd))]
+    bad = [t for t in targets if not (target_ok(t, cwd, root) or in_scratch(t, cwd, root))]
     return outside(f"`mktemp {bad[0]}`", root) if bad else ""
 
 
