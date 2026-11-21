@@ -4,6 +4,7 @@ import os
 
 from pipeline import cmdnames
 
+from .layout import WORK_DIR
 from .paths import _cs_index
 
 # limits
@@ -189,6 +190,14 @@ ADD_REPO_CMD = (
 )
 LINK_BASE_FILE = "linkbase.json"  # per job (next to .branch): the state of the linked main repos when the dev started
 LINK_GIT_MERGE_FILES = ("MERGE_HEAD", "SQUASH_MSG")  # a repo with one of these in its git dir is mid-merge: its staged changes are not a dev's write
+MAIN_BASE_FILE = "mainbase.json"  # per job (next to .branch): the dirty state of the main checkout when the dev started
+MAIN_GUARD_IGNORE = (".wt", WORK_DIR)  # top-level folders of the main checkout that are the pipeline's own (job worktrees, stage work files), never a dev's write
+MAIN_WRITE_NOTE = (
+    "FAIL: path outside this task's worktree: files in the MAIN checkout changed or appeared while you worked ({files}, +{more} more). "
+    "Nothing was deleted or reverted. The main checkout must stay clean or the merge is blocked. Copy what you need into your own job worktree, "
+    "then remove those files from the main checkout with `git -C <main checkout> checkout -- <file>` (tracked) or `rm` (new). "
+    "Always use paths relative to your worktree, never an absolute path into the main checkout."
+)  # the FAIL note maincheck.check returns
 PRE_EXISTING_RED = "pre-existing red: <command>"  # what a dev reports for a gate that is red on the base too
 LINK_FIX = (
     "If the task needs that repo, run `{add_repo}` (it gives your job worktree a real worktree of it; edit and commit there) and list the files under `Extra files:`; "

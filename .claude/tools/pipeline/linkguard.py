@@ -34,7 +34,7 @@ def _names(text):
     return [x for x in text.split("\0") if x]
 
 
-def _merging(main):
+def merging(main):
     """True while a merge or squash-merge is unfinished in the repo MAIN: its staged changes are not a dev's write."""
     for f in LINK_GIT_MERGE_FILES:
         path = git(main, "rev-parse", "--git-path", f, check=False).strip()
@@ -178,7 +178,7 @@ def check(a_dir, stage, task, add_repo_cmd):
     base, notes, stamp = _base(root), [], time.time_ns()
     for rel, main in links:
         try:
-            if _merging(main):
+            if merging(main):
                 continue
             cur = _state(main)
             if rel not in base:  # no snapshot of this repo: nothing can be told apart, so nothing is blamed

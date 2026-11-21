@@ -1,0 +1,100 @@
+"""scopeguard: files a job changed outside the task's predicted paths reach the reviewer brief."""
+
+import json
+import os
+import subprocess
+import sys
+import types
+import unittest
+import unittest.mock
+
+TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, TOOLS)
+import wt  # noqa: E402
+from pipeline import briefs, scopeguard  # noqa: E402
+from tests.support.tmpdirs import tracked_mkdtemp  # noqa: E402
+
+ALL = ("tests", "docs", "notes")
+
+
+class UnplannedTest(unittest.TestCase):
+    def test_outside_files_are_found_and_predicted_ones_are_not(self):
+        got = scopeguard.unplanned(["core/a.py", "core/b.py", "src/widget.py", "src/widget/more.py"], ["src/widget.py", "src/widget"], "Goal: x", (), "docs")
+        self.assertEqual(got, ["core/a.py", "core/b.py"])
+
+    def test_a_file_named_in_the_task_text_is_justified(self):
+        got = scopeguard.unplanned(["core/a.py", "core/b.py"], ["src/widget.py"], "also update core/a.py because it imports x", (), "docs")
+        self.assertEqual(got, ["core/b.py"])
+
+    def test_allowed_kinds(self):
+        changed = ["tests/test_widget.py", "tests/test_other.py", "docs/guide.md", "README.md", ".notes/n.md", "core/a.py"]
+        got = scopeguard.unplanned(changed, ["src/widget.py"], "Goal", ALL, "docs")
+        self.assertEqual(got, ["tests/test_other.py", "core/a.py"])  # only the test tied to `widget` is allowed
+        self.assertEqual(scopeguard.unplanned(["docs/g.md"], ["src/widget.py"], "Goal", (), "docs"), ["docs/g.md"])
+
+
+class NoteTest(unittest.TestCase):
+    def setUp(self):
+        ident = {f"GIT_{w}_{k}": v for w in ("AUTHOR", "COMMITTER") for k, v in (("NAME", "t"), ("EMAIL", "t@t"))}
+        p = unittest.mock.patch.dict(os.environ, ident)
+        p.start()
+        self.addCleanup(p.stop)
+        self.t = tracked_mkdtemp()
+        self.m = f"{self.t}/main"
+        os.makedirs(self.m)
+        os.makedirs(f"{self.t}/.work/s")
+        self.cfg({})
+        self.sh("-C", self.m, "init", "-q", "-b", "dev")
+        with open(f"{self.m}/f", "w") as f:
+            f.write("x")
+        with open(f"{self.m}/.git/info/exclude", "a") as f:
+            f.write(".wt\n.work\n")
+        self.sh("-C", self.m, "add", "f")
+        self.sh("-C", self.m, "commit", "-qm", "i")
+        with open(f"{self.t}/.work/s/task-1.md", "w") as f:
+            f.write("Predicted paths: src/widget.py\nGoal: change x\n")
+        self.root = wt.create(self.t, "s", "task-1")["root"]
+        self.a = types.SimpleNamespace(dir=self.t, stage="s")
+
+    def sh(self, *cmd):
+        subprocess.run(["git", *cmd], check=True, capture_output=True)
+
+    def cfg(self, extra):
+        with open(f"{self.t}/pipeline.json", "w") as f:
+            json.dump({"repo": "main", "branch_work": "dev", "worktrees": True, **extra}, f)
+
+    def commit(self, *names):
+        for n in names:
+            os.makedirs(os.path.dirname(f"{self.root}/{n}"), exist_ok=True)
+            with open(f"{self.root}/{n}", "w") as f:
+                f.write("new")
+        self.sh("-C", self.root, "add", "-A")
+        self.sh("-C", self.root, "commit", "-qm", "job")
+
+    def test_strict_note_names_unplanned_files_and_reaches_the_reviewer(self):
+        self.commit("src/widget.py", "core/a.py", "core/b.py")
+        note = scopeguard.scope_note(self.a, "task-1")
+        self.assertIn("core/a.py", note)
+        self.assertIn("core/b.py", note)
+        self.assertNotIn("src/widget.py", note)
+        self.assertIn("must address", note)
+        prompt = briefs.prompt_for(self.a, {"id": "task-1"}, "reviewer", None, "r1")
+        self.assertIn("core/a.py", prompt)
+
+    def test_warn_mode_and_off_mode(self):
+        self.commit("src/widget.py", "core/a.py")
+        self.cfg({"scope_guard": "warn"})
+        note = scopeguard.scope_note(self.a, "task-1")
+        self.assertIn("core/a.py", note)
+        self.assertNotIn("must address", note)
+        self.cfg({"scope_guard": "off"})
+        self.assertEqual(scopeguard.scope_note(self.a, "task-1"), "")
+
+    def test_no_note_when_the_job_stays_in_scope_or_has_no_worktree(self):
+        self.commit("src/widget.py", "tests/test_widget.py")
+        self.assertEqual(scopeguard.scope_note(self.a, "task-1"), "")
+        self.assertEqual(scopeguard.scope_note(types.SimpleNamespace(dir=self.t, stage="s"), "task-9"), "")
+
+
+if __name__ == "__main__":
+    unittest.main()

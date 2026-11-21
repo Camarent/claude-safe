@@ -31,6 +31,7 @@ from .configuration import (
     REQUEST_FILE,
     SHARED_MIN,
     TASKS_FILE,
+    SCOPE_TEST_RE,
     TESTCMD_WARN_PREFIX,
     WEBTEST_WARN_PREFIX,
     WORK_DIR,
@@ -136,7 +137,7 @@ def _repo_root(d):
     return repo_dir(top, project(top))
 
 
-TEST_FILE_RE = re.compile(r"(?i)(?:^|[/._-])(?:tests?|spec)(?:[/._-]|$)")
+TEST_FILE_RE = re.compile(SCOPE_TEST_RE)
 SYMBOL_RE = re.compile(r"`([A-Za-z_][\w]{3,})`")
 SKIP_DIRS = {".git", "node_modules", "target", WORK_DIR, "dist", "__pycache__"}
 

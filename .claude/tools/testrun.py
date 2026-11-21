@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402
-from pipeline import gitx, linkguard  # noqa: E402
+from pipeline import gitx, linkguard, maincheck  # noqa: E402
 from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd  # noqa: E402
 from pipeline.plan_files import task_type  # noqa: E402
 from pipeline.util import read_text, work_path  # noqa: E402
@@ -67,10 +67,11 @@ def _imported_by_changes(cwd, top):
 
 
 def outside_writes(d, stage, task):
-    """-> "" or the FAIL note for a dev that wrote through a link to a nested repo its task does not list (linkguard.check: tracked changes are reverted, a patch is kept)."""
+    """-> "" or the FAIL note for a dev that wrote to the main checkout (maincheck.check: named, never deleted) or through a link to a nested repo its task does not list (linkguard.check: tracked changes are reverted, a patch is kept)."""
     if not wt.live_job(d, stage, task):
         return ""
-    return linkguard.check(d, stage, task, ADD_REPO_CMD.format(tool=tool_cmd("wt.py"), stage=stage, task=task, dir=d))
+    notes = [maincheck.check(d, stage, task), linkguard.check(d, stage, task, ADD_REPO_CMD.format(tool=tool_cmd("wt.py"), stage=stage, task=task, dir=d))]
+    return "\n".join(n for n in notes if n)
 
 
 def run(stage, task, d, runner=subprocess.run):
