@@ -177,5 +177,44 @@ class TestRunMain(unittest.TestCase):
         self.assertIn("missing command", note)
 
 
+class TestLeadVerified(unittest.TestCase):
+    BRIEF = "Test: scripts/dev.sh test a.py\nTest: scripts/dev.sh docs-index  # lead-verified\n"
+
+    def test_marked_test_line_is_lead_not_dev(self):
+        self.assertEqual(testrun.test_lines(self.BRIEF), ["scripts/dev.sh test a.py"])
+        self.assertEqual(testrun.lead_lines(self.BRIEF), ["scripts/dev.sh docs-index"])
+
+    def test_marker_in_code_span_is_not_a_marker(self):
+        text = "Goal: check `lead-verified` lines\nTest: scripts/dev.sh `lead-verified` test a.py\n"
+        self.assertEqual(testrun.lead_lines(text), [])
+        self.assertEqual(testrun.test_lines(text), ["scripts/dev.sh `lead-verified` test a.py"])
+
+    def test_mid_command_marker_word_is_kept(self):
+        text = "Test: scripts/dev.sh lead-verified a.py\n"
+        self.assertEqual(testrun.lead_lines(text), ["scripts/dev.sh lead-verified a.py"])
+
+    def test_lead_line_failure_is_fail_note_dev_stays_done(self):
+        d = box(self.BRIEF)
+        seen = []
+
+        def runner(args, **k):
+            seen.append(args)
+            code = 1 if args[1] == "docs-index" else 0
+            return subprocess.CompletedProcess(args, code, "", "docs check red")
+
+        v, note = testrun.run("s", "task-1", d, runner=runner)
+        self.assertEqual(v, "DONE")
+        self.assertEqual(seen[-1], ["scripts/dev.sh", "docs-index"])
+        self.assertIn("FAIL lead-verified `scripts/dev.sh docs-index` exited 1", note)
+
+    def test_only_lead_lines_still_run(self):
+        d = box("Test: scripts/dev.sh docs-index  # lead-verified\n")
+        seen = []
+        v, note = testrun.run("s", "task-1", d, runner=lambda a, **k: seen.append(a) or subprocess.CompletedProcess(a, 0, "", ""))
+        self.assertEqual(v, "DONE")
+        self.assertEqual(len(seen), 1)
+        self.assertNotIn("FAIL", note)
+
+
 if __name__ == "__main__":
     unittest.main()

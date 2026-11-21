@@ -25,6 +25,7 @@ from .configuration import (
     tool_cmd,
     work_branch,
 )
+from .plan_check import lead_verified_lines
 from .plan_files import paths_in, task_affected_tests
 from .scopeguard import scope_note
 from .util import TOOLS, read_text, run_py, swallowed, work_path, write_text
@@ -348,6 +349,12 @@ AFFECTED_DEV = " Affected tests (hint, may be incomplete): {named}. Check them f
 AFFECTED_REVIEW = " Check that test changes match the task's Done and do not weaken a check."
 
 
+def lead_note(task_file):
+    """Brief sentence for a task file with lead-verified Done or Test lines, else ''. The lines are not named: the dev skips them, the driver runs them."""
+    n = len(lead_verified_lines(read_text(task_file)))
+    return f" {n} line(s) of the task file are marked lead-verified: not yours to run or to count as criteria; the driver runs them after you." if n else ""
+
+
 def affected_note(task_file, text):
     """Brief sentence for a task file with an `Affected tests:` line, else ''. TEXT is the sentence template."""
     named = task_affected_tests(Path(task_file).read_text(encoding="utf-8", errors="replace")) if os.path.isfile(task_file) else ""
@@ -365,7 +372,11 @@ def prompt_for(a, task, role, rework_file, rid):
     )
     if role == "dev":
         extra = (
-            (f" Rework: fix the findings in {rework_file} first." if rework_file else "") + NO_CHECKOUT_NOTE + gates_note(a) + affected_note(t, AFFECTED_DEV)
+            (f" Rework: fix the findings in {rework_file} first." if rework_file else "")
+            + NO_CHECKOUT_NOTE
+            + gates_note(a)
+            + affected_note(t, AFFECTED_DEV)
+            + lead_note(t)
         )
         return f"Stage {a.stage}: take the task in {t} (read it there, not in the worktree; index .work/{a.stage}/TASKS.md).{extra} Mark nothing yourself. {_where(a, task)}{out}"
     return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"

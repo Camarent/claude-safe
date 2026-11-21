@@ -217,6 +217,30 @@ def check_test_commands(d, tid, repo, produced):
     return command_findings(f"{tid} Test", m[1].replace("`", " "), repo, produced, nested)
 
 
+LEAD_MARK = "lead-verified"  # a Done: or Test: line with this word (outside a code span) is run by the driver after the dev, never by the dev
+_CODE_SPAN = re.compile(r"`[^`]*`")
+DOCS_INDEX_CMD = re.compile(r"docs_index|cs-docs-index")  # the docs index checker: a Done or Test line that runs it must be lead-verified
+
+
+def is_lead_verified(line):
+    """True for a `Done:` or `Test:` line whose marker word sits outside backtick code spans (a marker quoted in a code span is not a marker)."""
+    return line.startswith(("Done:", "Test:")) and LEAD_MARK in _CODE_SPAN.sub("", line)
+
+
+def lead_verified_lines(text):
+    """The `Done:` and `Test:` lines of a task file marked lead-verified."""
+    return [ln for ln in text.splitlines() if is_lead_verified(ln)]
+
+
+def check_lead_verified(d, tid):
+    """Problems for one task file: a `Done:` or `Test:` line that runs the docs index checker without the lead-verified marker (the lead runs that check, never the dev)."""
+    return [
+        f"{tid}: a Done or Test line runs the docs index checker without the lead-verified marker: {ln[:120]}"
+        for ln in read_text(os.path.join(d, tid + ".md")).splitlines()
+        if ln.startswith(("Done:", "Test:")) and DOCS_INDEX_CMD.search(ln) and not is_lead_verified(ln)
+    ]
+
+
 def check_test_quoting(d, tid):
     """Problems for one task file: a `Test:` line whose `-e`/`-c` expression is not quoted (bash parses its parentheses and the run dies before the code starts)."""
     m = re.search(r"(?m)^Test:\s*(.*)$", read_text(os.path.join(d, tid + ".md")))
@@ -373,6 +397,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_test_refs(d, e["id"], repo)
         + check_test_globs(d, e["id"], repo)
         + check_test_quoting(d, e["id"])
+        + check_lead_verified(d, e["id"])
         + check_test_commands(d, e["id"], repo, produced)
         + check_git_paths(d, e["id"], repo)
         + check_repo_prefix(d, e["id"], repo)
