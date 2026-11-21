@@ -7,10 +7,10 @@ import subprocess
 from .configuration import GIT_SAFE_DIR_ARGS, GIT_TIMEOUT_S
 
 
-def run(repo, *args, timeout=GIT_TIMEOUT_S, input=None):
-    """git -C repo args -> CompletedProcess (INPUT goes to stdin; text, never raises on a non-zero exit; a timeout raises subprocess.TimeoutExpired)."""
+def run(repo, *args, timeout=GIT_TIMEOUT_S, input=None, env=None):
+    """git -C repo args -> CompletedProcess (INPUT goes to stdin, ENV replaces the environment when given; text, never raises on a non-zero exit; a timeout raises subprocess.TimeoutExpired)."""
     return subprocess.run(
-        ["git", *GIT_SAFE_DIR_ARGS, "-C", repo, *args], capture_output=True, text=True, errors="replace", timeout=timeout, check=False, input=input
+        ["git", *GIT_SAFE_DIR_ARGS, "-C", repo, *args], capture_output=True, text=True, errors="replace", timeout=timeout, check=False, input=input, env=env
     )
 
 
@@ -37,10 +37,11 @@ def try_out(repo, *args, timeout=GIT_TIMEOUT_S):
     return r.stdout if r.returncode == 0 else None
 
 
-def try_run(repo, *args, timeout=GIT_TIMEOUT_S):
+def try_run(repo, *args, timeout=GIT_TIMEOUT_S, env=None):
     """`run`, but None when git cannot start or times out (no exception)."""
     try:
-        return run(repo, *args, timeout=timeout)
+        # env only when given: tests replace `run` with fakes that take no env
+        return run(repo, *args, timeout=timeout, **({} if env is None else {"env": env}))
     except (OSError, subprocess.SubprocessError):
         return None
 
