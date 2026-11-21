@@ -238,6 +238,47 @@ class TaskGatesScriptTest(unittest.TestCase):
         v, _ = self.run_it(rc=124, sha="s9")
         self.assertEqual((v, self.ran.count("/job")), ("FAIL", 1))
 
+    def run_collision(self, first, again, **cfg):
+        """Fake runner: the gate command (`mylint`) returns `first`, the command with one test file appended returns `again`; the base check is off."""
+        self.set_cfg(gate_flake_rerun=False, **cfg)
+        seen: list = []
+
+        def runner(cmd, **kw):
+            seen.append(cmd[-1])
+            rc, out = first if cmd[-1] == "mylint" else again
+            return SimpleNamespace(returncode=rc, stdout=out, stderr="")
+
+        with (
+            mock.patch.object(taskgates.testrun, "workdir", return_value="/job"),
+            mock.patch.object(taskgates, "content_sha", return_value="aaaa"),
+            mock.patch.object(taskgates, "no_change", return_value=False),
+            mock.patch.object(taskgates, "_base_problem", return_value="the main checkout has uncommitted changes"),
+        ):
+            v, text = taskgates.run("s", "task-1", self.d, runner=runner, run_id="r9")
+        return v, text, seen
+
+    def test_red_gate_naming_one_test_file_reruns_that_file_alone_and_green_is_a_collision(self):
+        v, text, seen = self.run_collision((1, "FAILED tests/test_a.py::test_x - boom\n"), (0, "ok\n"))
+        self.assertEqual(v, "DONE", text)
+        self.assertEqual(seen, ["mylint", "mylint test_a.py"])  # the file alone, once; the default setting is 1
+        self.assertIn("collision: test_a.py passed on rerun, first run id r9.1", text)
+        self.assertNotIn("not cleared", text)
+
+    def test_collision_rerun_red_stays_the_tasks_failure_with_both_run_ids(self):
+        v, text, seen = self.run_collision((1, "FAILED tests/test_a.py::test_x - boom\n"), (1, "boom\n"))
+        self.assertEqual(v, "FAIL", text)
+        self.assertEqual(seen, ["mylint", "mylint test_a.py"])
+        self.assertIn("collision: test_a.py failed on every rerun; run ids r9.1, r9.2", text)
+
+    def test_no_collision_rerun_when_output_names_several_files_or_setting_is_zero(self):
+        out = "FAILED tests/test_a.py::x\nFAILED tests/test_b.py::y\n"
+        v, text, seen = self.run_collision((1, out), (0, "ok\n"))
+        self.assertEqual((v, seen), ("FAIL", ["mylint"]), text)
+        self.assertNotIn("collision:", text)
+        v, text, seen = self.run_collision((1, "FAILED tests/test_a.py::x\n"), (0, "ok\n"), gate_collision_reruns=0)
+        self.assertEqual((v, seen), ("FAIL", ["mylint"]), text)
+        self.assertNotIn("collision:", text)
+
     def test_base_red_line_names_the_failing_tests(self):
         self.set_cfg(gate_flake_rerun=False)
         self.base_rc = 1

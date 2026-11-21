@@ -208,6 +208,8 @@ FAIL_ID_RES = (  # regexes (group 1 = test id) that read the failing test ids ou
     r"(?m)^FAIL\s+(\S+)",
 )
 FAIL_IDS_SHOWN = 10  # failing test ids named in a base-flake line
+# the test file a red gate's output names; exactly one of them makes the gate a collision candidate (rerun that file alone)
+COLLISION_FILE_RE = r"\btest_\w+\.py\b"
 PRE_EXISTING_RED = "pre-existing red: <command>"  # what a dev reports for a gate that is red on the base too
 LINK_FIX = (
     "If the task needs that repo, run `{add_repo}` (it gives your job worktree a real worktree of it; edit and commit there) and list the files under `Extra files:`; "
