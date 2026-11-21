@@ -27,6 +27,8 @@ from pipeline.configuration import (
     CLEAR_WHY_GREEN,
     CLEAR_WHY_NO_CMD,
     EV_GATE_CMD,
+    FAIL_ID_RES,
+    FAIL_IDS_SHOWN,
     GATE_GROUP_MAX_WORKERS,
     GATE_PARALLEL_KEY,
     ConfigError,
@@ -234,6 +236,22 @@ def clear_base_red(results, repo, env, groups=None, runner=run_group, base_cmds=
     again = run_all(red, repo, env, runner=runner, groups=groups)
     same = {c for c, rc, _s, _t in again if rc != 0 and rc not in WARN_BAD_RC}
     return [(c, 0 if c in same else rc, secs, text) for c, rc, secs, text in results], [c for c in red if c in same]
+
+
+def failing_ids(text):
+    """-> the failing test ids a gate's output names (FAIL_ID_RES), in order, unique, at most FAIL_IDS_SHOWN."""
+    ids = dict.fromkeys(m for rx in FAIL_ID_RES for m in re.findall(rx, text))
+    return list(ids)[:FAIL_IDS_SHOWN]
+
+
+def rerun_red(results, repo, env, groups=None, runner=run_group):
+    """-> (results with every red command that is green on a second, unchanged run in REPO turned green, {flaky command: failing test ids of its first run}). Each red command runs once more; a timeout or `cannot run` (WARN_BAD_RC) is never rerun."""
+    red = [c for c, rc, _s, _t in results if rc != 0 and rc not in WARN_BAD_RC]
+    if not red:
+        return results, {}
+    green = {c for c, rc, _s, _t in run_all(red, repo, env, runner=runner, groups=groups) if rc == 0}
+    flaky = {c: failing_ids(t) for c, rc, _s, t in results if c in green and rc != 0}
+    return [(c, 0 if c in flaky else rc, secs, text) for c, rc, secs, text in results], flaky
 
 
 def uncleared_reasons(results, cleared, base_cmds, base_problem=""):

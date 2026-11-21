@@ -79,6 +79,7 @@ PROJECT_DEFAULTS: dict = {
     "quality_tools": None,  # {".ext": ["tool", ...]} for the advisory quality run (audit/qualityrun.py); None = QUALITY_TOOLS. Python/C++ tools run only when listed here, e.g. {".py": ["ruff", "mypy"], ".cpp": ["clang-tidy", "cppcheck"]}
     "prereview_skip": PREREVIEW_SKIP_REVIEWER,  # a skipped local pre-review (diff too big, no diff, server problem): "reviewer" = the paid reviewer reviews, the skip is logged; "ask_main" = the lead decides
     "max_tasks": 30,  # most tasks one stage may plan that have not started; more work goes into phases (Plan.md) or a second stage. Tasks that have started and fix tasks of a fix round do not count
+    "gate_flake_rerun": True,  # a task gate run that is red reruns its red commands once, unchanged, in the job worktree; a command green on the rerun is a flake, not the task's failure (the report names it `base-flake: <test ids>`); False = every red counts
     "gate_base_check": True,  # a task gate run that is red also runs its red commands on the stage base (the main checkout); a command red there too is not counted against the task (the report names it); False = every red counts
     "gate_watch": [],  # folders below the main checkout (e.g. ["workspace/progress"]) a task gate must not change: the gate report warns, naming the changed paths and the tests that mention them; [] = off
     "preflight_gates": True,  # plan.py run / wave.py run / wave.py feature run the gates on the base first and refuse a red base; false = no check
@@ -89,5 +90,6 @@ PROJECT_DEFAULTS: dict = {
         "ffprobe",
     ],  # binaries a red-base failure names when its output has MISSING_BINARY_MARK (the red-base message adds a line listing them)
 }
+GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above

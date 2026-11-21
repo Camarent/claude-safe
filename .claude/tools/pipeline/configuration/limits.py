@@ -198,6 +198,13 @@ MAIN_WRITE_NOTE = (
     "then remove those files from the main checkout with `git -C <main checkout> checkout -- <file>` (tracked) or `rm` (new). "
     "Always use paths relative to your worktree, never an absolute path into the main checkout."
 )  # the FAIL note maincheck.check returns
+BASE_FLAKE_PREFIX = "base-flake:"  # report line for a gate failure that is not the task's (red on the stage base too, or green on an unchanged rerun): `base-flake: <failing test ids>`
+FAIL_ID_RES = (  # regexes (group 1 = test id) that read the failing test ids out of a gate's output: pytest summary, unittest header, a plain `FAIL name` line
+    r"(?m)^FAILED\s+(\S+)",
+    r"(?m)^(?:FAIL|ERROR):\s+(\S+(?: \([\w.]+\))?)",
+    r"(?m)^FAIL\s+(\S+)",
+)
+FAIL_IDS_SHOWN = 10  # failing test ids named in a base-flake line
 PRE_EXISTING_RED = "pre-existing red: <command>"  # what a dev reports for a gate that is red on the base too
 LINK_FIX = (
     "If the task needs that repo, run `{add_repo}` (it gives your job worktree a real worktree of it; edit and commit there) and list the files under `Extra files:`; "
