@@ -43,6 +43,7 @@ from .configuration import (
 )
 from .generated import generated_among, marker
 from .plan_files import PATH_FILE, acceptance_items, paths_in, task_type
+from .shellwords import split_commands
 from .stagedir import workspace_of
 from .util import read_text
 from .worktree import nested_repo_of, nested_repos
@@ -459,6 +460,35 @@ def _reads_as_prose(text):
     return text.endswith(".") or low[0] in ACCEPTANCE_PROSE_OPENERS or sum(w in ACCEPTANCE_PROSE_WORDS for w in low) >= 2
 
 
+PATH_TEST_FLAGS = ("-f", "-e", "-s", "-d")
+PATH_GREP_FLAGS = ("-q", "-c")
+
+
+def _path_only_segment(words):
+    """True when WORDS (one command segment, split on blanks) only tests that a path exists: `test -f|-e|-s|-d X`, `[ -f X ]`, `ls X`, `stat X`, `grep -q|-c NAME FILE`."""
+    name, args = words[0], words[1:]
+    if name == "[":
+        if not args or args[-1] != "]":
+            return False
+        name, args = "test", args[:-1]
+    if name == "test":
+        return len(args) == 2 and args[0] in PATH_TEST_FLAGS
+    if name in ("ls", "stat"):
+        return len(args) == 1 and not args[0].startswith("-")
+    if name == "grep":
+        opts = [a for a in args if a.startswith("-")]
+        operands = [a for a in args if not a.startswith("-")]
+        return bool(opts) and all(o in PATH_GREP_FLAGS for o in opts) and len(operands) == 2
+    return False
+
+
+def _only_tests_path(text):
+    """True when every segment of TEXT (split at `&&`, `||`, `;`, `|`, `&`, newline) only tests that a path exists: a check that runs no behaviour."""
+    segs = [s.split() for s in split_commands(text)]
+    segs = [w for w in segs if w]
+    return bool(segs) and all(_path_only_segment(w) for w in segs)
+
+
 def _accept_cmd_problems(text, repo):
     """-> problem words for one `cmd:` text: the agents' sandbox denies `cd`, `&&` and an env prefix, and a job worktree is not the main checkout."""
     if not text:
@@ -474,6 +504,8 @@ def _accept_cmd_problems(text, repo):
         probs.append("names an absolute main-checkout path")
     if _reads_as_prose(text):
         probs.append("reads as a sentence, not a command (write the command that proves it, or use `eyes:`)")
+    if _only_tests_path(text):
+        probs.append("only tests that a path exists (write the command that runs the behaviour, or use `eyes:`)")
     return probs
 
 
