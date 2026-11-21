@@ -9,6 +9,7 @@ TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
 import merge_wave  # noqa: E402
 import wt  # noqa: E402
+from pipeline import gate_record  # noqa: E402
 from tests.support.tmpdirs import tracked_mkdtemp  # noqa: E402
 
 
@@ -115,6 +116,49 @@ class MergeWaveTest(unittest.TestCase):
         self.cfg["gates"] = [{"name": "t", "cmd": "true"}]
         self._cfg()
         self.assertEqual(merge_wave.run(self.t, "s", ["task-1"])[0], "DONE")
+
+    def _gate_runner(self, calls, record):
+        """Fake gate runner: logs each argv; with RECORD it also writes a green qrun record (as qrun would) for `true`."""
+
+        def runner(argv, **_):
+            calls.append(argv)
+            if record:
+                gate_record.record(self.m, ["true"], 0)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        return runner
+
+    def _merge_then_rerun(self, after=None):
+        """Merge task-1 with a recording runner, then rerun the gates (no task left) after AFTER(); -> (calls of the rerun, text)."""
+        self._job("task-1", "a")
+        self.assertEqual(merge_wave.run(self.t, "s", ["task-1"], runner=self._gate_runner([], True))[0], "DONE")
+        if after:
+            after()
+        calls: list[list[str]] = []
+        v, text = merge_wave.run(self.t, "s", ["task-1"], runner=self._gate_runner(calls, False))
+        self.assertEqual(v, "DONE", text)
+        return calls, text
+
+    def test_a_passed_gate_on_the_same_tree_and_base_is_skipped(self):
+        calls, text = self._merge_then_rerun()
+        self.assertEqual(calls, [])
+        self.assertRegex(text, r"gate t: skipped, identical passed tree, run [0-9a-f]{32}")
+        recs = [r for r in map(json.loads, open(f"{self.t}/.work/s/metrics.jsonl", encoding="utf-8")) if r["ev"] == "gate_cmd"]
+        self.assertEqual([(r["kind"], r["gate"], r["rc"], r["seconds"]) for r in recs][-1], ("merge", "t", 0, 0))
+
+    def test_a_different_tree_runs_the_gate_again(self):
+        def dirty():
+            with open(f"{self.m}/z", "w") as f:
+                f.write("z")
+
+        calls, text = self._merge_then_rerun(dirty)
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("skipped, identical passed tree", text)
+
+    def test_a_different_base_runs_the_gate_again(self):
+        calls, text = self._merge_then_rerun(lambda: sh("-C", self.m, "commit", "--allow-empty", "-qm", "empty"))
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("skipped, identical passed tree", text)
 
     def _warn_run(self, cmd, ok):
         self._job("task-1", "a")

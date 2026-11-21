@@ -10,11 +10,13 @@ First output line: `VERDICT: DONE` (merged, green, removed), `VERDICT: FAIL` (a 
 
 import argparse
 import os
+import shlex
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
 import wt
 from audit import final_check
+from pipeline import gate_record, gitx
 from pipeline.configuration import (
     BLOCKED,
     DONE,
@@ -44,6 +46,30 @@ def _drop_merged(a_dir, stage, tasks):
         except RuntimeError as e:
             out.append(f"{t}: not removed: {e}")
     return out
+
+
+def _passed_gates(repo, cmds):
+    """CMDS whose green run (a qrun record) is on the merged tree of REPO and on its stage-branch HEAD -> {cmd: record}. No tree or no HEAD (not a repo): no skip. A command that does not parse has no record."""
+    tree = gate_record.tree_hash(repo)
+    base = gitx.try_out(repo, "rev-parse", "HEAD")
+    hits: dict[str, dict] = {}
+    if not (tree and base):
+        return hits
+    base = base.strip()
+    for c in cmds:
+        try:
+            argv = shlex.split(c)
+        except ValueError:
+            continue
+        rec = gate_record.find_passed(repo, argv, tree=tree, base=base) if tree else None
+        if rec:
+            hits[c] = rec
+    return hits
+
+
+def _log_skipped(a_dir, stage, tasks, skipped, gates):
+    """A skipped gate command still gets its gate_cmd metrics record (rc 0, seconds 0)."""
+    final_check.log_gate_cmds(os.path.join(a_dir, WORK_DIR, stage, METRICS_LOG), GATE_KIND_MERGE, [(c, 0, 0, "") for c in skipped], gates, ",".join(tasks))
 
 
 def _gate_results(a_dir, stage, tasks, cfg, repo, cmds, gates, runner, lines):
@@ -78,7 +104,11 @@ def run(a_dir, stage, tasks, runner=None):
     cmds = final_check.commands(cfg, repo, merge=True)  # the merge gate also runs `gates_merge`
     if cmds:
         gates = final_check.gate_names(cfg, merge=True)
-        results = _gate_results(a_dir, stage, tasks, cfg, repo, cmds, gates, runner, lines)
+        passed = _passed_gates(repo, cmds)  # the merged tree was green on this base: no second run
+        for c, rec in passed.items():
+            lines.append(f"gate {gates.get(c, c)}: skipped, identical passed tree, run {rec['run']}")
+        _log_skipped(a_dir, stage, tasks, passed, gates)
+        results = _gate_results(a_dir, stage, tasks, cfg, repo, [c for c in cmds if c not in passed], gates, runner, lines)
         if any(r[1] for r in results):
             lines += _drop_merged(
                 a_dir, stage, tasks
