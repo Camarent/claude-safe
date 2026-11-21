@@ -15,7 +15,7 @@ import sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pipeline import gitx
+from pipeline import gitx, webskip
 from pipeline.configuration import BLOCKED, DONE, ESCALATE, EV_SESSION, FAIL, GIT_LONG_TIMEOUT_S, METRICS_LOG, VERDICT_PREFIX, project, release_branch, repo_dir
 from pipeline.stagedir import resolve_stage
 from pipeline.util import add_common_args, read_jsonl, read_text, work_path
@@ -119,6 +119,7 @@ def digest(d, stage):
     bad = [r for r in rows if r.get("verdict") in (BLOCKED, FAIL, ESCALATE)]
     out.append(f"not passed: {len(bad)} sessions, ${sum(_cost(r) for r in bad):.2f}")
     out += [f"- {r.get('task') or r.get('id')} {r.get('verdict')}: {r.get('reason', '')}" for r in bad[:TOP_SESSIONS]]
+    out += webskip.skips(d, stage)  # a skipped browser check stays visible in the retro
     f = work_path(stage_dir(d, stage), "retro-digest.md", create=True)
     with open(f, "w", encoding="utf-8") as fh:
         fh.write("\n".join(out) + "\n")
@@ -127,8 +128,9 @@ def digest(d, stage):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("cleanup", "push", "digest"))
+    ap.add_argument("cmd", choices=("cleanup", "push", "digest", "webskip"))
     add_common_args(ap, stage=True, dir_required=True)
+    ap.add_argument("--ids", default="", help="webskip: the task ids the skipped browser check covered")
     a = ap.parse_args(argv)
     try:
         ok, lines = _run(a)
@@ -140,7 +142,12 @@ def main(argv=None):
 
 
 def _run(a):
-    return {"cleanup": lambda: cleanup(a.dir, a.stage), "push": lambda: push(a.dir), "digest": lambda: digest(a.dir, a.stage)}[a.cmd]()
+    return {
+        "cleanup": lambda: cleanup(a.dir, a.stage),
+        "push": lambda: push(a.dir),
+        "digest": lambda: digest(a.dir, a.stage),
+        "webskip": lambda: (True, [webskip.line(project(a.dir), a.ids)]),
+    }[a.cmd]()
 
 
 if __name__ == "__main__":

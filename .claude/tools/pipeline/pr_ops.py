@@ -9,7 +9,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from . import gitx, pr_mode, worktree
+from . import gitx, pr_mode, webskip, worktree
 from .configuration import (
     BLOCKED,
     CHECKS_TIMEOUT_S,
@@ -212,6 +212,19 @@ def _failing(repo, br):
         return [c["name"] for c in json.loads(r.stdout or "[]") if isinstance(c, dict) and c.get("bucket") in ("fail", "cancel")]
     except (ValueError, TypeError, KeyError):
         return []
+
+
+def web_note(a_dir, stage):
+    """-> the UNVERIFIED-WEB line(s) of the stage's skipped browser check, joined by newlines; '' when none."""
+    return "\n".join(webskip.skips(a_dir, stage))
+
+
+def append_body(repo, br, note):
+    """Append NOTE to the body of the PR of branch BR (best effort: a failed edit changes nothing)."""
+    cur = _run(["gh", "pr", "view", br, "--json", "body", "--jq", ".body"], repo)
+    if cur.returncode:
+        return
+    _run(["gh", "pr", "edit", br, "--body", f"{cur.stdout.rstrip()}\n\n{note}"], repo)
 
 
 def _ready(repo, cfg, br):
@@ -802,7 +815,10 @@ def _pr_step(what, a_dir, repo, cfg, stage, br):
     if what == "merge":
         return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
     if what == "ready":
-        return _open_pr(a_dir, repo, cfg, stage, br) + "; " + _ready(repo, cfg, br)
+        opened = _open_pr(a_dir, repo, cfg, stage, br)
+        if note := web_note(a_dir, stage):
+            append_body(repo, br, note)  # the skipped browser check must show in the PR, never silent
+        return opened + "; " + _ready(repo, cfg, br)
     return _open_pr(a_dir, repo, cfg, stage, br)
 
 

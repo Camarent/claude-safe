@@ -1,6 +1,7 @@
 """Per-project setting defaults (PROJECT_DEFAULTS), the security audit path and word lists and the auditor remit table."""
 
 from .limits import PREREVIEW_SKIP_REVIEWER
+from .planning import GENERATED_MARKER_RE
 
 # per-project settings: <workspace>/pipeline.json overrides these defaults
 # Opus sec audit runs only when the diff touches one of these (fnmatch on the repo path, or an added line matching SEC_AUDIT_CONTENT); `sec_audit_paths: ["*"]` = always.
@@ -65,9 +66,12 @@ PROJECT_DEFAULTS: dict = {
         "docs",
         "notes",
     ],  # kinds of outside file that are no finding: tests (path holds a predicted file's name stem), docs (under docs_dir, or .md), notes (.notes/); [] = every outside file counts
+    "generated_marker": GENERATED_MARKER_RE,  # regex; a tracked file whose first 5 lines match is a generated file: `plan check` warns when one is in Predicted paths, the scope guard allows it when a predicted source changed
     "audit_file": "AUDIT.md",
     "nested_repo_excludes": [],  # globs (repo-relative) written to every nested git repo's .git/info/exclude and .gitignore by prepare-repo, e.g. ["materials/", "sources/*/pages/"]; [] = none
     "nested_repo_dir_prefix": "",  # prefix (ends with "/") of the dirs that are nested repos a job worktree cannot hold, e.g. "workspace/"; a Predicted path or Test text naming one is a plan problem (only a lead step, `owner: ops`, may name it) and a task naming one without a git repo stops; "" = rule off
+    "webtest_tools_available": True,  # false where headless sessions get no browser MCP tools: the final browser check is then recorded as `UNVERIFIED-WEB: skipped: no browser tools` (visible in its report, the retro digest and the PR body) and does not block the stage
+    "webtest_requires_tools": ["mcp__chrome-devtools"],  # tool-name prefixes the browser check needs; [] = never skip it
     "webtest_build": None,  # optional build command: the web-tester runs it first on the stage branch checkout and serves only that fresh build, naming the commit in its report; None = brief unchanged
     "docs_dir": "docs",  # folder below the repo that prepare-repo names in a `## Docs` section of CLAUDE.md (written only when the folder exists)
     "acceptance_prep": [],  # setup commands (npm ci, a venv, a build) the acceptance step runs first in its fresh worktree, before the checklist commands; a failing one fails the step
