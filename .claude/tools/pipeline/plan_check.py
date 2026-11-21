@@ -31,6 +31,7 @@ from .configuration import (
     REQUEST_FILE,
     SHARED_MIN,
     TASKS_FILE,
+    TESTCMD_WARN_PREFIX,
     WEBTEST_WARN_PREFIX,
     WORK_DIR,
     ConfigError,
@@ -64,6 +65,7 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
+from .plan_testcmd import check_bare_test_runner
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_rules import (
     _same,
@@ -350,6 +352,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_repo_prefix(d, e["id"], repo)
         + check_warning_count(d, e["id"])
         + check_denied_commands(d, e["id"], _preflight_denied(d))
+        + check_bare_test_runner(d, e["id"], _workspace(d))
         + check_work_paths(d, e["id"])
         + check_task_size(d, e["id"])
         + check_type_inputs(d, e["id"], repo, _workspace(d))
@@ -603,6 +606,7 @@ def errors_of(probs):
                 NEG_WARN_PREFIX,
                 PREREQ_WARN_PREFIX,
                 WEBTEST_WARN_PREFIX,
+                TESTCMD_WARN_PREFIX,
             )
         )
     ]

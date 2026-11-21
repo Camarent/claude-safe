@@ -58,6 +58,7 @@ PROJECT_DEFAULTS: dict = {
     "sec_audit_paths": SEC_AUDIT_PATHS,  # see above; a project list replaces it
     "repo": None,  # repo folder below the workspace; None = autodetect the one that holds AUDIT.md
     "repos": None,  # all repo folders below the workspace for the phase digest (git diff --stat each); None = just `repo`
+    "test_command_hint": None,  # the project's real test command, e.g. a wrapper that sets up the environment; a task `Test:` line that runs bare pytest/python -m pytest gets a `testcmd:` warning naming it; None = take the first `gates` command that runs pytest behind a wrapper
     "audit_file": "AUDIT.md",
     "nested_repo_excludes": [],  # globs (repo-relative) written to every nested git repo's .git/info/exclude and .gitignore by prepare-repo, e.g. ["materials/", "sources/*/pages/"]; [] = none
     "nested_repo_dir_prefix": "",  # prefix (ends with "/") of the dirs that are nested repos a job worktree cannot hold, e.g. "workspace/"; a Predicted path or Test text naming one is a plan problem (only a lead step, `owner: ops`, may name it) and a task naming one without a git repo stops; "" = rule off

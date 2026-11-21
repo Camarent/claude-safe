@@ -326,6 +326,9 @@ from .paths import (  # noqa: F401  (re-export: the facade keeps every name impo
     tool_cmd,
 )
 from .planning import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    BARE_RUNNER_RE,
+    TESTCMD_HINT_KEY,
+    TESTCMD_WARN_PREFIX,
     AFFECTED_CODE_EXTS,
     AFFECTED_MAX_TESTS,
     AFFECTED_MIN_STEM,
