@@ -17,6 +17,7 @@ from .configuration import (
     FINAL_GATES_KEY,
     GATE_LABELS,
     GATES_KEY,
+    GENERATED_WARN_PREFIX,
     MERGE_GATES_KEY,
     NEG_WARN_PREFIX,
     PLAN_FILE,
@@ -73,6 +74,7 @@ from .plan_rules import (
     check_affected_tests,
     check_docs_target,
     check_gate_mentions,
+    check_generated_paths,
     check_negative_tag,
     check_nested_repo_paths,
     check_open_edit,
@@ -384,6 +386,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_nested_repo_paths(d, e["id"], repo, project(_workspace(d)).get("nested_repo_dir_prefix") or "")
         + check_negative_tag(d, e["id"])
         + check_webtest_type(d, e["id"])
+        + check_generated_paths(d, e["id"], repo)
         + check_affected_tests(d, e["id"], repo)
         + check_unlisted_prereq(d, e, ents)
         + check_open_edit(d, e["id"], project(_workspace(d)).get("nested_repo_dir_prefix") or "")
@@ -630,6 +633,7 @@ def errors_of(probs):
                 NEG_WARN_PREFIX,
                 PREREQ_WARN_PREFIX,
                 WEBTEST_WARN_PREFIX,
+                GENERATED_WARN_PREFIX,
                 TESTCMD_WARN_PREFIX,
             )
         )
