@@ -324,6 +324,12 @@ NO_CHECKOUT_NOTE = (
     " Never run `git checkout --`, `git restore` or `git reset`."
 )
 
+# dev brief: a file outside the predicted paths is allowed when a red gate or the Test line needs it
+DEV_SCOPE_NOTE = (
+    " Predicted paths are a hint, not a limit: when a red gate or your Test line needs another file, edit it and keep it;"
+    " never revert a correct fix to fit the scope. The driver records extra files by script."
+)
+
 
 TASK_GATES_NOTE = (
     " Run your task's own `Test:` lines and the tests of the code you touch while you work; if you know of tests elsewhere that your change could affect, run those too."
@@ -375,6 +381,7 @@ def prompt_for(a, task, role, rework_file, rid):
         extra = (
             (f" Rework: fix the findings in {rework_file} first." if rework_file else "")
             + NO_CHECKOUT_NOTE
+            + DEV_SCOPE_NOTE
             + gates_note(a)
             + affected_note(t, AFFECTED_DEV)
             + lead_note(t)
