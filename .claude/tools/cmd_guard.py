@@ -367,6 +367,8 @@ def verdict(cmd):
         if why:
             return why
         seen_assign = seen_assign or assigns
+        if TEST_HEAD.match(head) and env and QRUN_HEAD.match(head):
+            return f"qrun applies the test env itself: drop the `VAR=value` prefix and run `{head}` alone."
         if TEST_HEAD.match(head) and (env or seen_assign):
             return (
                 "No `env`, `VAR=value` or `export` before a test command: headless agents are denied and qrun injects the test env itself. "

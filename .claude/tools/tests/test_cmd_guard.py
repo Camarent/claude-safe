@@ -188,6 +188,22 @@ class CmdGuardTest(unittest.TestCase):
         self.assertIn("env", cmd_guard.verdict("env FOO=1 node --test t.js"))
         self.assertIn("env", cmd_guard.verdict("cd x && FOO=1 pytest"))
 
+    def test_qrun_env_prefix_denial_names_the_command(self):  # C1: qrun applies test_env itself; drop the prefix and run the named command
+        for cmd in ("VAR=x cs-qrun -- scripts/dev.sh test a", "VAR=x cs-qrun -- cmd && ls"):
+            why = cmd_guard.verdict(cmd)
+            self.assertIn("qrun applies the test env itself", why)
+            self.assertIn("drop the `VAR=value` prefix", why)
+            self.assertIn("`cs-qrun -- " + cmd.split("cs-qrun -- ")[1].split(" &&")[0] + "` alone", why)
+
+    def test_env_prefix_on_non_qrun_runner_keeps_generic_denial(self):  # C1 decoy: a non-qrun runner keeps the old text
+        why = cmd_guard.verdict("VAR=x pytest -q")
+        self.assertIn("No `env`, `VAR=value` or `export` before a test command", why)
+        self.assertNotIn("qrun applies", why)
+
+    def test_env_prefix_on_read_only_tail_after_qrun_allowed(self):  # C2: every segment is qrun or read-only; the VAR= one is read-only
+        self.assertEqual(cmd_guard.verdict(f"{Q} pytest && VAR=x ls"), "")
+        self.assertEqual(cmd_guard.verdict("cs-qrun -- a && VAR=x head -n 3"), "")
+
     def test_allows_env_on_non_test_command(self):
         self.assertEqual(cmd_guard.verdict("FOO=1 ls"), "")
         self.assertEqual(cmd_guard.verdict("git log | head"), "")
