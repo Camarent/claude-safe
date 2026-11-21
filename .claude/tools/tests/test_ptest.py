@@ -3,6 +3,7 @@
 import contextlib
 import io
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -116,6 +117,77 @@ class ClaudeChangeWarningTest(unittest.TestCase):
                 rc = ptest.main(["--dir", d, "--jobs", "1"])
         self.assertEqual(rc, 0)
         self.assertIn("WARNING", buf.getvalue())
+
+
+def git(repo, *args):
+    subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)
+
+
+def make_repo(repo):
+    git(repo, "init", "-q", "-b", "master")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "init")
+
+
+class BranchStateTest(unittest.TestCase):
+    def setUp(self):
+        repo = tempfile.TemporaryDirectory()  # a scratch main checkout, never the real one
+        self.addCleanup(repo.cleanup)
+        self.repo = repo.name
+        make_repo(self.repo)
+        patcher = mock.patch.object(ptest, "HERE", self.repo)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_state_is_current_branch_and_sorted_branch_list(self):
+        git(self.repo, "branch", "stage/b")
+        git(self.repo, "branch", "stage/a")
+        self.assertEqual(ptest.main_branch_state(), ("master", ["master", "stage/a", "stage/b"]))
+
+    def test_no_git_gives_empty_state(self):
+        with mock.patch.object(ptest.subprocess, "run", side_effect=FileNotFoundError("git")):
+            self.assertEqual(ptest.main_branch_state(), ("", []))
+
+    def test_unchanged_state_prints_nothing(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            moved = ptest.warn_branch_changes(("master", ["master"]), ("master", ["master"]))
+        self.assertFalse(moved)
+        self.assertEqual(buf.getvalue(), "")
+
+    def test_switched_branch_is_named_with_new_branches(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            moved = ptest.warn_branch_changes(("master", ["master"]), ("stage/x", ["master", "stage/x"]))
+        self.assertTrue(moved)
+        self.assertIn("master -> stage/x", buf.getvalue())
+        self.assertIn("new branches: stage/x", buf.getvalue())
+
+    def test_run_where_a_test_switches_branch_fails(self):
+        # the fake test file switches the scratch main checkout to a new branch: the run must exit non-zero
+        body = (
+            "import subprocess, unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_a(self):\n"
+            f"        subprocess.run(['git', '-C', {self.repo!r}, 'checkout', '-q', '-b', 'stage/leak'], check=True)\n"
+        )
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "test_switch.py"), "w", encoding="utf-8") as f:
+                f.write(body)
+            buf = io.StringIO()
+            with mock.patch.dict(os.environ, {ptest.ENV_LOG_DIR: d}), contextlib.redirect_stdout(buf):
+                rc = ptest.main(["--dir", d, "--jobs", "1"])
+        self.assertEqual(rc, 1)
+        self.assertIn("master -> stage/leak", buf.getvalue())
+        self.assertEqual(ptest.main_branch_state()[0], "stage/leak")
+
+    def test_run_with_no_branch_change_passes(self):
+        buf = io.StringIO()
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {ptest.ENV_LOG_DIR: d}), contextlib.redirect_stdout(buf):
+            with open(os.path.join(d, "test_ok.py"), "w", encoding="utf-8") as f:
+                f.write(OK)
+            rc = ptest.main(["--dir", d, "--jobs", "1"])
+        self.assertEqual(rc, 0)
+        self.assertNotIn("ERROR", buf.getvalue())
 
 
 if __name__ == "__main__":

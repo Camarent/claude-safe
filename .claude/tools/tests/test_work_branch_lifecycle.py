@@ -6,6 +6,7 @@ import os
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import branches
@@ -57,7 +58,9 @@ class EnsureWorkBranchTest(unittest.TestCase):
         self.a.dry_run = True
         self.assertEqual(branches.ensure_work_branch(self.a, "feat"), "")
         self.assertEqual(self.head(), "master")
-        self.assertEqual(branches.ensure_work_branch(argparse.Namespace(dir=tracked_mkdtemp(), dry_run=False), "feat"), "")
+        # a folder with no git: TMPDIR sits inside the main checkout's repo, so a real non-git temp dir cannot be made; mock the check instead
+        with mock.patch.object(branches, "_is_git", return_value=False):
+            self.assertEqual(branches.ensure_work_branch(argparse.Namespace(dir=tracked_mkdtemp(), dry_run=False), "feat"), "")
 
 
 if __name__ == "__main__":
