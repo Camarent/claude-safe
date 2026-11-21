@@ -67,6 +67,7 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
+from .plan_ptest import ptest_selector_problems
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_rules import (
     _same,
@@ -396,6 +397,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_refs(d, e["id"], repo)
         + check_test_refs(d, e["id"], repo)
         + check_test_globs(d, e["id"], repo)
+        + ptest_selector_problems(d, e["id"], repo)
         + check_test_quoting(d, e["id"])
         + check_lead_verified(d, e["id"])
         + check_test_commands(d, e["id"], repo, produced)
