@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr
 from io import StringIO
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import qrun
@@ -74,3 +75,20 @@ class TestParallelize(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGateTimeout(unittest.TestCase):
+    def test_gate_limits_stay_below_the_agent_tool_timeout(self):
+        import testrun
+        from pipeline.configuration import AGENT_TOOL_TIMEOUT_S, GATE_TIMEOUT_S
+
+        self.assertLess(GATE_TIMEOUT_S, AGENT_TOOL_TIMEOUT_S)
+        self.assertLess(testrun.TIMEOUT_S, AGENT_TOOL_TIMEOUT_S)
+        with mock.patch.dict(os.environ, {"ORCH_SCRIPT_TIMEOUT": str(AGENT_TOOL_TIMEOUT_S * 3)}):
+            self.assertEqual(qrun._timeout(), GATE_TIMEOUT_S)
+
+    def test_short_limit_wins_and_a_backgrounded_wait_counts(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"ORCH_SCRIPT_TIMEOUT": "1"}):
+            out, rc = qrun._run(["bash", "-c", "sleep 30 & wait"], os.path.join(d, "log"))
+        self.assertEqual(rc, 124)
+        self.assertIn("timeout after 1 s", "\n".join(out))

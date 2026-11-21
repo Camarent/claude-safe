@@ -17,11 +17,11 @@ from pathlib import Path
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402
 from pipeline import gate_record, gitx, linkguard, maincheck  # noqa: E402
-from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd  # noqa: E402
+from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GATE_TIMEOUT_S, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd  # noqa: E402
 from pipeline.plan_files import task_type  # noqa: E402
 from pipeline.util import read_text, work_path  # noqa: E402
 
-TIMEOUT_S = 900
+TIMEOUT_S = GATE_TIMEOUT_S
 TAIL_LINES = 40
 BLOCKED_EXIT = (126, 127)  # not executable / command not found
 

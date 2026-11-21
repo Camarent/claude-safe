@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the s
 import time
 
 from pipeline import gate_record
-from pipeline.configuration import ENV_QRUN_NO_RECORD, QRUN_ENV, QRUN_LOG_MAX_AGE_S, QRUN_LOG_MAX_COUNT, QRUN_LOG_MIN_KEEP, QRUN_TMP_PREFIX
+from pipeline.configuration import ENV_QRUN_NO_RECORD, GATE_TIMEOUT_S, QRUN_ENV, QRUN_LOG_MAX_AGE_S, QRUN_LOG_MAX_COUNT, QRUN_LOG_MIN_KEEP, QRUN_TMP_PREFIX
 from pipeline.util import script_timeout
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -225,8 +225,8 @@ def _parallelize(cmd, cwd):
 
 
 def _timeout():
-    """Seconds one run may take: env ORCH_SCRIPT_TIMEOUT (same name as the pipeline script steps), default SCRIPT_TIMEOUT_S."""
-    return script_timeout()
+    """Seconds one run may take: env ORCH_SCRIPT_TIMEOUT (same name as the pipeline script steps), default SCRIPT_TIMEOUT_S, never above GATE_TIMEOUT_S (below the agent tool timeout)."""
+    return min(script_timeout(), GATE_TIMEOUT_S)
 
 
 def _descendants(pid):
@@ -297,7 +297,7 @@ def _run_in(cmd, log, scratch):
         try:
             raw, rc = p.communicate(timeout=_timeout())[0], p.returncode
         except subprocess.TimeoutExpired:
-            raw, rc = (_kill_tree(p) or b"") + f"qrun: timed out after {_timeout():g}s (ORCH_SCRIPT_TIMEOUT)\n".encode(), 124
+            raw, rc = (_kill_tree(p) or b"") + f"qrun: timeout after {_timeout():g} s (ORCH_SCRIPT_TIMEOUT)\n".encode(), 124
         except BaseException:
             _kill_tree(p)
             raise
