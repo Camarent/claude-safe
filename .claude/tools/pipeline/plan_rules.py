@@ -204,7 +204,7 @@ def check_negative_tag(d, tid):
     return out
 
 
-TASK_MENTION_RE = re.compile(r"\btask-(\d+)\b")
+TASK_MENTION_RE = re.compile(r"(?<![\w./-])task-(\d+)(?![\w/-])")  # a path part such as /x/task-1/repo (job worktree folder) is not a mention
 OTHER_SCOPE_RE = re.compile(r"\btask-\d+\s+(?:of|in)\s+(?:phase|stage)\b", re.I)  # `task-3 of phase 01`: a task of another phase, not of this stage
 
 

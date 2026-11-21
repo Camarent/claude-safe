@@ -44,6 +44,7 @@ def rng(line, ch):
     return {"start": {"line": line, "character": ch}, "end": {"line": line, "character": ch + 1}}
 
 texts = {}
+outline_seen = 0
 while True:
     m = read()
     method, rid, p = m.get("method"), m.get("id"), m.get("params")
@@ -80,7 +81,12 @@ while True:
                "none": None}[mode]
         send({"jsonrpc": "2.0", "id": rid, "result": res})
     elif method == "textDocument/documentSymbol":
-        send({"jsonrpc": "2.0", "id": rid, "result": [{"name": "foo", "kind": 12, "selectionRange": rng(0, 4)}, {"name": "Bar", "kind": 5, "location": {"uri": "x", "range": rng(3, 0)}}, {"name": "odd", "kind": 99, "selectionRange": rng(5, 1)}]})
+        outline_seen += 1  # FAKE_OUTLINE_EMPTY=N: the first N answers are [] (project still loading); "all": always []
+        empty = os.environ.get("FAKE_OUTLINE_EMPTY", "0")
+        if empty == "all" or outline_seen <= int(empty):
+            send({"jsonrpc": "2.0", "id": rid, "result": []})
+        else:
+            send({"jsonrpc": "2.0", "id": rid, "result": [{"name": "foo", "kind": 12, "selectionRange": rng(0, 4)}, {"name": "Bar", "kind": 5, "location": {"uri": "x", "range": rng(3, 0)}}, {"name": "odd", "kind": 99, "selectionRange": rng(5, 1)}]})
     elif method == "workspace/symbol":
         send({"jsonrpc": "2.0", "id": rid, "result": []})
     elif method == "shutdown":
@@ -259,6 +265,30 @@ class ServerProtocolTests(Base):
         self.write("a.py", "x = 1\n")
         rc, out = self.run_main("outline", "a.py")
         self.assertEqual((rc, out), (0, ["1:5  function foo", "4:1  class Bar", "6:2  sym odd"]))
+
+    def test_outline_retries_empty_answers_while_the_project_loads(self):
+        self.write("a.py", "x = 1\n")
+        clock = [0.0]  # mock clock: the retry sleeps advance it, no wall-clock wait
+        with (
+            mock.patch.dict(os.environ, {"FAKE_OUTLINE_EMPTY": "2"}),
+            mock.patch.object(lsp.time, "time", side_effect=lambda: clock[0]),
+            mock.patch.object(lsp.time, "sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)),
+        ):
+            rc, out = self.run_main("outline", "a.py")
+        self.assertEqual((rc, out), (0, ["1:5  function foo", "4:1  class Bar", "6:2  sym odd"]))
+        self.assertLessEqual(clock[0], 2.5)  # _open_for gives a .py file no extra wait
+
+    def test_outline_of_an_empty_file_is_rc_0_after_the_bounded_wait(self):
+        self.write("a.py", "")
+        clock = [0.0]
+        with (
+            mock.patch.dict(os.environ, {"FAKE_OUTLINE_EMPTY": "all"}),
+            mock.patch.object(lsp.time, "time", side_effect=lambda: clock[0]),
+            mock.patch.object(lsp.time, "sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)),
+        ):
+            rc, out = self.run_main("outline", "a.py")
+        self.assertEqual((rc, out), (0, []))
+        self.assertAlmostEqual(clock[0], 2.5)  # waited the whole budget, then gave up
 
     def test_diag_published(self):
         self.write("a.py", "x = 1\nBAD\n")

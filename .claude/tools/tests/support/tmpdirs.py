@@ -6,6 +6,9 @@ import tempfile
 import unittest
 from types import FrameType
 
+# Short base for AF_UNIX socket dirs: a qrun TMPDIR under the job worktree makes the socket path exceed the 108-byte limit.
+SHORT_SOCK_BASE = "/tmp"
+
 
 def _register(fn, *args, **kwargs) -> None:
     """Run fn(*args) when the calling test ends (caller's `self` TestCase), else when its module's tests end."""

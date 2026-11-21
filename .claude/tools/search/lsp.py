@@ -197,19 +197,24 @@ def _open_for(c, op, f, lang, root):
     return RUST_LOAD_WAIT if lang == "rust" else 0  # rust-analyzer needs several seconds to load a crate ("content modified" until then)
 
 
-def _ask_locs(c, op, f, pos, method, wait_extra, extra=None):
-    """Request locations; servers answer early while the project loads, so retry until enough or the timeout."""
-    params = {"textDocument": {"uri": uri(f)}, "position": pos, **(extra or {})}
+def _ask_req(c, method, params, parse, enough, budget):
+    """Request METHOD and parse the answer; servers answer early while the project loads, so retry until enough or the budget passes."""
 
     def go():  # one request per poll step: rust-analyzer answers "content modified" while it loads, poll() retries inside the budget
         try:
-            return locs(c.req(method, params))
+            return parse(c.req(method, params))
         except RuntimeError as e:
             if "content modified" not in str(e).lower():
                 raise
             return []
 
-    return poll(go, lambda r: len(r) >= (2 if op == "refs" else 1), 2.5 + wait_extra)
+    return poll(go, enough, budget)
+
+
+def _ask_locs(c, op, f, pos, method, wait_extra, extra=None):
+    """Request locations; servers answer early while the project loads, so retry until enough or the timeout."""
+    params = {"textDocument": {"uri": uri(f)}, "position": pos, **(extra or {})}
+    return _ask_req(c, method, params, locs, lambda r: len(r) >= (2 if op == "refs" else 1), 2.5 + wait_extra)
 
 
 def _target(f, spec):
@@ -251,8 +256,10 @@ def _cmd_hover(c, a, f, lang, root):
 
 
 def _cmd_outline(c, a, f, lang, root):
-    _open_for(c, "outline", f, lang, root)
-    for s in c.req("textDocument/documentSymbol", {"textDocument": {"uri": uri(f)}}) or []:
+    # A file with no symbols (empty file) waits the whole budget (2.5 s + wait_extra) before rc 0: an empty answer cannot be told from "still loading".
+    wait_extra = _open_for(c, "outline", f, lang, root)
+    syms = _ask_req(c, "textDocument/documentSymbol", {"textDocument": {"uri": uri(f)}}, lambda r: r or [], lambda r: len(r) > 0, 2.5 + wait_extra)
+    for s in syms:
         rg = s.get("selectionRange") or s["location"]["range"]
         print(f"{rg['start']['line'] + 1}:{rg['start']['character'] + 1}  {KIND.get(s['kind'], 'sym')} {s['name']}")
     return 0
