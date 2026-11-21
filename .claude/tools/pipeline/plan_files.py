@@ -423,12 +423,25 @@ def set_task_field(txt, tid, field, value):
     return re.sub(r"(?m)^" + pat + r".*$", lambda m: pre + value, txt, count=1)
 
 
+def depends_line(deps):
+    """-> the `Depends:` line of a task file (task ids, comma and space), or '' when the task has no dependency."""
+    return f"Depends: {', '.join(deps)}\n" if deps else ""
+
+
+def set_depends_line(txt, deps):
+    """-> task-N.md text whose `Depends:` line equals DEPS: the old line goes, the new one follows the `Wave:` line."""
+    head, *rest = re.split(r"(?m)^(?=## ADDENDUM)", txt, maxsplit=1)  # a retry addendum is the lead's note, never edited here
+    head = re.sub(r"(?m)^Depends: .*\n", "", head, count=1)
+    head = re.sub(r"(?m)^Wave: W\d+\n", lambda m: m[0] + depends_line(deps), head, count=1)
+    return head + "".join(rest)
+
+
 def render_task(e, a, paths):
     cmd = with_qrun(a.test)
     pat = a.pattern or (paths[0] + ":1" if paths else "")
     aff = f"Affected tests: {a.affected}\n" if getattr(a, "affected", "") else ""
     return (
-        f"# {e['id']}: {e['title']}\nUI: no\nWave: W{e['wave']}\n\n"  # no Goal line: it would repeat the title
+        f"# {e['id']}: {e['title']}\nUI: no\nWave: W{e['wave']}\n{depends_line(e.get('depends', []))}\n"  # no Goal line: it would repeat the title
         f"Predicted paths: {', '.join(paths)}\nPattern: {pat}\n{aff}\n"
         f"Test: {cmd}\nDone: {a.done}\nturns <= {a.turns}\nReply in 3 lines: files changed, test result, ESCALATE.\n"
     )

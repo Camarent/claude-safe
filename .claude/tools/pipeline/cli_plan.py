@@ -166,7 +166,7 @@ def _add_depends(d, ents, e, tid, spec):
 
 def _depends_report(d, ents, e, moved, had_deps):
     """-> the lines `edit-task --depends` prints: the dependencies now, the tasks moved to a later wave, the plan problems of moved tasks, and the notes a lead needs (dependency mode, a started task)."""
-    out = [f"{e['id']} now depends on {', '.join(e['depends'])}"]
+    out = [f"{e['id']} now depends on {', '.join(e['depends']) or 'nothing'}"]
     out += [f"{t} moved from wave {w0} to wave {w1}" for t, w0, w1 in moved]
     moved_ids = tuple(t for t, _w0, _w1 in moved)
     out += [p for p in plan_check.check_stage(d)[1] if moved_ids and p.startswith(moved_ids)]
@@ -195,10 +195,12 @@ def _apply_fields(d, ents, e, tid, pairs, txt):
 
 
 def _after_depends(d, ents, e, moved, had_deps, asked):
-    """After an edit-task: rewrite the `Wave:` line of each moved task file and, when --depends was given, print the report."""
+    """After an edit-task: rewrite the `Wave:` line of each moved task file, the `Depends:` line of the edited task, and, when --depends was given, print the report."""
     ids = {t for t, _w0, _w1 in moved}
     for x in (x for x in ents if x["id"] in ids):
         plan_insert._set_wave(d, x)
+    if e:
+        plan_insert._set_depends(d, e)
     if asked:
         print("\n".join(_depends_report(d, ents, e, moved, had_deps)))
 
@@ -209,16 +211,18 @@ def cmd_edit_task(a):
     f = os.path.join(d, tid + ".md")
     if not os.path.exists(f):
         raise pf.PlanError(f"unknown task {tid} in {d}")
-    if a.field and len(a.field) != len(a.value) or not (a.field or a.depends):
+    if a.field and len(a.field) != len(a.value) or a.depends is None and not a.field:
         raise pf.PlanError("edit-task needs matching --field/--value pairs or --depends")
     ents = pf.read_entries(d)
     e = next((x for x in ents if x["id"] == tid), None)
     had_deps = any(x["depends"] for x in ents)
     moved = _add_depends(d, ents, e, tid, a.depends) if a.depends else []
+    if e and a.depends == "":  # --depends "" clears the dependencies of the task (TASKS.md and its Depends line)
+        e["depends"] = []
     write_text(f, _apply_fields(d, ents, e, tid, zip(a.field, a.value, strict=False), read_text(f)))
     if e:
         pf.write_tasks(d, ents)
-    _after_depends(d, ents, e, moved, had_deps, bool(a.depends))
+    _after_depends(d, ents, e, moved, had_deps, a.depends is not None)
     return 0
 
 
@@ -309,8 +313,8 @@ def build():
     ep.add_argument("--value", action="append", default=[])
     ep.add_argument(
         "--depends",
-        default="",
-        help="add these tasks (N,M) to the task's dependencies (the task moves to the wave after them when needed): it is held until they are merged",
+        default=None,  # None: not given; "": clear the dependencies
+        help="add these tasks (N,M) to the task's dependencies (the task moves to the wave after them when needed): it is held until they are merged; an empty value clears them",
     )
     add("check", cmd_check, stage="", feature="")
     add("dryrun", cmd_dryrun, stage=True)
