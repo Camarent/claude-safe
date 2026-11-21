@@ -43,16 +43,18 @@ def cmd_phase(a):
     for dep in pf.csv(a.depends):
         if not pf.phase_ref(phases, dep):
             raise pf.PlanError(f"depends on unknown phase {dep}")
+    deps = pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else [])
+    probe = {"dir": a.name, "depends": deps}  # the new phase, so ordering sees its depends chain
     for p in phases:
         ov = pf.overlap(paths, p["paths"])
-        if ov:
+        if ov and not pf.phases_ordered([*phases, probe], a.name, p["dir"]):
             raise pf.PlanError(f"paths overlap with phase {p['dir']}: {ov[0]} / {ov[1]}")
     nn = max([int(p["dir"][:2]) for p in phases] or [0]) + 1
     new = {
         "dir": a.name if a.after else f"{nn:02d}-{a.name}",
         "goal": a.goal,
         "done_when": a.done_when,
-        "depends": pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else []),
+        "depends": deps,
         "paths": paths,
         "status": "todo",
         "tasks": a.tasks,

@@ -53,6 +53,7 @@ from .plan_files import (
     is_mid_phase,
     overlap,
     paths_in,
+    phases_ordered,
     plan_path,
     read_entries,
     read_phases,
@@ -767,7 +768,7 @@ def _phase_link_problems(p, earlier):
     probs = []
     for q in earlier:
         ov = overlap(p["paths"], q["paths"])
-        if ov:
+        if ov and not phases_ordered([*earlier, p], p["dir"], q["dir"]):
             probs.append(f"{p['dir']} and {q['dir']} share paths: {ov[0]} / {ov[1]}")
     for dep in p["depends"]:
         if not any(dep in (q["dir"], q["dir"][3:]) for q in earlier):

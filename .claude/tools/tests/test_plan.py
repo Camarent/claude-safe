@@ -269,7 +269,8 @@ class PlanTest(unittest.TestCase):
         self.assertIn("02-ui: folder", out)
         os.makedirs(f"{self.d}/.work/f/phases/02-ui")
         pl = f"{self.d}/.work/f/Plan.md"
-        s = Path(pl).read_text(encoding="utf-8").replace("| true |", "|  |").replace("src/ui", "src/core/x")
+        # drop ui's depends too: a depends chain orders the two phases, so their shared paths would be accepted
+        s = Path(pl).read_text(encoding="utf-8").replace("| true | core | src/ui |", "|  |  | src/core/x |")
         Path(pl).write_text(s, encoding="utf-8")
         out = self.p("check", "--feature", "f")[1]
         self.assertIn("no done_when", out)

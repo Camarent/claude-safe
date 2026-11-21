@@ -260,6 +260,26 @@ def phase_ref(phases, name):
     return next((p for p in phases if name in (p["dir"], p["dir"][3:])), None)
 
 
+def _depends_reach(phases, src, dst):
+    """True when phase SRC reaches phase DST by following depends (transitively)."""
+    target = phase_ref(phases, dst)
+    seen, todo = set(), [src]
+    while todo:
+        p = phase_ref(phases, todo.pop())
+        if p is None or p["dir"] in seen:
+            continue
+        if p is target:
+            return True
+        seen.add(p["dir"])
+        todo.extend(p["depends"])
+    return False
+
+
+def phases_ordered(phases, x_dir, y_dir):
+    """-> True when one phase reaches the other through depends (transitively; names match like phase_ref), so their paths never run at once."""
+    return _depends_reach(phases, x_dir, y_dir) or _depends_reach(phases, y_dir, x_dir)
+
+
 def next_open_phase(phases):
     """The first phase that is not done and whose dependencies are all done, else None."""
     return next((p for p in phases if p["status"] != "done" and all((phase_ref(phases, d) or {}).get("status") == "done" for d in p["depends"])), None)
