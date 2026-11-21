@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 from pathlib import Path
 
 from . import driver, gitx, graph, lead_context, limits, metrics, pr_ops, progress
@@ -293,6 +294,7 @@ ASK_TAIL_LINES = 5  # last lines of the named report shown as the error tail
 ASK_REVIEW_MARK = "review failed"  # an ask cause that carries the reviewer's findings
 ASK_FINDINGS_LINES = 30  # report lines shown for such an ask (the findings and their fixes)
 ASK_NOTE_HINT = ' --note "<quote the reviewer\'s exact fix text>"'  # a retry after two failed reviews must carry the fix text
+ASK_ESCAPE_CATEGORIES = ("Cc", "Cf")  # unicode categories shown escaped in an error tail: control (Cc) and format, zero-width and bidi (Cf)
 
 
 def _ask_entries(msg):
@@ -311,13 +313,18 @@ def _ask_entries(msg):
     return [tuple(e) for e in seen.values()]
 
 
+def _escape_nonprintable(text):
+    """Show zero-width, bidi and control characters (tab kept) as \\uXXXX escapes; printable text unchanged."""
+    return "".join(f"\\u{ord(ch):04X}" if ch != "\t" and unicodedata.category(ch) in ASK_ESCAPE_CATEGORIES else ch for ch in text)
+
+
 def _ask_tail(line):
     """Last lines of the report file the ask names (first one that exists), or a note when it names none."""
     count = ASK_FINDINGS_LINES if ASK_REVIEW_MARK in line else ASK_TAIL_LINES
     for path in ASK_PATH_RE.findall(line):
         if os.path.isfile(path):
             tail = [x for x in read_text(path).splitlines() if x.strip()][-count:]
-            return f"error tail, {path}:\n" + "\n".join(f"    {x}" for x in tail)
+            return f"error tail, {path}:\n" + "\n".join(f"    {_escape_nonprintable(x)}" for x in tail)
     return "error tail: none, the ask names no report file"
 
 
