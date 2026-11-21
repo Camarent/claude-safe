@@ -136,7 +136,11 @@ def _gate_text(res, names, cleared, why, root, flaky=()):
     """The gate report plus one line per command cleared against the stage base, one per flaky command, and one per red command that was not cleared (and why)."""
     return (
         final_check.report(res, names)
-        + "".join(f"\ngate {names.get(c, c)}: red on the stage base too ({root}), not counted against this task: {c}" + _flake_line(c, res, names, "red on the stage base too") for c in cleared)
+        + "".join(
+            f"\ngate {names.get(c, c)}: red on the stage base too ({root}), not counted against this task: {c}"
+            + _flake_line(c, res, names, "red on the stage base too")
+            for c in cleared
+        )
         + "".join(_flake_line(c, res, names, "red once, green on an unchanged rerun in the job worktree; not counted against this task") for c in flaky)
         + "".join(f"\ngate {names.get(c, c)}: not cleared against the stage base: {w}" for c, w in why.items())
     )

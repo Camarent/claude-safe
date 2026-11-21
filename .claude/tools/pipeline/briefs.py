@@ -26,10 +26,10 @@ from .configuration import (
     work_branch,
 )
 from .plan_files import paths_in, task_affected_tests
+from .scopeguard import scope_note
 from .util import TOOLS, read_text, run_py, swallowed, work_path, write_text
 from .ux_flows import flows_rel, variables
 from .verdicts import ROLES
-from .scopeguard import scope_note
 from .worktrees import job_diff, job_info, review_note
 
 BASH_NOTE = (  # every role: the two Bash rules that cmd_guard denies when broken

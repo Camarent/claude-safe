@@ -29,9 +29,9 @@ from .configuration import (
     PUBLISH_PAGE,
     PUBLISH_RE,
     REQUEST_FILE,
+    SCOPE_TEST_RE,
     SHARED_MIN,
     TASKS_FILE,
-    SCOPE_TEST_RE,
     TESTCMD_WARN_PREFIX,
     WEBTEST_WARN_PREFIX,
     WORK_DIR,
@@ -66,7 +66,6 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
-from .plan_testcmd import check_bare_test_runner
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_rules import (
     _same,
@@ -88,6 +87,7 @@ from .plan_rules import (
     protected_gates,
     release_flag_problems,
 )
+from .plan_testcmd import check_bare_test_runner
 from .shellwords import split_commands
 from .stagedir import workspace_of
 from .tasks import parse_flags, parse_tasks

@@ -68,7 +68,7 @@ class DriftTest(unittest.TestCase):
     def test_multiline_shell_is_not_split_into_fragments(self):
         ci = (
             "steps:\n  - run: |\n      # comment line\n      npm run lint\n"
-            "      if [ -n \"$X\" ]; then\n        echo set\n      else\n        echo unset\n      fi\n"
+            '      if [ -n "$X" ]; then\n        echo set\n      else\n        echo unset\n      fi\n'
             "      npm test \\\n        && make build\n"
             "      cat <<EOF\n      body line\n      EOF\n"
         )

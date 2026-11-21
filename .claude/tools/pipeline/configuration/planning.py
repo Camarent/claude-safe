@@ -129,8 +129,16 @@ BARE_TAG_RE = (
 WEBTEST_WARN_PREFIX = "webtest:"  # warning prefix of plan_rules.check_webtest_type; plan_check.errors_of never fails on it
 PREREQ_WARN_PREFIX = "prereq:"  # warning prefix of plan_rules.check_unlisted_prereq; plan_check.errors_of never fails on it
 AFFECTED_WARN_PREFIX = "tests-use:"  # warning prefix of plan_rules.check_affected_tests; plan_check.errors_of never fails on it
-SCOPE_MODES = ("off", "warn", "strict")  # pipeline.json `scope_guard`: off = no check; warn = the reviewer is told of files outside the predicted paths; strict = the reviewer must fail the task unless its text justifies each one
-SCOPE_ALLOW_ALL = ("tests", "docs", "notes")  # pipeline.json `scope_allow`: kinds of file outside the predicted paths that are no finding (tests: a test file whose path holds a predicted file's stem; docs: under `docs_dir` or a .md file; notes: under SCOPE_NOTES_DIR)
+SCOPE_MODES = (
+    "off",
+    "warn",
+    "strict",
+)  # pipeline.json `scope_guard`: off = no check; warn = the reviewer is told of files outside the predicted paths; strict = the reviewer must fail the task unless its text justifies each one
+SCOPE_ALLOW_ALL = (
+    "tests",
+    "docs",
+    "notes",
+)  # pipeline.json `scope_allow`: kinds of file outside the predicted paths that are no finding (tests: a test file whose path holds a predicted file's stem; docs: under `docs_dir` or a .md file; notes: under SCOPE_NOTES_DIR)
 SCOPE_NOTES_DIR = ".notes"  # folder of project notes (kind `notes` of `scope_allow`)
 SCOPE_STEM_MIN = 3  # a predicted file's name stem shorter than this ties no test file to it
 SCOPE_TEST_RE = r"(?i)(?:^|[/._-])(?:tests?|spec)(?:[/._-]|$)"  # a test path

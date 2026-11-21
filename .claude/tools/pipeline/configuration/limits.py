@@ -191,7 +191,10 @@ ADD_REPO_CMD = (
 LINK_BASE_FILE = "linkbase.json"  # per job (next to .branch): the state of the linked main repos when the dev started
 LINK_GIT_MERGE_FILES = ("MERGE_HEAD", "SQUASH_MSG")  # a repo with one of these in its git dir is mid-merge: its staged changes are not a dev's write
 MAIN_BASE_FILE = "mainbase.json"  # per job (next to .branch): the dirty state of the main checkout when the dev started
-MAIN_GUARD_IGNORE = (".wt", WORK_DIR)  # top-level folders of the main checkout that are the pipeline's own (job worktrees, stage work files), never a dev's write
+MAIN_GUARD_IGNORE = (
+    ".wt",
+    WORK_DIR,
+)  # top-level folders of the main checkout that are the pipeline's own (job worktrees, stage work files), never a dev's write
 MAIN_WRITE_NOTE = (
     "FAIL: path outside this task's worktree: files in the MAIN checkout changed or appeared while you worked ({files}, +{more} more). "
     "Nothing was deleted or reverted. The main checkout must stay clean or the merge is blocked. Copy what you need into your own job worktree, "
@@ -281,3 +284,9 @@ GIT_MIN_VERSION = (2, 38)  # `git merge-tree --write-tree` (pipeline/pr_ops.py `
 PUSH_ERR_HEAD = 200  # chars from the start of a failed push's output kept in the Blocked message (pipeline/pr_ops.py) ...
 PUSH_ERR_TAIL = 600  # ... and from its end
 SCRIPT_OUTPUT_MAX = 3000  # chars of a script step's output kept in its report (the VERDICT first line is always kept)
+
+STALE_REPORT_NOTE = (
+    " First compare the failing report's head (the commit it names, or its timestamp) with the stage branch HEAD now:"
+    " when the stage moved on since the report, the report is old, so plan nothing and request a rerun with `{retry}`, then reply DONE, not BLOCKED."
+)
+STALE_RETRY_STEP = "final-test"  # the step a stale failing report is rerun by

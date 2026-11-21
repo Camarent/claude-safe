@@ -140,7 +140,9 @@ class TaskGatesScriptTest(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.d, True)
-        Path(self.d, "pipeline.json").write_text(json.dumps({"worktrees": True, "gate_flake_rerun": False, "gates": [{"name": "lint", "cmd": "mylint"}]}), encoding="utf-8")
+        Path(self.d, "pipeline.json").write_text(
+            json.dumps({"worktrees": True, "gate_flake_rerun": False, "gates": [{"name": "lint", "cmd": "mylint"}]}), encoding="utf-8"
+        )
         self.ran: list = []
         self.base_rc = 0  # result on the stage base (the main checkout, self.d)
         self.base_ok = True  # the main checkout is a fair base (clean, on the stage branch)

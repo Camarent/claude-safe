@@ -41,5 +41,7 @@ def check_bare_test_runner(d, tid, workspace):
         return []
     for part in split_commands(m[1].replace("`", " "), amp=False, newline=False):
         if _is_bare(part):
-            return [f"{TESTCMD_WARN_PREFIX} {tid}: Test runs bare `{part.strip()}` but the project's test command is `{hint}`: use that, or the runner the project notes name"]
+            return [
+                f"{TESTCMD_WARN_PREFIX} {tid}: Test runs bare `{part.strip()}` but the project's test command is `{hint}`: use that, or the runner the project notes name"
+            ]
     return []
