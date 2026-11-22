@@ -20,11 +20,13 @@ from .configuration import (
     ACCEPTANCE_REVIEW_AGENT,
     ACCEPTANCE_REVIEW_FILE,
     ACCEPTANCE_TAIL_LINES,
+    ACCEPTANCE_TMP_PREFIX,
     DONE,
     ENV_SCRIPT_TIMEOUT,
     FAIL,
     GIT_LONG_TIMEOUT_S,
     PLAN_FILE,
+    REPORTS_DIR,
     TOOLS_DIR,
     WORK_DIR,
     project,
@@ -53,6 +55,7 @@ def qrun_runner(cmd, cwd, timeout):
 
 PASS, UNKNOWN = "PASS", "UNKNOWN"  # verdicts of a MANUAL item (FAIL is imported from configuration)
 _MANUAL_VERDICT_RE = re.compile(r"^\s*(?:[-*]\s*)?MANUAL (\d+):\s*(PASS|FAIL|UNKNOWN)\b", re.MULTILINE)
+_QRUN_LOG_RE = re.compile(r"^(?:FAIL|OK|SKIPPED)[^\n(]*\(log: ([^)\n]+)\)", re.MULTILINE)  # qrun summary line naming its full log
 
 
 def manual_review_brief(manual, branch, base, docs):
@@ -96,8 +99,19 @@ def _line(status, rc, cmd, text):
     return f"- {status} exit {rc}: `{cmd}`" + (f" -> {tail}" if tail else "")
 
 
-def run_items(items, cwd, runner, timeout):
-    """-> (lines, failed count) for the checklist ITEMS [(tag, text)], run in CWD with RUNNER(cmd, cwd, timeout) -> (rc, text)."""
+def _keep_failed_log(out, dest, n):
+    """Copy the qrun log that the failed command's output OUT names into DEST (the stage reports folder) as failure N, before the temp checkout is dropped. No log named: DEST gets OUT itself."""
+    os.makedirs(dest, exist_ok=True)
+    m = _QRUN_LOG_RE.search(out)
+    if m and os.path.isfile(m.group(1)):
+        shutil.copyfile(m.group(1), os.path.join(dest, f"acceptance-{n}-{os.path.basename(m.group(1))}"))
+    else:
+        write_text(os.path.join(dest, f"acceptance-{n}.log"), out + "\n")
+
+
+def run_items(items, cwd, runner, timeout, keep=None):
+    """-> (lines, failed count) for the checklist ITEMS [(tag, text)], run in CWD with RUNNER(cmd, cwd, timeout) -> (rc, text).
+    KEEP(n, text), when given, gets the output of each failed command (n = 1, 2, ...) before the caller drops CWD."""
     lines, bad = [], 0
     for tag, text in items:
         if tag == ACCEPTANCE_EYES_TAG:
@@ -105,12 +119,14 @@ def run_items(items, cwd, runner, timeout):
         elif tag == ACCEPTANCE_CMD_TAG:
             rc, out = runner(text, cwd, timeout)
             bad += rc != 0
+            if rc and keep:
+                keep(bad, out)
             lines.append(_line(FAIL if rc else "PASS", rc, text, out))
     return lines, bad
 
 
 def _add_worktree(repo, branch):
-    path = tempfile.mkdtemp(prefix="acceptance-")
+    path = tempfile.mkdtemp(prefix=ACCEPTANCE_TMP_PREFIX)
     try:
         gitx.out(repo, "worktree", "add", "--detach", path, branch, timeout=GIT_LONG_TIMEOUT_S)
     except RuntimeError:
@@ -179,7 +195,8 @@ def run(workspace, stage, name, runner=qrun_runner, reviewer=None):
     try:
         nested = _populate(repo, branch, wt, cfg)
         prep = [(ACCEPTANCE_CMD_TAG, c) for c in cfg.get("acceptance_prep") or []]
-        lines, bad = run_items(prep + items, wt, runner, ACCEPTANCE_CMD_TIMEOUT_S)
+        reports = os.path.join(workspace, WORK_DIR, stage, REPORTS_DIR)
+        lines, bad = run_items(prep + items, wt, runner, ACCEPTANCE_CMD_TIMEOUT_S, keep=lambda n, out: _keep_failed_log(out, reports, n))
     finally:
         _drop_worktree(repo, wt, nested)
     lines, not_pass = _apply_review(lines, items, branch, cfg, reviewer)

@@ -11,13 +11,14 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import audit_phases, driver, util
-from pipeline.configuration import PROJECT_DEFAULTS, SCRIPT_TIMEOUT_S
+from pipeline.configuration import ENV_SCRIPT_TIMEOUT, PROJECT_DEFAULTS, SCRIPT_TIMEOUT_S
 from tests.support.tmpdirs import tracked_mkdtemp
 
 
 class RunScriptTest(unittest.TestCase):
     def test_a_script_past_its_timeout_is_an_error_result(self):
-        with mock.patch.object(util, "SCRIPT_TIMEOUT_S", 0.001):
+        # the env wins over the default: a parent run with ORCH_SCRIPT_TIMEOUT set (acceptance qrun) must not lift the 0.001 s limit
+        with mock.patch.object(util, "SCRIPT_TIMEOUT_S", 0.001), mock.patch.dict(os.environ, {ENV_SCRIPT_TIMEOUT: "0.001"}):
             r = driver.run_script(f"{driver.SCRIPT_PREFIX}qrun.py", ".")
         self.assertTrue(r["error"])
         self.assertIn("timed out", r["result"])
