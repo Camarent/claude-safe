@@ -110,6 +110,8 @@ container does not allow user namespaces.
     ./run.sh --here --with strata        the same + Strata (Qwen3.8 IQ3_XXS, ~50 GB RAM) beside it: /run-stage <stage>
 Details and status of the thin pipeline: `.claude/practices/orch-pipeline.md`. Tests of the tools: run them inside the container.
 
+Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<stage>/reports/report-<id>.md`) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
+
 ## Local cluster (`--with cluster`)
 
 `./run.sh --here --with cluster` adds the `cluster` profile and starts, as root in the entrypoint, an own `dockerd`

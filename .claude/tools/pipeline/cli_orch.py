@@ -355,6 +355,18 @@ def _remit_verdict(a, d, v, body):
     return (CLEAN, ignored) if ignored and not severe else (v, [])
 
 
+_VERDICT_LINE = re.compile(r"^\s*VERDICT\s*:", re.M)
+
+
+def _worktree_report(a, d):
+    """-> the job worktree's report file of dispatch d (the dev wrote it there, not in the main checkout) when it exists, else None."""
+    if not (a.dir and d.get("task")):  # no job worktree without a project dir or a task (non-dev dispatches)
+        return None
+    root = worktree.layout(a.dir, a.stage, d["task"])[2]
+    f = work_path(os.path.join(root, WORK_DIR, a.stage), f"report-{a.id}.md")
+    return f if os.path.isfile(f) else None
+
+
 def cmd_report(a):
     w, log = paths(a)
     evs = read_jsonl(log)
@@ -363,6 +375,10 @@ def cmd_report(a):
         sys.exit(f"orch: unknown dispatch id {a.id}")
     d = d[0]
     f = work_path(w, f"report-{a.id}.md", create=True)
+    if not _VERDICT_LINE.search(read_text(f)):  # the main report has no VERDICT line: take the job worktree's report when it has one
+        wt_f = _worktree_report(a, d)
+        if wt_f and _VERDICT_LINE.search(read_text(wt_f)):
+            write_text(f, read_text(wt_f))
     if a.text and not read_text(f).strip():  # --text only fills a missing/blank file
         write_text(f, a.text)
     body = read_text(f)
