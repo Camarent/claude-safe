@@ -29,6 +29,7 @@ from .configuration import (
     ENV_PROJECT_ROOT,
     ENV_TIMEOUT,
     GIT_SAFE_ENV,
+    INIT_PID,
     LIMIT_FALLBACK_S,
     LIMIT_MARGIN_S,
     LIMIT_TEXT_MAX,
@@ -39,6 +40,7 @@ from .configuration import (
     SCRATCH_ADD_AGENTS,
     SCRATCH_ADD_DIR,
     SESSION_TIMEOUT_S,
+    STOP_SIGNALS,
     TUNING_EXEMPT_AGENTS,
     ConfigError,
     ops_flags,
@@ -122,6 +124,30 @@ def untrack(p):
         LIVE.remove(p)
 
 
+PGID_LOCK = threading.Lock()  # sessions of one wave start and end on pool threads
+
+
+def pgid_record(path, pid):
+    """Append PID (a session's process group id: it leads its own group) as one line of the stage's pgid file PATH."""
+    with PGID_LOCK, open(path, "a") as f:
+        f.write(f"{pid}\n")
+
+
+def pgid_forget(path, pid):
+    """Drop PID's line from the pgid file PATH; the file goes when no live session is left in it."""
+    with PGID_LOCK:
+        try:
+            with open(path) as f:
+                left = [line for line in f if line.strip() != str(pid)]
+        except OSError:
+            return
+        if left:
+            with open(path, "w") as f:
+                f.writelines(left)
+        else:
+            os.remove(path)
+
+
 def kill_group(p):
     with contextlib.suppress(OSError):
         os.killpg(p.pid, signal.SIGKILL)  # the session leads its own group, so background children die with it
@@ -147,7 +173,10 @@ def kill_on_signal():
         kill_all()
         raise SystemExit(128 + signum)
 
-    old = {sig: signal.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT)}
+    sigs = [getattr(signal, name) for name in STOP_SIGNALS]
+    if os.getpid() == INIT_PID:  # container init: a hangup is not a stop request, leave SIGHUP alone
+        sigs = [s for s in sigs if s != signal.SIGHUP]
+    old = {sig: signal.signal(sig, stop) for sig in sigs}
     try:
         yield
     finally:
@@ -207,19 +236,25 @@ def add_dir_allow(args):
     return [*args[:cut], *(x for d in dirs for x in (ADD_DIR_FLAG, d)), *args[cut:]]
 
 
-def run_claude(args, cwd, timeout, done_file=None, env_extra=None):
-    """Run `claude <args>`, -> parsed json dict (is_error set on any failure). done_file: report path; session is closed REPORT_GRACE_S after its VERDICT line appears."""
+def session_env(args, env_extra):
+    """Environment of one `claude` session: GIT_SAFE_ENV, the pipeline token unless the agent is in NO_TOKEN_AGENTS, the artifact flag for ARTIFACT_AGENTS, then env_extra."""
+    env = {**os.environ, **GIT_SAFE_ENV}
+    token = os.environ.get(ENV_PIPELINE_TOKEN)
+    if token and not any(a in args for a in NO_TOKEN_AGENTS):
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    if any(a in args for a in ARTIFACT_AGENTS):
+        env[ENV_ARTIFACT] = ARTIFACT_ON
+    env.update(env_extra or {})
+    return env
+
+
+def run_claude(args, cwd, timeout, done_file=None, env_extra=None, pgid_file=None):
+    """Run `claude <args>`, -> parsed json dict (is_error set on any failure). done_file: report path; session is closed REPORT_GRACE_S after its VERDICT line appears. pgid_file: stage file that lists the live sessions' group ids. stopped=True when the driver is stopping: the session did not run to an answer, so no report is due."""
     if STOPPING:
-        return {"is_error": True, "result": "wave: driver stopping, session not started"}
+        return {"stopped": True, "is_error": True, "result": "wave: driver stopping, session not started"}
     p = None
     try:
-        env = {**os.environ, **GIT_SAFE_ENV}
-        token = os.environ.get(ENV_PIPELINE_TOKEN)
-        if token and not any(a in args for a in NO_TOKEN_AGENTS):
-            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-        if any(a in args for a in ARTIFACT_AGENTS):
-            env[ENV_ARTIFACT] = ARTIFACT_ON
-        env.update(env_extra or {})
+        env = session_env(args, env_extra)
         p = track(
             subprocess.Popen(
                 ["claude", *add_dir_allow(artifact_allow(args))],
@@ -231,7 +266,11 @@ def run_claude(args, cwd, timeout, done_file=None, env_extra=None):
                 start_new_session=True,
             )
         )
+        if pgid_file:
+            pgid_record(pgid_file, p.pid)
         out, err, closed, timed_out = _wait(p, timeout, done_file)
+        if STOPPING:  # killed by the stop signal: no answer, no report
+            return {"stopped": True, "is_error": True, "result": "wave: driver stopped, session killed"}
         if timed_out:
             return {"is_error": True, "result": "wave: session timeout"}
         try:
@@ -245,6 +284,8 @@ def run_claude(args, cwd, timeout, done_file=None, env_extra=None):
     finally:
         if p is not None:
             untrack(p)
+            if pgid_file:
+                pgid_forget(pgid_file, p.pid)
 
 
 def tool_counts(session_id):
@@ -313,6 +354,7 @@ def usage(res):
         "seconds_api": round((res.get("duration_api_ms", 0) or 0) / 1000, 1),
         "result": res.get("result") or "",
         "error": bool(res.get("is_error")),
+        "stopped": bool(res.get("stopped")),
         "denials": denial_lines(res.get("permission_denials")),
         "sid": res.get("session_id") or "",
         "tools": tool_counts(res.get("session_id")),
@@ -345,18 +387,16 @@ def limit_wait_s(res, now=None):
     return (reset - t).total_seconds() + LIMIT_MARGIN_S
 
 
-def session(args, cwd, timeout=None, done_file=None, env_extra=None):
-    """Run one session (timeout default WAVE_TIMEOUT; done_file: see run_claude). -> usage dict.
+def session(args, cwd, timeout=None, done_file=None, env_extra=None, pgid_file=None):
+    """Run one session (timeout default WAVE_TIMEOUT; done_file, pgid_file: see run_claude). -> usage dict.
     A usage-limit notice as the result is not a failure of the task: wait for the printed reset time and run the session again (at most LIMIT_WAIT_MAX_S in all)."""
     t = default_timeout() if timeout is None else timeout
     waited = 0.0
     while True:
-        if env_extra:
-            res = run_claude(args, cwd, t, done_file, env_extra)
-        elif done_file:
-            res = run_claude(args, cwd, t, done_file)
-        else:
-            res = run_claude(args, cwd, t)
+        extra = {k: v for k, v in (("done_file", done_file), ("env_extra", env_extra), ("pgid_file", pgid_file)) if v}
+        res = run_claude(args, cwd, t, **extra)
+        if res.get("stopped"):
+            return usage(res)
         wait = limit_wait_s(res)
         if wait is None or waited + wait > LIMIT_WAIT_MAX_S:
             return usage(res)

@@ -9,4 +9,6 @@ HAIKU_REWORK_TRIES = 1  # rework rounds a Haiku dev gets before the task escalat
 REVIEW_DOCS_MAX_TURNS = 12  # `--max-turns` of a docs review session
 DENIAL_LOG_NAME = "denials.log"  # file in the stage folder that collects permission denials of headless sessions
 PGID_FILE_NAME = "wave.pgid"  # file in the stage folder that holds the process group id of a running wave driver
+STOP_SIGNALS = ("SIGTERM", "SIGINT", "SIGHUP")  # signals that stop the wave driver: kill every live session group, then exit
+INIT_PID = 1  # a driver running as this pid (container init) does not take SIGHUP as a stop: the hangup stays optional
 MERGE_RESIDUE_FILE = "merge-residue.txt"  # file in the stage folder that lists merge leftovers a later merge must clean up

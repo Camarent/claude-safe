@@ -504,11 +504,13 @@ from .tuning import (  # noqa: F401  (re-export: the facade keeps every name imp
     ENV_REPAIR_MAX,
     GATE_SKIP_PATHS,
     HAIKU_REWORK_TRIES,
+    INIT_PID,
     LEAD_SLICE_CHARS_WITH_PATTERN,
     MERGE_RESIDUE_FILE,
     PGID_FILE_NAME,
     REVIEW_DOCS_MAX_TURNS,
     STALE_RERUN_MAX,
+    STOP_SIGNALS,
 )
 from .verdicts import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     ARCHITECT,
