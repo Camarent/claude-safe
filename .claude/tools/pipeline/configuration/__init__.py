@@ -512,6 +512,7 @@ from .tuning import (  # noqa: F401  (re-export: the facade keeps every name imp
     MERGE_RESIDUE_FILE,
     PGID_FILE_NAME,
     REVIEW_DOCS_MAX_TURNS,
+    SQUASH_MSG_FILE,
     STALE_RERUN_MAX,
     STOP_SIGNALS,
 )
