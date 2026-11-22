@@ -36,8 +36,8 @@ def cmd_plan_init(a):
     return 0
 
 
-def cmd_phase(a):
-    phases, paths = pf.read_phases(a), pf.csv(a.paths)
+def _validate_phase_args(a, phases):
+    """Raise PlanError for a bad `phase` request; return the `--before` phase ref (or None)."""
     if not os.path.exists(pf.plan_path(a)):
         raise pf.PlanError("Plan.md missing: run plan-init first")
     if a.after and a.before:
@@ -50,10 +50,19 @@ def cmd_phase(a):
     before = pf.phase_ref(phases, a.before) if a.before else None
     if a.before and before is None:
         raise pf.PlanError(f"--before: unknown phase {a.before}")
+    return before
+
+
+def _resolve_deps(a, phases, before):
+    """Depends of the new phase: --depends, else --after's phase, else the phase before `before`."""
     prev = []  # the phase before `before` (none when first)
     if before is not None and phases.index(before):
         prev = [phases[phases.index(before) - 1]["dir"]]
-    deps = pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else prev)
+    return pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else prev)
+
+
+def _check_overlap(a, phases, paths, deps, before):
+    """Raise PlanError when `paths` overlap an existing phase that is not ordered against the new one."""
     probe = {
         "dir": a.name,
         "depends": deps + ([before["dir"]] if before else []),
@@ -62,8 +71,12 @@ def cmd_phase(a):
         ov = pf.overlap(paths, p["paths"])
         if ov and not pf.phases_ordered([*phases, probe], a.name, p["dir"]):
             raise pf.PlanError(f"paths overlap with phase {p['dir']}: {ov[0]} / {ov[1]}")
+
+
+def _new_phase(a, phases, paths, deps):
+    """The phase record; numbered `NN-name` unless placed with --after/--before."""
     nn = max([int(p["dir"][:2]) for p in phases] or [0]) + 1
-    new = {
+    return {
         "dir": a.name if (a.after or a.before) else f"{nn:02d}-{a.name}",
         "goal": a.goal,
         "done_when": a.done_when,
@@ -72,13 +85,24 @@ def cmd_phase(a):
         "status": "todo",
         "tasks": a.tasks,
     }
+
+
+def _place_phase(a, phases, new):
+    """The phase list with `new` inserted at --before, after --after, or appended."""
     if a.before:
-        out = pf.insert_before(a, phases, new, a.before)
-    elif a.after:
-        out = pf.insert_phase(a, phases, new, a.after)
-    else:
-        out = [*phases, new]
-    pf.write_phases(a, out)
+        return pf.insert_before(a, phases, new, a.before)
+    if a.after:
+        return pf.insert_phase(a, phases, new, a.after)
+    return [*phases, new]
+
+
+def cmd_phase(a):
+    phases, paths = pf.read_phases(a), pf.csv(a.paths)
+    before = _validate_phase_args(a, phases)
+    deps = _resolve_deps(a, phases, before)
+    _check_overlap(a, phases, paths, deps, before)
+    new = _new_phase(a, phases, paths, deps)
+    pf.write_phases(a, _place_phase(a, phases, new))
     os.makedirs(os.path.join(pf.feature_dir(a), "phases", new["dir"]), exist_ok=True)
     jprint({"phase": new["dir"]})
     return 0
