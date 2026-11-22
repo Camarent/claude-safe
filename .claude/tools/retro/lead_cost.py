@@ -33,6 +33,11 @@ HEADLESS_ENTRYPOINT = "sdk-cli"
 # the lead is the session that runs these; ops_steps = the ops sessions (cleanup, push, digest)
 PIPELINE_TOOLS = ("wave.py", "plan.py", "orch.py", "ops_steps.py")
 KINDS = (("cache write", "cache_write"), ("cache read", "cache_read"), ("fresh input", "input"), ("output", "output"))
+# why a LEAD-COST line is $0.00 (printed as `reason: ...`)
+REASON_NO_WINDOW = "no orch window"
+REASON_NO_TRANSCRIPT = "no lead transcript found"
+REASON_NO_SESSION = "no lead session in window"
+REASON_TINY_OR_UNPRICED = "lead turns cost under $0.005 or are on an unpriced model"
 
 
 def _turns(path):
@@ -310,24 +315,41 @@ def _total_lines(feature_dir, paths, rs, tot, lo, hi):
     ]
 
 
+def _zero_reason(hi, paths, rs):
+    """-> why a LEAD-COST line has no cost: no orch window (HI 0), no lead transcript (PATHS empty), no lead session in the window (RS empty); "" when there is cost."""
+    if not hi:
+        return REASON_NO_WINDOW
+    if not paths:
+        return REASON_NO_TRANSCRIPT
+    if not rs:
+        return REASON_NO_SESSION
+    return ""
+
+
 def _phase_line(d, o, paths):
-    """-> the LEAD-COST line of phase folder D (its orch.jsonl O) over the lead sessions in PATHS."""
+    """-> the LEAD-COST line of phase folder D (its orch.jsonl O) over the lead sessions in PATHS; ', reason: ...' when its cost is $0.00."""
     plo, phi = window([o])
     prs, ptot = _tot(paths, plo, phi) if phi else ([], {"usd": {}})
-    return f"   phase {d}: ${sum(ptot['usd'].values()):.2f}, {sum(r['turns'] for r in prs)} turns"
+    cost = sum(ptot["usd"].values())
+    line = f"   phase {d}: ${cost:.2f}, {sum(r['turns'] for r in prs)} turns"
+    if round(cost, 2) == 0:
+        reason = _zero_reason(phi, paths, prs) or REASON_TINY_OR_UNPRICED
+        line += f", reason: {reason}"
+    return line
 
 
 def feature_lines(feature_dir, projects):
-    """-> LEAD-COST lines for a whole feature: one total over the window of all phases, then one line per phase. [] without lead turns.
+    """-> LEAD-COST lines for a whole feature: one total over the window of all phases, then one line per phase.
+    Never []: without lead cost one line says why (`reason: ...`) and the feature's name.
     `feature_dir` is .work/<feature> with phases/<n>/orch.jsonl (+ metrics.jsonl)."""
     phases, orchs = _phases(feature_dir)
     paths = lead_paths(projects)
+    name = os.path.basename(os.path.normpath(feature_dir))
     lo, hi = window(orchs + [os.path.join(os.path.dirname(o), METRICS_LOG) for o in orchs])
-    if not hi:
-        return []
-    rs, tot = _tot(paths, lo, hi)
-    if not rs:
-        return []
+    rs, tot = _tot(paths, lo, hi) if hi and paths else ([], {"usd": {}})
+    reason = _zero_reason(hi, paths, rs)
+    if reason:
+        return [f"LEAD-COST feature {name}: $0.00, reason: {reason}"]
     out = _total_lines(feature_dir, paths, rs, tot, lo, hi)
     out += [_phase_line(d, o, paths) for d, o in zip(phases, orchs, strict=True)]
     return out
