@@ -69,6 +69,7 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
+from .plan_parallel import PARALLEL_WARN_PREFIX, parallel_candidates
 from .plan_ptest import ptest_selector_problems
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_rules import (
@@ -607,7 +608,9 @@ def check_stage(d, repo=None):
         probs += _task_file_problems(d, e, ents, repo, gates, git, produced)
     return len(ents), probs + _overlap_problems(d, ents) + _carried_problems(d, ents) + publish_problems(d, ents) + shared_warnings(
         d, ents
-    ) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(d, ents)
+    ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(
+        d, ents
+    )
 
 
 def _carried_problems(d, ents):
@@ -642,7 +645,7 @@ MIN_PHASE, MAX_COMBINED = 10, 25
 
 
 def errors_of(probs):
-    """PROBS without the `combine:`, `size:`, `shared:`, `gate:`, `release:`, `ci-drift:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check)."""
+    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `ci-drift:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check)."""
     return [
         p
         for p in probs
@@ -659,6 +662,7 @@ def errors_of(probs):
                 "open-edit:",
                 "repos:",
                 UX_FLOWS_WARN_PREFIX,
+                PARALLEL_WARN_PREFIX,
                 AFFECTED_WARN_PREFIX,
                 NEG_WARN_PREFIX,
                 PREREQ_WARN_PREFIX,
