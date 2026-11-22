@@ -18,7 +18,7 @@ Steps
 2. Read `docs/ARCHITECTURE.md` if present, then `docs/INDEX.md`, then the sources of each module in scope: files up to ~300 lines whole; larger ones via `grep -n` for definitions/exports/entry points, then Read slices (offset/limit) around hits. Do not skip the biggest files (they hold the real logic) but never load one whole. Find entry points explicitly (`main`, CLI dispatch, `package.json` scripts, `Cargo.toml` bins, Makefile targets, server/start files). Build/test commands come only from Makefile, package.json, Cargo.toml, CI files or CONTRACT/README/TEAM text; otherwise `TODO(verify)`.
 3. Never overwrite an existing doc with Write: read it and Edit so still-true text stays byte-for-byte; change only what the code contradicts. Write only for new files. Per module in scope write/update `docs/modules/<slug>.md` (slug as in INDEX.md headings).
 4. `docs/ARCHITECTURE.md`, at most 100 lines: what the project is, one line per module with a link, main data/control flow, entry points, build/test commands (from the repo, not guessed).
-5. `cs-docs-index --root <root> --check` and fix what it reports (it validates every `path:line`: re-run `grep -n` for the real line or drop the number) until it prints `docs OK`.
+5. `cs-docs-index --root <root> --check` and fix what it reports (it validates every `path:line`: re-run `grep -n` for the real line or drop the number) until it prints `docs OK`. A folder that is not an index module gets no `docs/modules/<slug>.md`: fold its content into its parent module doc (`describes no existing module` marks such a file).
 
 Module doc template
 ```
