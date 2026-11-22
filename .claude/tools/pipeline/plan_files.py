@@ -221,15 +221,11 @@ def _refuse_started(root, later):
             raise PlanError(f"cannot insert before {p['dir']}: it has started (status {p['status']} or files in its folder)")
 
 
-def insert_phase(a, phases, new, after):
-    """Put `new` (its `dir` is set here) after phase `after` and renumber the later phases: rows, folders, depends. A closing `NN-finish` phase also depends on `new`. Refuses when a later phase has started (not `todo`, or files in its folder). -> the new list."""
-    pos = next((i for i, p in enumerate(phases) if after in (p["dir"], p["dir"][3:])), None)
-    if pos is None:
-        raise PlanError(f"--after: unknown phase {after}")
-    later = phases[pos + 1 :]
+def _place(a, phases, new, pos, num):
+    """Put `new` at index `pos` with number `num` (its `dir` is set here) and renumber phases[pos:]: rows, folders, depends. A closing `NN-finish` phase also depends on `new`. Refuses when one of them has started (not `todo`, or files in its folder). -> the new list."""
     root = os.path.join(feature_dir(a), "phases")
+    later = phases[pos:]
     _refuse_started(root, later)
-    num = int(phases[pos]["dir"][:2]) + 1
     new["dir"] = f"{num:02d}-{new['dir']}"
     ren = {p["dir"]: f"{num + 1 + i:02d}-{p['dir'][3:]}" for i, p in enumerate(later)}
     for p in reversed(later):  # highest number first: no target name is taken yet
@@ -241,7 +237,25 @@ def insert_phase(a, phases, new, after):
         p["dir"] = ren.get(p["dir"], p["dir"])
         if is_finish_dir(p["dir"]) and new["dir"] not in p["depends"]:
             p["depends"] = [*p["depends"], new["dir"]]
-    return [*phases[: pos + 1], new, *later]
+    return [*phases[:pos], new, *later]
+
+
+def insert_phase(a, phases, new, after):
+    """Put `new` after phase `after` and renumber the later phases (see `_place`). -> the new list."""
+    pos = next((i for i, p in enumerate(phases) if after in (p["dir"], p["dir"][3:])), None)
+    if pos is None:
+        raise PlanError(f"--after: unknown phase {after}")
+    return _place(a, phases, new, pos + 1, int(phases[pos]["dir"][:2]) + 1)
+
+
+def insert_before(a, phases, new, before):
+    """Put `new` ahead of phase `before` and renumber it and the later phases (see `_place`): `new` takes the number after the phase before it (00 when first) and `before` gets the new phase in its depends. -> the new list."""
+    pos = next((i for i, p in enumerate(phases) if before in (p["dir"], p["dir"][3:])), None)
+    if pos is None:
+        raise PlanError(f"--before: unknown phase {before}")
+    out = _place(a, phases, new, pos, int(phases[pos - 1]["dir"][:2]) + 1 if pos else 0)
+    out[pos + 1]["depends"] = [*out[pos + 1]["depends"], new["dir"]]  # `before` waits for the new phase
+    return out
 
 
 def write_phases(a, phases):

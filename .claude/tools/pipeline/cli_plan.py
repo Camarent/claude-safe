@@ -1,7 +1,7 @@
 """Plan writer for architects: writes Plan.md / TASKS.md / task-N.md in the exact format orch.py and wave.py parse, and validates them.
 
     cs-plan plan-init --feature F --goal TEXT             Plan.md skeleton + phases/
-    cs-plan phase --feature F --name N --goal G --done-when CMD [--depends A,B] --paths p1,p2 [--tasks N] [--after P]   append phase (or insert after phase P and renumber the later, unstarted ones), create phases/NN-name (paths must not overlap other phases)
+    cs-plan phase --feature F --name N --goal G --done-when CMD [--depends A,B] --paths p1,p2 [--tasks N] [--after P | --before P]   append phase (or insert after phase P, or ahead of phase P, and renumber the later, unstarted ones), create phases/NN-name (paths must not overlap other phases)
     cs-plan phase-done --feature F --name N               mark a phase done
     cs-plan next-phase --feature F                        JSON of the first open phase whose depends are done
     cs-plan stage-init --stage S --goal G [--flags "ui docs"] [--pr-title "<type>(<area>): <what>"]   TASKS.md skeleton
@@ -38,20 +38,31 @@ def cmd_phase(a):
     phases, paths = pf.read_phases(a), pf.csv(a.paths)
     if not os.path.exists(pf.plan_path(a)):
         raise pf.PlanError("Plan.md missing: run plan-init first")
+    if a.after and a.before:
+        raise pf.PlanError("--after and --before: give one of them")
     if pf.phase_ref(phases, a.name):
         raise pf.PlanError(f"phase {a.name} exists")
     for dep in pf.csv(a.depends):
         if not pf.phase_ref(phases, dep):
             raise pf.PlanError(f"depends on unknown phase {dep}")
-    deps = pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else [])
-    probe = {"dir": a.name, "depends": deps}  # the new phase, so ordering sees its depends chain
+    before = pf.phase_ref(phases, a.before) if a.before else None
+    if a.before and before is None:
+        raise pf.PlanError(f"--before: unknown phase {a.before}")
+    prev = []  # the phase before `before` (none when first)
+    if before is not None and phases.index(before):
+        prev = [phases[phases.index(before) - 1]["dir"]]
+    deps = pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else prev)
+    probe = {
+        "dir": a.name,
+        "depends": deps + ([before["dir"]] if before else []),
+    }  # the new phase, so ordering sees its depends chain (and `before` waits for it)
     for p in phases:
         ov = pf.overlap(paths, p["paths"])
         if ov and not pf.phases_ordered([*phases, probe], a.name, p["dir"]):
             raise pf.PlanError(f"paths overlap with phase {p['dir']}: {ov[0]} / {ov[1]}")
     nn = max([int(p["dir"][:2]) for p in phases] or [0]) + 1
     new = {
-        "dir": a.name if a.after else f"{nn:02d}-{a.name}",
+        "dir": a.name if (a.after or a.before) else f"{nn:02d}-{a.name}",
         "goal": a.goal,
         "done_when": a.done_when,
         "depends": deps,
@@ -59,7 +70,13 @@ def cmd_phase(a):
         "status": "todo",
         "tasks": a.tasks,
     }
-    pf.write_phases(a, pf.insert_phase(a, phases, new, a.after) if a.after else [*phases, new])
+    if a.before:
+        out = pf.insert_before(a, phases, new, a.before)
+    elif a.after:
+        out = pf.insert_phase(a, phases, new, a.after)
+    else:
+        out = [*phases, new]
+    pf.write_phases(a, out)
     os.makedirs(os.path.join(pf.feature_dir(a), "phases", new["dir"]), exist_ok=True)
     jprint({"phase": new["dir"]})
     return 0
@@ -287,7 +304,7 @@ def build():
         p.set_defaults(fn=fn)
 
     add("plan-init", cmd_plan_init, feature=True, goal=True)
-    add("phase", cmd_phase, feature=True, name=True, goal=True, done_when=True, depends="", paths=True, tasks=0, after="")
+    add("phase", cmd_phase, feature=True, name=True, goal=True, done_when=True, depends="", paths=True, tasks=0, after="", before="")
     for act in sub.choices["phase"]._actions:
         if act.dest == "tasks":
             act.type = int
