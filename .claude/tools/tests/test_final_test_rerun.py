@@ -12,6 +12,11 @@ from pipeline.configuration import FINAL_TEST_RERUN_STEP
 from tests.support.gitrepo import git
 from tests.support.tmpdirs import tracked_mkdtemp
 
+TRIAGE_FAIL = [
+    {"ev": "dispatch", "task": "final-test-triage"},
+    {"ev": "report", "task": "final-test-triage", "verdict": "FAIL", "file": "/r/tr.md"},
+]  # the triage ran and found red on the stage head only: the fix plan follows
+
 
 class FinalTestRerunTest(unittest.TestCase):
     def setUp(self):
@@ -44,18 +49,19 @@ class FinalTestRerunTest(unittest.TestCase):
         self.assertEqual(self.ids(self.evs("0" * 40)), ["final-test", FINAL_TEST_RERUN_STEP])
 
     def test_same_head_goes_to_fix(self):
-        self.assertEqual(self.ids(self.evs(self.head())), ["final-test", "fix-plan-test", "final-test-2"])
+        self.assertEqual(self.ids([*self.evs(self.head()), *TRIAGE_FAIL]), ["final-test", "final-test-triage", "fix-plan-test", "final-test-2"])
 
     def test_no_recorded_head_goes_to_fix(self):
-        self.assertEqual(self.ids(self.evs("")), ["final-test", "fix-plan-test", "final-test-2"])
+        self.assertEqual(self.ids([*self.evs(""), *TRIAGE_FAIL]), ["final-test", "final-test-triage", "fix-plan-test", "final-test-2"])
 
     def test_rerun_fail_goes_to_fix(self):
         evs = [
             *self.evs("0" * 40),
             {"ev": "dispatch", "task": FINAL_TEST_RERUN_STEP, "head": self.head()},
             {"ev": "report", "task": FINAL_TEST_RERUN_STEP, "verdict": "FAIL", "file": "/r/rr.md"},
+            *TRIAGE_FAIL,
         ]
-        self.assertEqual(self.ids(evs), ["final-test", FINAL_TEST_RERUN_STEP, "fix-plan-test", "final-test-2"])
+        self.assertEqual(self.ids(evs), ["final-test", FINAL_TEST_RERUN_STEP, "final-test-triage", "fix-plan-test", "final-test-2"])
 
     def test_rerun_pass_skips_fix(self):
         evs = [

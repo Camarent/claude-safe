@@ -143,6 +143,12 @@ WEBTEST_WIDTHS = "phone 390px and desktop 1280px"  # widths the browser check na
 WEBTEST_STEP = "final-webtest"  # id of the first browser-check batch; later batches add WEBTEST_BATCH_SUFFIX, fix-task batches WEBTEST_FIX_SUFFIX, a re-check WEBTEST_AGAIN_SUFFIX
 WEBTEST_BATCH_SUFFIX, WEBTEST_FIX_SUFFIX, WEBTEST_AGAIN_SUFFIX = "-b", "-f", "-2"
 FINAL_TEST_RERUN_STEP = "final-test-rerun"  # one automatic rerun of a failed final-test when the stage head moved since that run
+FINAL_FILES_CMD_KEY = (
+    "final_files_cmd"  # pipeline.json: command that runs test files alone, `{files}` = the failing test files (no key: no triage, straight to the fix plan)
+)
+FINALTEST_TRIAGE_STEP = "final-test-triage"  # script after a failed final-test: rerun the failing test files alone, then on the preflight head
+TEST_FILE_RE = r"[\w./-]*test_\w+\.py"  # a test file path named in a failed final-test report
+FLAKY_LINE = "flaky: the failing test files are green on the rerun alone"  # verdict reason of a final-test that passed on its rerun
 FIX_WEB_STEP = "fix-plan-web"  # the fix round after a failed browser check
 WEBTEST_MODEL = "sonnet"  # model of the final browser check: multi-step flows are too much for the cheapest model (pipeline.json `webtest_model` replaces it)
 UX_FLOW_ACTIONS = ("click", "type", "press", "wait", "eval")  # action keys of one flow step (ux_shots.js runAction)
