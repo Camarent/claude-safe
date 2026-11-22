@@ -10,6 +10,9 @@
     "rc=0",
     "exit $rc"
   ],
+  "worktree_setup": [
+    "ln -sfn \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.uv\" .uv"
+  ],
   "gates": [
     {
       "name": "check",
