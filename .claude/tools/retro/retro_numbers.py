@@ -588,12 +588,34 @@ def gate_lines(orch_path):
     return [_gate_summary(rows), *[f"gate {'veto' if r[2] else 'go'} {r[1]} {r[0]}: {r[5]} -> {r[4]}" for r in rows if not r[3]]]
 
 
+def _stage_zero(reason):
+    """-> the stage's LEAD-COST line when it has no cost: $0.00 with the reason."""
+    return f"LEAD-COST stage: $0.00, reason: {reason}"
+
+
 def _stage_lead_lines(a):
-    """LEAD-COST lines for the stage: leads (not the stage's headless sessions) inside the stage's time window."""
+    """LEAD-COST lines for the stage: leads (not the stage's headless sessions) inside the stage's time window, then the whole-session line.
+    Never []: without cost one line says why (`no orch`, `no window`, `no lead turns`)."""
     if not a.orch:
-        return []
+        return [_stage_zero("no orch")]
     lo, hi = lead_cost.window([a.orch])
-    return lead_cost.lead_lines(lead_cost.lead_paths(a.paths), lo, hi) if hi else []
+    if not hi:
+        return [_stage_zero("no window")]
+    paths = lead_cost.lead_paths(a.paths)
+    lines = lead_cost.lead_lines(paths, lo, hi)
+    if not lines:
+        return [_stage_zero("no lead turns")]
+    inside = [p for p in paths if lead_cost.analyse_lead(p, lo, hi)["turns"]]
+    whole = lead_cost.whole_session(inside)
+    tail = f"; unmatched {whole['unmatched']}" if whole["unmatched"] else ""
+    total = whole["lead_usd"] + whole["agent_usd"]
+    return [
+        *lines,
+        (
+            f"LEAD-COST whole session: ${total:.2f} incl. {whole['agents']} subagent log(s) "
+            f"(leads ${whole['lead_usd']:.2f} + subagents ${whole['agent_usd']:.2f}){tail}"
+        ),
+    ]
 
 
 def digest_check(metrics_path, digest_path):
