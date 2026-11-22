@@ -157,6 +157,36 @@ def code_context(a, goal):
         return ""
 
 
+def blocked_report(a):
+    """-> the text printed when the architect is BLOCKED: its OWNER.md, else plan-last.md."""
+    return f"plan: BLOCKED\n{read_text(os.path.join(feature_dir(a), 'OWNER.md')) or read_text(os.path.join(feature_dir(a), 'plan-last.md'))}".rstrip()
+
+
+def testrun_fix(a, c, model, goal, tr):
+    """Plan-fix session for the Test lines `testrun` rejects (`tr`), then -> (tasks, problems): check_now plus the testrun problems that remain."""
+    session(
+        a,
+        c,
+        model,
+        build_prompt(
+            a,
+            model,
+            goal,
+            "The plan you wrote passed `check`, but `testrun` rejects these Test lines; fix them through plan.py commands:\n" + "\n".join(tr),
+        ),
+        "plan-fix",
+    )
+    n, probs = check_now(a, goal)
+    return n, ([*probs, *testrun_problems(a)] if not errors_of(probs) else probs)
+
+
+def testrun_check(a, c, model, goal, n, probs):
+    """-> (tasks, problems) after `testrun` over the Test lines, but only when `check` found no errors; else unchanged."""
+    if errors_of(probs) or not (tr := testrun_problems(a)):
+        return n, probs
+    return testrun_fix(a, c, model, goal, tr)
+
+
 def run(a):
     """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
     goal = read_text(a.prompt_file)
@@ -179,7 +209,7 @@ def run(a):
         prompt = build_prompt(a, model, goal, extra)
         v = session(a, c, model, prompt, "plan-opus")
     if v == "BLOCKED":
-        print(f"plan: BLOCKED\n{read_text(os.path.join(feature_dir(a), 'OWNER.md')) or read_text(os.path.join(feature_dir(a), 'plan-last.md'))}".rstrip())
+        print(blocked_report(a))
         return 2
     n, probs = check_now(a, goal)
     step(c, "check", "done", tasks=n, errors=len(errors_of(probs)))
@@ -188,21 +218,7 @@ def run(a):
             a, c, model, build_prompt(a, model, goal, "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)), "plan-fix"
         )
         n, probs = check_now(a, goal)
-    if not errors_of(probs) and (tr := testrun_problems(a)):
-        session(
-            a,
-            c,
-            model,
-            build_prompt(
-                a,
-                model,
-                goal,
-                "The plan you wrote passed `check`, but `testrun` rejects these Test lines; fix them through plan.py commands:\n" + "\n".join(tr),
-            ),
-            "plan-fix",
-        )
-        n, probs = check_now(a, goal)
-        probs = [*probs, *testrun_problems(a)] if not errors_of(probs) else probs
+    n, probs = testrun_check(a, c, model, goal, n, probs)
     if errors_of(probs):
         print("\n".join(probs))
         return 2
