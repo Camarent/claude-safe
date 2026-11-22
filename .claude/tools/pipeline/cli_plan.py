@@ -19,8 +19,11 @@ Every command takes --dir (default .). --stage S = folder .work/S or .work/F/pha
 """
 
 import argparse
+import io
+import json
 import os
 import sys
+from contextlib import redirect_stderr
 
 from . import plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
 from . import plan_files as pf
@@ -181,6 +184,81 @@ def _add_task(a):
     e = {"id": tid, "title": a.title, "owner": a.model, "wave": wave, "review": a.model, "depends": deps}
     write_text(os.path.join(d, tid + ".md"), pf.render_task(e, a, paths))
     pf.write_tasks(d, [*ents, e])
+    return 0
+
+
+def _batch_args(a, i, t):
+    """-> the parsed `task` arguments of batch entry I (the same parser as `cs-plan task`). An argument error is a PlanError."""
+    if not isinstance(t, dict) or not {"before", "stage", "dir"}.isdisjoint(t):
+        raise pf.PlanError(f"task #{i} must be a JSON object without `before`, `stage` or `dir`")
+    argv = ["task", f"--stage={a.stage}", f"--dir={a.dir}"]
+    for k, v in t.items():
+        argv.append(f"--{k.replace('_', '-')}={','.join(map(str, v)) if isinstance(v, list) else v}")
+    err = io.StringIO()
+    try:
+        with redirect_stderr(err):
+            args = build().parse_args(argv)
+    except SystemExit:
+        raise pf.PlanError(f"task #{i} has invalid arguments: {(err.getvalue().strip().splitlines() or ['?'])[-1]}") from None
+    if args.id and not args.id.strip().isdigit():  # _add_task does int(a.id): a non-number must fail here, before any write
+        raise pf.PlanError(f"task #{i} has invalid id: {args.id!r}")
+    return args
+
+
+def _snapshot(d):
+    """The files directly in stage dir D (name -> bytes), or None when D is missing."""
+    if not os.path.isdir(d):
+        return None
+    out = {}
+    for n in os.listdir(d):
+        if os.path.isfile(os.path.join(d, n)):
+            with open(os.path.join(d, n), "rb") as f:
+                out[n] = f.read()
+    return out
+
+
+def _restore(d, snap):
+    """Put stage dir D back to the SNAP files: drop new files, rewrite changed ones."""
+    if snap is None:
+        return
+    for n in os.listdir(d):
+        if os.path.isfile(os.path.join(d, n)) and n not in snap:
+            os.remove(os.path.join(d, n))
+    for n, data in snap.items():
+        with open(os.path.join(d, n), "rb") as f:
+            same = f.read() == data
+        if not same:
+            with open(os.path.join(d, n), "wb") as f:
+                f.write(data)
+
+
+def cmd_batch(a):
+    """`batch --stage S --file tasks.json`: add every task of the JSON list through `cs-plan task`. All entries are parsed first; a bad entry adds none. A task that fails later rolls the stage dir back, so none is added."""
+    try:
+        text = read_text(a.file, None)  # None for a missing file
+    except OSError as e:
+        raise pf.PlanError(f"cannot read {a.file}: {e.strerror or e}") from None
+    if text is None:
+        raise pf.PlanError(f"cannot read {a.file}: no such file")
+    try:
+        tasks = json.loads(text)
+    except ValueError as e:
+        raise pf.PlanError(f"{a.file} is not valid JSON: {e}") from None
+    if not isinstance(tasks, list):
+        raise pf.PlanError(f"{a.file} must hold a JSON list of tasks")
+    parsed = [_batch_args(a, i, t) for i, t in enumerate(tasks, 1)]
+    d = pf.stage_dir(a)
+    snap = _snapshot(d)
+    for i, b in enumerate(parsed, 1):
+        try:
+            cmd_task(b)
+        except pf.PlanError as e:
+            _restore(d, snap)
+            raise pf.PlanError(f"task #{i} failed, none added: {e}") from None
+        except BaseException:  # an OSError or any other failure midway must not leave earlier tasks behind
+            _restore(d, snap)
+            raise
+    print(f"OK {len(parsed)} tasks")
     return 0
 
 
@@ -374,6 +452,7 @@ def build():
             act.type = int
         if act.dest == "model":
             act.choices = [MODEL_HAIKU, MODEL_SONNET]
+    add("batch", cmd_batch, stage=True, file=True)
     add("edit-task", cmd_edit_task, stage=True, id=True)
     ep = sub.choices["edit-task"]
     ep.add_argument("--field", action="append", default=[])
