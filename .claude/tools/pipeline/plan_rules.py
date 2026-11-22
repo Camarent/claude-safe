@@ -243,21 +243,20 @@ def check_unlisted_prereq(d, e, ents):
 
 
 DOCS_LINE_RE = re.compile(r"^\s*docs\s*:\s*\S", re.I | re.M)
-DOCS_SECTION_RE = re.compile(r"^##\s+Docs\b", re.M)
 
 
 def check_docs_target(tasks_md, workspace):
-    """Problem when TASKS.md has the `docs` flag but the final-docs step would find no target: a `docs:` line in TASKS.md or PROGRESS.md, or a `## Docs` section in the workspace CLAUDE.md. Without one the step ends BLOCKED, so the plan check stops it earlier."""
+    """Problem when TASKS.md has the `docs` flag but the final-docs step would find no target: a `docs:` line in TASKS.md or PROGRESS.md, or an existing `docs/` folder in the workspace. A `## Docs` section in CLAUDE.md alone does not count (it may say "No docs folder yet"). Without one the step ends BLOCKED, so the plan check stops it earlier."""
     from .tasks import parse_flags
 
     if not parse_flags(tasks_md)["docs"]:
         return []
     if DOCS_LINE_RE.search(read_text(tasks_md)) or DOCS_LINE_RE.search(read_text(os.path.join(workspace, "PROGRESS.md"))):
         return []
-    if DOCS_SECTION_RE.search(read_text(os.path.join(workspace, "CLAUDE.md"))):
+    if os.path.isdir(os.path.join(workspace, "docs")):
         return []
     return [
-        "flags: docs is set but there is no docs target: add a `docs: <folder>` (or `docs: skip`) line to TASKS.md, or a `## Docs` section to the workspace CLAUDE.md"
+        "flags: docs is set but there is no docs target: no `docs/` folder in the workspace and no `docs: <folder>` (or `docs: skip`) line in TASKS.md or PROGRESS.md"
     ]
 
 

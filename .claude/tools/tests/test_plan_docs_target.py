@@ -38,8 +38,15 @@ class DocsTarget(unittest.TestCase):
         self.write("PROGRESS.md", "docs: docs/\n")
         self.assertEqual(self.check(), [])
         os.remove(os.path.join(self.d, "PROGRESS.md"))
-        self.write("CLAUDE.md", "# x\n## Docs\ndocs/\n")
+        os.mkdir(os.path.join(self.d, "docs"))
         self.assertEqual(self.check(), [])
+
+    def test_claude_docs_section_alone_is_not_a_target(self):
+        self.write("TASKS.md", "flags: docs\n")
+        self.write("CLAUDE.md", "# x\n## Docs\nNo docs folder yet.\n")
+        problems = self.check()
+        self.assertEqual(len(problems), 1)
+        self.assertIn("docs/", problems[0])
 
     def test_it_is_an_error_not_a_warning(self):
         from pipeline import plan_check

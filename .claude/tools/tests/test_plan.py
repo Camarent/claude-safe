@@ -98,7 +98,7 @@ class PlanTest(unittest.TestCase):
         )
 
     def stage(self):
-        Path(self.d, "CLAUDE.md").write_text("## Docs\ndocs/\n", encoding="utf-8")  # the docs flag needs a docs target (plan check)
+        os.makedirs(os.path.join(self.d, "docs"), exist_ok=True)  # the docs flag needs a docs/ folder or a docs: line (plan check)
         self.assertEqual(self.p("stage-init", "--stage", "s", "--goal", "g", "--flags", "ui docs")[0], 0)
 
     def test_stage_init_writes_the_pr_title_line(self):
