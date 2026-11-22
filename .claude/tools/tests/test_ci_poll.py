@@ -114,7 +114,7 @@ class MergeWaitsForCi(unittest.TestCase):
 
     def test_timeout_and_interval_come_from_configuration(self):
         self.assertEqual(CHECKS_TIMEOUT_S, 1800)
-        self.assertEqual(CI_POLL_S, 20)
+        self.assertEqual(CI_POLL_S, 10)
         self.assertEqual(pr_ops.checks_timeout({}), CHECKS_TIMEOUT_S)
         self.assertEqual(pr_ops.checks_timeout({"pr_checks_timeout": 5}), 5.0)
 

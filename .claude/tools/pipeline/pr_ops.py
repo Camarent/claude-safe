@@ -334,11 +334,20 @@ class SystemClock:
         time.sleep(seconds)
 
 
-def _poll(read, limit, clock=SystemClock):
-    """-> the first value of read() that is not None, reading every CI_POLL_S; None once `limit` seconds have passed."""
-    deadline = clock.monotonic() + limit
+def _say(line):
+    sys.stderr.write(line + "\n")
+    sys.stderr.flush()
+
+
+def _poll(read, limit, clock=SystemClock, what="poll"):
+    """-> the first value of read() that is not None, reading every CI_POLL_S; None once `limit` seconds have passed. Each read logs one line: attempt, state, elapsed."""
+    start = clock.monotonic()
+    deadline = start + limit
+    attempt = 0
     while True:
+        attempt += 1
         got = read()
+        _say(f"{what}: attempt {attempt}, state {'pending' if got is None else 'ready'}, elapsed {clock.monotonic() - start:.0f}s")
         if got is not None:
             return got
         if clock.monotonic() >= deadline:
@@ -360,7 +369,7 @@ def _mergeable_read(repo, br):
 
 def _checks_gate(repo, cfg, br, clock=SystemClock):
     """Polls the checks of `br` until none is pending (pr_checks_timeout), then raises Blocked unless they are green and squash merges are allowed."""
-    c = _poll(lambda: _checks_read(repo, br), checks_timeout(cfg), clock)
+    c = _poll(lambda: _checks_read(repo, br), checks_timeout(cfg), clock, what=f"checks of {br}")
     if c is None:
         raise Blocked(f"checks of {br} still pending after the wait: merge by hand when green, then skip master-merged")
     if c.returncode and "no checks reported" not in (c.stdout + c.stderr):
@@ -381,7 +390,7 @@ def _merge(a_dir, repo, cfg, stage, br, clock=SystemClock):
         raise Blocked(f"no open PR for {br} (state: {state}): merge by hand, then skip master-merged")
     if _view(repo, br, "isDraft") is not False:
         raise Blocked(f"the PR of {br} is still a draft")
-    got = _poll(lambda: _mergeable_read(repo, br), checks_timeout(cfg), clock)
+    got = _poll(lambda: _mergeable_read(repo, br), checks_timeout(cfg), clock, what=f"mergeability of {br}")
     mergeable = got[0] if got else None
     if mergeable != "MERGEABLE":
         raise Blocked(f"the PR of {br} is {mergeable or 'of unknown mergeability'}: resolve it by hand, then skip master-merged")
