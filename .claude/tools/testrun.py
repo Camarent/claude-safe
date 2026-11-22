@@ -134,6 +134,29 @@ def _gate(cwd, d, stage, scan):
     return [x for x in lines if not x.startswith(SCAN_NOTE_PREFIXES)], notes
 
 
+def _red_verdict(cwd, c, p):
+    """-> (BLOCKED or FAIL, note) of a Test line C that exited non-zero in process P: a missing module or command is BLOCKED, the dev's own bad import or a red test is FAIL."""
+    full = (p.stdout + p.stderr).strip()
+    out = "\n".join(full.splitlines()[-TAIL_LINES:])
+    missing = re.search(r"No module named '?([\w.]+)", full)
+    if missing and not _imported_by_changes(cwd, missing.group(1).split(".")[0]):
+        return BLOCKED, f"`{c}` cannot run (module {missing.group(1)} not installed):\n{out}"
+    if missing:  # the dev's own bad import: a red test
+        return FAIL, f"`{c}` exited {p.returncode}: the changed code imports {missing.group(1)}:\n{out}"
+    if p.returncode in BLOCKED_EXIT or "command not found" in full:
+        return BLOCKED, f"`{c}` cannot run (exit {p.returncode}; missing command):\n{out}"
+    return FAIL, f"`{c}` exited {p.returncode}:\n{out}"
+
+
+def _run_line(cwd, c, runner):
+    """-> (BLOCKED or FAIL, note) when the Test line C could not run or exited non-zero, else None."""
+    try:
+        p = runner(shlex.split(c), cwd=cwd, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_S)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+        return BLOCKED, f"`{c}` could not run: {e}"
+    return _red_verdict(cwd, c, p) if p.returncode != 0 else None
+
+
 def run(stage, task, d, runner=subprocess.run, scan=gate_findings):
     """-> (verdict word, note). `runner` and `scan` are injectable for tests. A Test line already green on the identical tree is skipped, noted with its run id. A finding of the secret or path gate is FAIL before any Test line runs."""
     try:
@@ -159,21 +182,9 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings):
         if hit:
             skipped.append(f"skipped {c}: identical passed tree, run {hit['run']}")
             continue
-        try:
-            p = runner(shlex.split(c), cwd=cwd, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_S)
-        except (OSError, ValueError, subprocess.TimeoutExpired) as e:
-            return BLOCKED, f"`{c}` could not run: {e}"
-        if p.returncode != 0:
-            full = (p.stdout + p.stderr).strip()
-            out = "\n".join(full.splitlines()[-TAIL_LINES:])
-            missing = re.search(r"No module named '?([\w.]+)", full)
-            if missing and not _imported_by_changes(cwd, missing.group(1).split(".")[0]):
-                return BLOCKED, f"`{c}` cannot run (module {missing.group(1)} not installed):\n{out}"
-            if missing:  # the dev's own bad import: a red test
-                return FAIL, f"`{c}` exited {p.returncode}: the changed code imports {missing.group(1)}:\n{out}"
-            if p.returncode in BLOCKED_EXIT or "command not found" in full:
-                return BLOCKED, f"`{c}` cannot run (exit {p.returncode}; missing command):\n{out}"
-            return FAIL, f"`{c}` exited {p.returncode}:\n{out}"
+        red = _run_line(cwd, c, runner)
+        if red:
+            return red
     lead_notes = _run_lead(cwd, leads, runner)  # a red lead-verified line is a note, never a BLOCKED or FAIL of the dev
     return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes])
 

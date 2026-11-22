@@ -281,6 +281,11 @@ def after_cd_segment(seg_text, orig, directory, piped):
     return "" if cwd_dependent(seg_text, piped) else orig
 
 
+def _cd_target(words):
+    """-> the directory a plain `cd` WORDS moves into, '' for a cd into the cwd (dropped: the cwd does not change)."""
+    return "" if in_cwd(words[1]) else words[1]
+
+
 def rewrite_cd_git(cmd):
     """-> CMD with every `cd DIR` dropped and each git command after it changed to `git -C DIR ...`, or '' when that is not provably equivalent."""
     text = strip_quotes(cmd)
@@ -298,7 +303,7 @@ def rewrite_cd_git(cmd):
         if words[:1] == ["cd"]:
             if not plain_cd(words, op):
                 return ""
-            cd_dir = "" if in_cwd(words[1]) else words[1]  # a cd into the cwd is dropped: the cwd does not change
+            cd_dir = _cd_target(words)  # a cd into the cwd is dropped: the cwd does not change
             cd_seen = True
             continue
         if cd_dir:
@@ -306,9 +311,7 @@ def rewrite_cd_git(cmd):
             if not orig:
                 return ""
         rewrote = rewrote or (cd_seen and bool(git_words(seg_text)))
-        out.append(orig)
-        if op:
-            out.append(op)
+        out.append(orig + op)
     return "".join(out).strip() if rewrote else ""
 
 
@@ -347,19 +350,8 @@ def servectl_why(segs):
     return ""
 
 
-def verdict(cmd):
-    """-> deny reason or ''."""
-    if IMPORT_FAILURE:
-        return IMPORT_FAILURE
-    for body in SHELL_C.findall(strip_heredocs(cmd)):
-        why = verdict(body[1])
-        if why:
-            return why
-    text = strip_quotes(cmd)
-    segs = split_commands(text)
-    why = qrun_why(text) or cd_git_why(segs) or servectl_why(segs) or sed_why(segs)
-    if why:
-        return why
+def segments_why(segs):
+    """-> deny reason for a serve call or a test command with an env prefix in SEGS, else ''."""
     seen_assign = False
     for seg in segs:
         env, head, assigns = parse(seg)
@@ -375,6 +367,22 @@ def verdict(cmd):
                 f"Run the test command as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
             )
     return ""
+
+
+def verdict(cmd):
+    """-> deny reason or ''."""
+    if IMPORT_FAILURE:
+        return IMPORT_FAILURE
+    for body in SHELL_C.findall(strip_heredocs(cmd)):
+        why = verdict(body[1])
+        if why:
+            return why
+    text = strip_quotes(cmd)
+    segs = split_commands(text)
+    why = qrun_why(text) or cd_git_why(segs) or servectl_why(segs) or sed_why(segs)
+    if why:
+        return why
+    return segments_why(segs)
 
 
 def git_cd_reason(why):
