@@ -6,6 +6,7 @@ from pipeline import cmdnames
 
 from .layout import WORK_DIR
 from .paths import _cs_index
+from .verdicts import MODEL_HAIKU, MODEL_SONNET
 
 # limits
 MAX_ROUNDS = 2  # failed review rounds before the lead is asked
@@ -247,6 +248,11 @@ EV_FORCED_REMOVE = (
 )
 FORCED_WHY_MAX = 300  # chars of the refusal text kept in a `forced_remove` event
 PLAN_MAX_PHASES = 99  # highest NN- phase folder number
+PLAN_REVIEW_ROUNDS = 1  # plan-reviewer rounds per plan before the plan goes on (one review, one fix pass)
+PLAN_REVIEW_SMALL_MAX_TASKS = 7  # a one-phase plan with at most this many tasks gets the light review only
+PLAN_EXTRA_TASKS_ALLOWED = 10  # tasks the last-phase cover review may add to the plan (GAP-TASKS above this is refused)
+PLAN_REVIEW_MODEL_LIGHT = MODEL_HAIKU  # plan-reviewer model for the phase plan, the task plan and a small one-phase plan
+PLAN_REVIEW_MODEL_HEAVY = MODEL_SONNET  # plan-reviewer model for the last-phase cover review and a big one-phase plan
 LOCAL_MAX_TURNS = 25  # localdev agent session turns
 EXPLORE_MAX_TURNS = 8  # local-model explore loop (localmodel/agent_files) turns before it must answer; keeps a plan-context build short
 LOCAL_MAX_TOKENS = 2500  # localdev model answer cap
