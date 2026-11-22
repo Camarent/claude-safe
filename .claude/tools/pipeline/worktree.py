@@ -129,8 +129,18 @@ def _job_worktrees(info):
     return {rel: path for rel, path in info["repos"].items() if not os.path.islink(path)}
 
 
+class RefreshConflict(RuntimeError):
+    """A rebase that failed and was aborted. `files`: the unmerged paths (may be empty on a timeout), `path`: the job worktree, `base`: the branch the rebase targeted."""
+
+    def __init__(self, msg, files, path, base):
+        super().__init__(msg)
+        self.files = files
+        self.path = path
+        self.base = base
+
+
 def refresh(a_dir, stage, task, discard=False):
-    """Before a retry: rebase the job branch of every repo in the manifest onto its recorded base (the stage branch), so the retry sees merges that landed after the first dispatch. `discard`: first drop uncommitted files (a retry after BLOCKED starts clean). -> {"rebased": [...], "discarded": [...]}; RuntimeError (rebase aborted, nothing resolved) on a conflict."""
+    """Before a retry: rebase the job branch of every repo in the manifest onto its recorded base (the stage branch), so the retry sees merges that landed after the first dispatch. `discard`: first drop uncommitted files (a retry after BLOCKED starts clean). -> {"rebased": [...], "discarded": [...]}; RefreshConflict (a RuntimeError; rebase aborted, nothing resolved) on a conflict."""
     info = live_job(a_dir, stage, task)
     res: dict[str, list] = {"rebased": [], "discarded": []}
     if not info:
@@ -159,9 +169,10 @@ def refresh(a_dir, stage, task, discard=False):
         except subprocess.TimeoutExpired:  # git may still hold the rebase state: abort it below, then report
             failed, why = True, f"timed out after {GIT_LONG_TIMEOUT_S} s"
         if failed:
+            files = git(path, "diff", "--name-only", "--diff-filter=U", check=False).split()  # the unmerged paths, read before the abort clears them
             with contextlib.suppress(subprocess.SubprocessError):
                 gitx.run(path, "rebase", "--abort", timeout=GIT_LONG_TIMEOUT_S)
-            raise RuntimeError(f"rebase of {info['branch']} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}")
+            raise RefreshConflict(f"rebase of {info['branch']} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}", files, path, base)
         res["rebased"].append(rel)
     return res
 

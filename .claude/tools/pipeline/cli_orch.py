@@ -465,10 +465,28 @@ def _reset_fix_chain(log, a):
         append_event(log, {"ev": "retry", "task": sid, "note": f"retry of {a.step}"})
 
 
+def _record_conflict(a, log, e):
+    """retry hit a rebase conflict: record the step BLOCKED (a dev report, so the next retry and the lead see it) with the conflicting files and the resolve command."""
+    evs = read_jsonl(log)
+    nums = [int(m.group(1)) for x in evs if (m := re.fullmatch(r"retry-(\d+)", str(x.get("id", ""))))]
+    rid = f"retry-{max(nums, default=0) + 1}"
+    files = ", ".join(e.files) or "none listed (timeout)"
+    reason = (
+        f"rebase onto {e.base} conflicts in {files}; resolve: git -C {e.path} rebase {e.base}, "
+        f"fix the files, git add them, git rebase --continue; then retry {a.step}"
+    )
+    f = work_path(paths(a)[0], f"report-{rid}.md", create=True)
+    write_text(f, f"VERDICT: BLOCKED\n{reason}\n")
+    append_event(log, {"ev": "report", "id": rid, "task": a.step, "role": "dev", "verdict": BLOCKED, "reason": reason, "why": reason[:WHY_MAX], "file": f})
+
+
 def _refresh_job(a, log):
-    """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict stops the retry."""
+    """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry."""
     try:
         res = worktree.refresh(a.dir, a.stage, a.step, discard=True)
+    except worktree.RefreshConflict as e:
+        _record_conflict(a, log, e)
+        sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
     except RuntimeError as e:
         sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
     if res["rebased"] or res["discarded"]:
