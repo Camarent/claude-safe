@@ -289,7 +289,7 @@ LIMIT_FALLBACK_S = 900  # no parsable reset time: wait this long, then try again
 LIMIT_WAIT_MAX_S = 8 * 3600  # total waiting per session; beyond this the limit notice stays the result (the run then stops as before)
 QRUN_LOG_MAX_AGE_S = int(os.environ.get("QRUN_LOG_MAX_AGE_S", 7 * 24 * 3600))  # qrun-*.log older than this may be pruned by the next qrun run ...
 QRUN_LOG_MIN_KEEP = int(os.environ.get("QRUN_LOG_MIN_KEEP", 20))  # ... but only while at least this many newer logs remain (a minimum, no cap)
-QRUN_LOG_MAX_COUNT = 500  # at most this many qrun-*.log files stay in the temp dir, fresh or not (a cap, not a floor)
+QRUN_LOG_MAX_COUNT = 100  # at most this many qrun-*.log files stay in the temp dir, fresh or not (a cap, not a floor)
 RETRO_ASK_CAUSE_CHARS = 60  # feature_retro: chars of an ask_main message (task id and file paths removed) that name its cause when stops are counted
 QRUN_ENV = {
     "PYTHONDONTWRITEBYTECODE": "1"

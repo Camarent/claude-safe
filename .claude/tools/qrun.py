@@ -27,6 +27,7 @@ from pipeline.configuration import (
     QRUN_TMP_MAX_PATH,
     QRUN_TMP_PREFIX,
 )
+from pipeline.scratch import dead_owner_dirs
 from pipeline.util import script_timeout
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -284,14 +285,26 @@ def _become_subreaper():
         ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
 
 
+def _scratch_prefix():
+    """`qrun-tmp-<pid>-`: the pid lets a later qrun (and cleanup) tell a dead run's TMPDIR from a live one's."""
+    return f"{QRUN_TMP_PREFIX}{os.getpid()}-"
+
+
 def _new_scratch():
     """A fresh TMPDIR for one command: under QRUN_TMP_BASE when that dir is writable and the path fits QRUN_TMP_MAX_PATH (AF_UNIX socket paths must stay short), else the tempfile default."""
     if os.path.isdir(QRUN_TMP_BASE) and os.access(QRUN_TMP_BASE, os.W_OK):
-        d = tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX, dir=QRUN_TMP_BASE)
+        d = tempfile.mkdtemp(prefix=_scratch_prefix(), dir=QRUN_TMP_BASE)
         if len(d) <= QRUN_TMP_MAX_PATH:
             return d
         shutil.rmtree(d, ignore_errors=True)  # too long for a socket path: not used
-    return tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX)
+    return tempfile.mkdtemp(prefix=_scratch_prefix())
+
+
+def _prune_dead_scratch(roots):
+    """Remove the qrun TMPDIRs of dead processes under ROOTS: a killed qrun cannot clean up its own dir."""
+    for root in roots:
+        for d in dead_owner_dirs(root, QRUN_TMP_PREFIX):
+            shutil.rmtree(d, ignore_errors=True)
 
 
 def _run(cmd, log):
@@ -410,6 +423,7 @@ def main(argv=None):
     log = a.log or os.path.join(tempfile.gettempdir(), f"qrun-{os.getpid()}-{time.time_ns()}.log")
     if not a.log:
         _prune_old_logs(tempfile.gettempdir())
+        _prune_dead_scratch(dict.fromkeys([QRUN_TMP_BASE, tempfile.gettempdir()]))  # both places _new_scratch uses
     recording = not os.environ.get(ENV_QRUN_NO_RECORD)
     cwd = os.getcwd()
     tree = _tree_before(cwd) if recording else None  # taken before the run: a test may write files

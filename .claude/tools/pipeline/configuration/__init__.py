@@ -13,7 +13,13 @@ from .ci_poll import (  # noqa: F401  (re-export: the facade keeps every name im
 from .cleanup import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     ACCEPTANCE_TMP_PREFIX,
     CLEANUP_DRY_RUN_FLAG,
+    CLEANUP_HEADS_REF,
+    CLEANUP_PTEST_MIN_AGE_S,
+    CLEANUP_PTEST_PREFIX,
+    CLEANUP_QRUN_TMP_MIN_AGE_S,
+    CLEANUP_SCRATCH_SUB,
     CLEANUP_TMP_MIN_AGE_S,
+    CLEANUP_WORK_DIR,
     CLEANUP_WT_DIR,
 )
 from .defaults import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
