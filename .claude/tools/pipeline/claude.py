@@ -17,6 +17,7 @@ from .configuration import (
     ADD_DIR_AGENTS,
     ADD_DIR_FLAG,
     ADD_DIRS_KEY,
+    AGENT_TUNING_FLAGS,
     ARTIFACT_AGENTS,
     ARTIFACT_ALLOW_FLAGS,
     ARTIFACT_ON,
@@ -38,6 +39,7 @@ from .configuration import (
     SCRATCH_ADD_AGENTS,
     SCRATCH_ADD_DIR,
     SESSION_TIMEOUT_S,
+    TUNING_EXEMPT_AGENTS,
     ConfigError,
     ops_flags,
     project,
@@ -50,8 +52,11 @@ NO_TOKEN_AGENTS = ("publisher", "pl-publisher")  # container name, host name; ne
 SUMS = ("turns", "input", "output", "cache_read", "cache_write", "cost_usd", "seconds")
 
 
-def flags():
-    return shlex.split(os.environ.get(ENV_CLAUDE_FLAGS, DEFAULT_FLAGS))
+def flags(agent=None):
+    args = shlex.split(os.environ.get(ENV_CLAUDE_FLAGS, DEFAULT_FLAGS))
+    if agent in TUNING_EXEMPT_AGENTS:  # e.g. publisher needs Skill: no AGENT_TUNING_FLAGS for it
+        args = [a for a in args if a not in AGENT_TUNING_FLAGS]
+    return args
 
 
 def default_timeout():
@@ -85,7 +90,7 @@ def claude_args(agent, model, effort, prompt, dir=None, max_turns=None, scratch=
         *(["--max-turns", str(max_turns)] if max_turns and max_turns > 0 else []),
         "--output-format",
         "json",
-        *flags(),
+        *flags(agent),
         *((ops_flags(dir) if dir else OPS_FLAGS) if agent == "ops" else []),
         *project_allow(dir),
         *scratch_allow_args(scratch, dir),

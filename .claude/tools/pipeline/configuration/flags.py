@@ -89,7 +89,14 @@ UI_PATHS = (
     "*.wasm",
 )  # changed files that make a UI check mandatory; pipeline.json `ui_paths` replaces it
 OTHER_ALLOW = "ToolSearch mcp__chrome-devtools"  # allowed non-Bash tools
-BASE_FLAGS = "--permission-mode acceptEdits --allowedTools Read Edit Write Grep Glob"
+AGENT_TUNING_FLAGS = (  # per-session token trim: no slash commands, only the run's own MCP config, no per-machine prompt sections
+    "--disable-slash-commands",
+    "--strict-mcp-config",
+    "--exclude-dynamic-system-prompt-sections",
+)
+# agents that call Skill: disabling slash commands would break it, so claude.py strips AGENT_TUNING_FLAGS for them
+TUNING_EXEMPT_AGENTS = ("publisher", "pl-publisher")
+BASE_FLAGS = "--permission-mode acceptEdits --allowedTools Read Edit Write Grep Glob " + " ".join(AGENT_TUNING_FLAGS)
 PROJECT_FILE = "pipeline.json"  # per-project settings file name
 TEST_RUNNERS = (  # cmd_guard.py: regexes of command heads that count as a test run; pipeline.json `test_runners` replaces it
     QRUN_PATTERN,

@@ -80,6 +80,7 @@ from .errors import (  # noqa: F401  (re-export: the facade keeps every name imp
     ConfigError,
 )
 from .flags import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    AGENT_TUNING_FLAGS,
     BASE_FLAGS,
     BASH_ALLOW,
     DEFAULT_FLAGS,
@@ -101,6 +102,7 @@ from .flags import (  # noqa: F401  (re-export: the facade keeps every name impo
     SERVE_HOST,
     SNIP_WRAPPER,
     TEST_RUNNERS,
+    TUNING_EXEMPT_AGENTS,
     UI_PATHS,
     UX_FLOW_ACTIONS,
     UX_FLOWS_KEY,
