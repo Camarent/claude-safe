@@ -247,6 +247,7 @@ EV_FORCED_REMOVE = (
     "forced_remove"  # a worktree removed with --force although its refusal check fired; carries no `task` key (the retry ladder reads every event with one)
 )
 FORCED_WHY_MAX = 300  # chars of the refusal text kept in a `forced_remove` event
+EV_MAIN_RESTORED = "main_restored"  # the main checkout was on another branch at merge time and wt.py switched it back to the stage branch; carries no `task` key (as forced_remove)
 PLAN_MAX_PHASES = 99  # highest NN- phase folder number
 PLAN_REVIEW_ROUNDS = 1  # plan-reviewer rounds per plan before the plan goes on (one review, one fix pass)
 PLAN_REVIEW_SMALL_MAX_TASKS = 7  # a one-phase plan with at most this many tasks gets the light review only

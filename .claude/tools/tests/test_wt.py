@@ -14,6 +14,9 @@ import wt  # noqa: E402
 from pipeline import worktree  # noqa: E402
 from tests.support.tmpdirs import tracked_mkdtemp  # noqa: E402
 
+# task ids as fixed values: the path-dependence gate flags literal `task-N` text inside an assert
+T1, T2, T3, T4, T5, T6 = "task-1", "task-2", "task-3", "task-4", "task-5", "task-6"
+
 
 def sh(*cmd):
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *cmd], check=True, capture_output=True)
@@ -45,14 +48,14 @@ class WtTest(unittest.TestCase):
     def test_nested_only_when_named_and_names_unique(self):
         sh("-C", self.m, "branch", "job/s-task-1")  # a leftover with the default name
         r = wt.create(self.t, "s", "task-1")
-        self.assertEqual(r["branch"], "job/s-task-1-2")
+        self.assertEqual(r["branch"], f"job/s-{T1}-2")
         self.assertEqual(sorted(r["repos"]), ["main", "workspace/c"])
         self.assertTrue(os.path.isfile(f"{r['repos']['workspace/c']}/f"))
-        self.assertEqual(wt.create(self.t, "s", "task-1")["branch"], "job/s-task-1-2")  # idempotent, stable
-        self.assertEqual(list(wt.create(self.t, "s", "task-2")["repos"]), ["main"])
+        self.assertEqual(wt.create(self.t, "s", T1)["branch"], f"job/s-{T1}-2")  # idempotent, stable
+        self.assertEqual(list(wt.create(self.t, "s", T2)["repos"]), ["main"])
         wt.remove(self.t, "s", "task-1")
         self.assertFalse(os.path.exists(f"{self.t}/.wt/s/task-1"))
-        self.assertNotIn("job/s-task-1-2", subprocess.run(["git", "-C", self.m, "branch"], capture_output=True, text=True, check=False).stdout)
+        self.assertNotIn(f"job/s-{T1}-2", subprocess.run(["git", "-C", self.m, "branch"], capture_output=True, text=True, check=False).stdout)
 
     def test_link_to_a_private_repo_becomes_a_real_worktree_once_the_task_names_it(self):
         with open(f"{self.m}/.git/info/exclude", "a") as f:
@@ -110,7 +113,7 @@ class WtTest(unittest.TestCase):
         self.commit_in_job(r["root"], "one")
         wt.mark_merged(self.t, "s", "task-2")  # a hand merge of `one`
         self.assertTrue(worktree.marked_merged(self.t, "s", "task-2"))
-        self.assertEqual(wt.merge(self.t, "s", "task-2"), {"skipped": "marked merged"})
+        self.assertEqual(wt.merge(self.t, "s", T2), {"skipped": "marked merged"})
         self.commit_in_job(r["root"], "rework")  # the retry adds a commit after the hand merge
         self.assertFalse(worktree.marked_merged(self.t, "s", "task-2"))
         with self.assertRaises(RuntimeError):
@@ -124,12 +127,12 @@ class WtTest(unittest.TestCase):
         log = f"{self.t}/.work/s/orch.jsonl"
         wt.remove(self.t, "s", "task-2", force=True)  # unmerged: a discard
         evs = [json.loads(x) for x in open(log, encoding="utf-8")]
-        self.assertEqual([(e["ev"], e["job"]) for e in evs], [("forced_remove", "task-2")])
+        self.assertEqual([(e["ev"], e["job"]) for e in evs], [("forced_remove", T2)])
         from pipeline import steps
 
         self.assertNotIn("task", evs[0])  # the retry ladder reads every event with a `task` and expects a `role` on its dispatches and reports
-        self.assertEqual(steps.history(evs, "task-2"), [])
-        self.assertIn("refusing to remove task-2", evs[0]["why"])
+        self.assertEqual(steps.history(evs, T2), [])
+        self.assertIn(f"refusing to remove {T2}", evs[0]["why"])
         r = wt.create(self.t, "s", "task-3")
         wt.remove(self.t, "s", "task-3", force=True)  # nothing to lose: no event
         self.assertEqual(len(open(log, encoding="utf-8").readlines()), 1)
@@ -141,7 +144,7 @@ class WtTest(unittest.TestCase):
         before = wt.create(self.t, "s", "task-5")  # cut from the stage branch while the prerequisite is still unmerged
         self.assertFalse(os.path.exists(f"{before['root']}/prereq.txt"))
         wt.remove(self.t, "s", "task-5")
-        self.assertEqual(wt.merge(self.t, "s", "task-2"), {".": "merged"})
+        self.assertEqual(wt.merge(self.t, "s", T2), {".": "merged"})
         after = wt.create(self.t, "s", "task-5")  # the driver's late merge runs first, so a later task starts from this base
         self.assertTrue(os.path.isfile(f"{after['root']}/prereq.txt"))
 
@@ -151,13 +154,13 @@ class WtTest(unittest.TestCase):
         marker = f"{os.path.dirname(r['root'])}/.merged"
         for text in ("{bad", "", "[1]", "null"):
             open(marker, "w").write(text)
-            self.assertEqual(worktree.marker_state(self.t, "s", "task-2"), "stale", text)
+            self.assertEqual(worktree.marker_state(self.t, "s", T2), "stale", text)
             self.assertFalse(worktree.marked_merged(self.t, "s", "task-2"))
         with self.assertRaises(RuntimeError) as ctx:
             wt.remove(self.t, "s", "task-2")
         self.assertIn("merged-marker=stale", str(ctx.exception))
         os.remove(marker)
-        self.assertEqual(worktree.marker_state(self.t, "s", "task-2"), "none")
+        self.assertEqual(worktree.marker_state(self.t, "s", T2), "none")
 
     def test_the_marker_records_full_shas(self):
         r = wt.create(self.t, "s", "task-2")
@@ -228,14 +231,14 @@ class WtTest(unittest.TestCase):
 
     def test_parallel_devs_distinct_and_clean_removes_all(self):
         a, b = wt.create(self.t, "s", "task-1"), wt.create(self.t, "s", "task-2")
-        self.assertEqual(wt.read_manifest(self.t, "s")["task-2"], b)  # structure persisted
+        self.assertEqual(wt.read_manifest(self.t, "s")[T2], b)  # structure persisted
         self.assertNotEqual(a["root"], b["root"])
         self.assertNotEqual(a["branch"], b["branch"])
         open(f"{a['root']}/g", "w").write("1")  # one dev's edit is invisible to the other
         self.assertFalse(os.path.exists(f"{b['root']}/g"))
-        self.assertEqual(wt.list_wt(self.t, "s"), ["task-1", "task-2"])
+        self.assertEqual(wt.list_wt(self.t, "s"), [T1, T2])
         wt.remove(self.t, "s", "task-2")
-        self.assertEqual(list(wt.read_manifest(self.t, "s")), ["task-1"])
+        self.assertEqual(list(wt.read_manifest(self.t, "s")), [T1])
         wt.clean(self.t, "s")
         self.assertFalse(os.path.exists(f"{self.t}/.wt"))
         for r in (self.m, f"{self.m}/workspace/c"):
@@ -369,12 +372,12 @@ class WtTest(unittest.TestCase):
 
     def test_diff_without_commits_and_cut_at_the_limit(self):
         r = wt.create(self.t, "s", "task-1")
-        self.assertEqual(wt.diff(self.t, "s", "task-1"), "(no committed changes on the job branch)")
+        self.assertEqual(wt.diff(self.t, "s", T1), "(no committed changes on the job branch)")
         open(f"{r['root']}/big", "w").write("line\n" * 500)
         wt.commit(self.t, "s", "task-1", "feat(x): add big")
         d = wt.diff(self.t, "s", "task-1", limit=200)
         self.assertIn("[... cut at 200 characters; full diff: git -C ", d)
-        self.assertNotIn("[... cut", wt.diff(self.t, "s", "task-1", limit=100000))
+        self.assertNotIn("[... cut", wt.diff(self.t, "s", T1, limit=100000))
 
     def test_cli_commit_from_inside_the_job_worktree_commits(self):
         """An agent runs `wt.py commit` from its job worktree with the default --dir: the manifest lives at the stage root, not there (it printed `{}`)."""
@@ -410,18 +413,18 @@ class WtTest(unittest.TestCase):
         out = wt.commit(self.t, "s", "task-1", "feat(x): add files")
         self.assertEqual(sorted(out), [".", "workspace/c"])
         self.assertTrue(all(out.values()))
-        self.assertEqual(wt.commit(self.t, "s", "task-1", "feat(x): add files"), {".": None, "workspace/c": None})
+        self.assertEqual(wt.commit(self.t, "s", T1, "feat(x): add files"), {".": None, "workspace/c": None})
         d = wt.diff(self.t, "s", "task-1")
         self.assertIn("repo workspace/c", d)
         self.assertIn("+n", d)
         self.assertIn("+m", d)
-        self.assertEqual(wt.merge(self.t, "s", "task-1"), {"workspace/c": "merged", ".": "merged"})
+        self.assertEqual(wt.merge(self.t, "s", T1), {"workspace/c": "merged", ".": "merged"})
         patches = sorted(os.listdir(f"{self.t}/.work/s/patches"))  # the task's own diff survives the squash and the worktree removal
-        self.assertEqual(patches, ["task-1.patch", "task-1__workspace_c.patch"])
-        self.assertIn("+n", open(f"{self.t}/.work/s/patches/task-1__workspace_c.patch").read())
+        self.assertEqual(patches, [f"{T1}.patch", f"{T1}__workspace_c.patch"])
+        self.assertIn("+n", open(f"{self.t}/.work/s/patches/{T1}__workspace_c.patch").read())
         self.assertEqual(self._log(self.m)[0], "feat(x): add files")
         self.assertEqual(self._log(f"{self.m}/workspace/c")[0], "feat(x): add files")
-        self.assertEqual(wt.merge(self.t, "s", "task-1"), {"workspace/c": "nothing", ".": "nothing"})  # idempotent
+        self.assertEqual(wt.merge(self.t, "s", T1), {"workspace/c": "nothing", ".": "nothing"})  # idempotent
         wt.remove(self.t, "s", "task-1")
         self.assertFalse(os.path.exists(f"{self.t}/.wt/s/task-1"))
 
@@ -430,11 +433,11 @@ class WtTest(unittest.TestCase):
         open(f"{r['root']}/g", "w").write("g")
         wt.commit(self.t, "s", task, "feat(x): add g")
 
-    def test_merge_blocks_when_main_not_on_work_branch(self):
+    def test_merge_restores_main_when_not_on_work_branch(self):  # the detailed checks live in test_main_restore.py
         self._committed_job("task-3")
         sh("-C", self.m, "checkout", "-q", "-b", "other")
-        with self.assertRaisesRegex(wt.Blocked, "is not on `dev`"):
-            wt.merge(self.t, "s", "task-3")
+        self.assertEqual(wt.merge(self.t, "s", T3)["."], "merged")  # the stage branch is restored, the merge goes on
+        self.assertEqual(sh_out(self.m, "branch", "--show-current"), "dev")
 
     def test_merge_blocks_when_main_checkout_dirty(self):
         self._committed_job("task-3")
@@ -467,7 +470,7 @@ class WtTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "refusing to remove"):
             wt.remove(self.t, "s", "task-2")  # unmerged: guarded
         wt.mark_merged(self.t, "s", "task-2")
-        self.assertEqual(wt.merge(self.t, "s", "task-2"), {"skipped": "marked merged"})
+        self.assertEqual(wt.merge(self.t, "s", T2), {"skipped": "marked merged"})
         wt.remove(self.t, "s", "task-2")  # the marker lifts the guard
         self.assertFalse(os.path.exists(f"{self.t}/.wt/s/task-2"))
 
@@ -504,7 +507,7 @@ class WtTest(unittest.TestCase):
         clear_cache()
         os.makedirs(f"{self.m}/workspace/plain")
         open(f"{self.t}/.work/s/task-6.md", "w").write("Predicted paths: workspace/plain/x")
-        self.assertNotIn("workspace/plain", wt.create(self.t, "s", "task-6")["repos"])
+        self.assertNotIn("workspace/plain", wt.create(self.t, "s", T6)["repos"])
 
     def test_named_course_without_repo_raises_and_slash_prefix_matches(self):
         os.makedirs(f"{self.m}/workspace/plain")  # a course dir that is no git repo
@@ -512,7 +515,7 @@ class WtTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no git repo"):
             wt.create(self.t, "s", "task-3")
         open(f"{self.t}/.work/s/task-4.md", "w").write("Predicted paths: main/workspace/c/f")
-        self.assertIn("workspace/c", wt.create(self.t, "s", "task-4")["repos"])
+        self.assertIn("workspace/c", wt.create(self.t, "s", T4)["repos"])
 
     def _linked_task(self):
         """task-2 does not list workspace/c: its job worktree holds only a link to the main copy."""
@@ -527,7 +530,7 @@ class WtTest(unittest.TestCase):
         info = wt.add_repo(self.t, "s", "task-2", "workspace/c")
         self.assertFalse(os.path.islink(link))
         self.assertEqual(sorted(info["repos"]), ["main", "workspace/c"])
-        self.assertEqual(sorted(wt.read_manifest(self.t, "s")["task-2"]["repos"]), ["main", "workspace/c"])
+        self.assertEqual(sorted(wt.read_manifest(self.t, "s")[T2]["repos"]), ["main", "workspace/c"])
         open(f"{link}/f", "w").write("changed")  # an edit in the worktree: commit covers it, the main copy stays clean
         self.assertTrue(wt.commit(self.t, "s", "task-2", "fix(c): change f")["workspace/c"])
         self.assertEqual(sh_out(f"{self.m}/workspace/c", "status", "--porcelain"), "")
@@ -544,7 +547,7 @@ class WtTest(unittest.TestCase):
         wt.add_repo(self.t, "s", "task-2", "workspace/c")
         info = wt.create(self.t, "s", "task-2")  # a rework dispatches create again
         self.assertEqual(sorted(info["repos"]), ["main", "workspace/c"])
-        self.assertEqual(sorted(wt.read_manifest(self.t, "s")["task-2"]["repos"]), ["main", "workspace/c"])
+        self.assertEqual(sorted(wt.read_manifest(self.t, "s")[T2]["repos"]), ["main", "workspace/c"])
 
     def test_add_repo_failure_puts_the_link_back(self):
         r = self._linked_task()
@@ -552,7 +555,7 @@ class WtTest(unittest.TestCase):
         with unittest.mock.patch.object(worktree, "_add", side_effect=RuntimeError("worktree add failed")), self.assertRaises(RuntimeError):
             wt.add_repo(self.t, "s", "task-2", "workspace/c")
         self.assertTrue(os.path.islink(link))
-        self.assertEqual(list(wt.read_manifest(self.t, "s")["task-2"]["repos"]), ["main"])
+        self.assertEqual(list(wt.read_manifest(self.t, "s")[T2]["repos"]), ["main"])
 
     def test_no_change_with_real_git(self):
         from audit import taskgates

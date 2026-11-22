@@ -13,6 +13,7 @@ import time
 from . import commit_subject, gitx, util
 from .configuration import (
     EV_FORCED_REMOVE,
+    EV_MAIN_RESTORED,
     FORCED_WHY_MAX,
     GIT_LONG_TIMEOUT_S,
     JOB_BRANCH_PREFIX,
@@ -763,7 +764,7 @@ def merge(a_dir, stage, task):
     want = work_branch(cfg, stage)
     if marked_merged(a_dir, stage, task):
         return {"skipped": "marked merged"}
-    _check_merge_preconditions(parts, want)  # everything first so a refusal leaves every repo as it was
+    _check_merge_preconditions(a_dir, stage, parts, want)  # everything first so a refusal leaves every repo as it was
     out = {}
     for rel, r, _w in parts:
         if not _unmerged(r, branch, want):
@@ -778,18 +779,26 @@ def merge(a_dir, stage, task):
     return out
 
 
-def _check_merge_preconditions(parts, want):
-    for _rel, r, w in parts:
+def _check_merge_preconditions(a_dir, stage, parts, want):
+    """Refuse on uncommitted work (job worktree or main checkout). A main checkout on another branch is switched back to `want` and logged once (`main_restored`)."""
+    switch = []
+    for rel, r, w in parts:
         if _dirty(w, r):
             raise Blocked(f"uncommitted changes in job worktree {w}: the dev must run wt.py commit")
-        if git(r, "branch", "--show-current", check=False) != want:
-            raise Blocked(f"{r} is not on `{want}`")
         dirty = _dirty(r, r)
         if dirty:
             shown = ", ".join(ln.strip() for ln in dirty[:8]) + (f", +{len(dirty) - 8} more" if len(dirty) > 8 else "")
             raise Blocked(
                 f"main checkout {r} has uncommitted changes: {shown}. Commit them, or park them with `git -C {r} stash -u` and `git -C {r} stash pop` after the merge"
             )
+        cur = git(r, "branch", "--show-current", check=False)
+        if cur != want:
+            switch.append((rel, r, cur))
+    for rel, r, cur in switch:
+        co = gitx.run(r, "checkout", "-q", want, timeout=GIT_LONG_TIMEOUT_S)
+        if co.returncode:
+            raise Blocked(f"{r} is on `{cur}` and cannot switch to `{want}`: {(co.stdout + co.stderr).strip()[-300:]}")
+        util.append_event(os.path.join(a_dir, WORK_DIR, stage, ORCH_LOG), {"ev": EV_MAIN_RESTORED, "repo": rel or ".", "from": cur, "to": want})
 
 
 def _commit_squash(r, branch):
