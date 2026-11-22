@@ -244,6 +244,7 @@ LINK_COMMIT_NOTE = (
     "FAIL: path outside this task's worktree: a commit was made in the main copy of a nested repo this task does not list ({repos}). It was left in place for the lead to revert. "
     "Do not run git commands in a linked repo. " + LINK_FIX
 )
+LINK_CITE_NOTE = 'FAIL: docs cite out of date: {doc} cites {path}:{line} as "{text}", but that line of {path} no longer has the quoted text. Fix the cite (the line number or the quote) in {doc}.'
 LINK_UNSAVED_NOTE = (
     "FAIL: path outside this task's worktree: you changed tracked files of a nested repo this task does not list ({files}, +{more} more). "
     "They were left in place because a patch of them could not be saved. Do not edit files outside your worktree. " + LINK_FIX

@@ -6,13 +6,17 @@ A job worktree holds such a repo only as a symlink to the main copy (worktree.li
 import contextlib
 import json
 import os
+import re
 import subprocess
 import time
 
 from . import gitx, util
 from .configuration import (
+    DOC_CITE_RE,
+    DOC_PATHS,
     GIT_LONG_TIMEOUT_S,
     LINK_BASE_FILE,
+    LINK_CITE_NOTE,
     LINK_COMMIT_NOTE,
     LINK_GIT_MERGE_FILES,
     LINK_NEW_FILES_NOTE,
@@ -169,6 +173,38 @@ def _notes(a_dir, stage, task, rel, c, add_cmd, stamp):
     return notes
 
 
+def _target_line(root, path, n):
+    """-> text of line N (1-based) of the file PATH in ROOT, or None when the file or the line does not exist."""
+    try:
+        with open(os.path.join(root, path), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return lines[n - 1] if 0 < n <= len(lines) else None
+
+
+def cite_notes(root):
+    """-> one note per `path:line` cite in the modified or new docs files of the job worktree ROOT whose quoted text is not on that line now (a stale line number after an edit). A git that cannot answer gives no note."""
+    notes: list[str] = []
+    try:
+        docs = _names(gitx.try_out(root, "ls-files", "-m", "-o", "--exclude-standard", "-z", "--", *DOC_PATHS) or "")
+    except ERRORS:
+        return notes
+    for doc in docs:
+        try:
+            with open(os.path.join(root, doc), encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            for m in re.finditer(DOC_CITE_RE, line):
+                n = int(m["line"])
+                target = _target_line(root, m["path"], n)
+                if target is None or m["text"] not in target:
+                    notes.append(LINK_CITE_NOTE.format(doc=doc, path=m["path"], line=n, text=m["text"]))
+    return notes
+
+
 def check(a_dir, stage, task, add_repo_cmd):
     """-> "" when the dev wrote nothing through a link, else the FAIL note for the dev. ADD_REPO_CMD is the command that adds a nested repo's worktree; the repo is appended."""
     try:
@@ -192,4 +228,4 @@ def check(a_dir, stage, task, add_repo_cmd):
             continue
     with contextlib.suppress(*ERRORS):
         _save(root, base)
-    return "\n".join(notes)
+    return "\n".join([*notes, *cite_notes(root)])

@@ -294,6 +294,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     LIMIT_TEXT_MAX,
     LIMIT_WAIT_MAX_S,
     LINK_BASE_FILE,
+    LINK_CITE_NOTE,
     LINK_COMMIT_NOTE,
     LINK_FIX,
     LINK_GIT_MERGE_FILES,
@@ -500,6 +501,8 @@ from .serve import (  # noqa: F401  (re-export: the facade keeps every name impo
 )
 from .tuning import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     DENIAL_LOG_NAME,
+    DOC_CITE_RE,
+    DOC_PATHS,
     ENV_ERROR_PATTERN,
     ENV_REPAIR_MAX,
     GATE_SKIP_PATHS,
