@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from . import claude, cli_wave, gitx, metrics, plan_check, pr_ops, progress
+from . import claude, cli_wave, gitx, metrics, plan_check, plan_review, pr_ops, progress
 from . import plan_files as pf
 from .branches import dirty_block, ensure_work_branch, red_base_block
 from .briefs import NAV
@@ -29,6 +29,8 @@ from .configuration import (
     LONG_CMD_TIMEOUT_S,
     PHASES_DIR,
     PLAN_FILE,
+    PLAN_REVIEW_GAPS_FILE,
+    PLAN_REVIEW_REPORT_FILE,
     REPORTS_DIR,
     project,
     repo_dir,
@@ -37,7 +39,7 @@ from .configuration import (
 )
 from .ctx import Ctx
 from .run import Run
-from .util import TOOLS, default_dir, swallowed, write_text
+from .util import TOOLS, default_dir, read_text, swallowed, write_text
 
 
 def ctx_path(a, phase):
@@ -145,7 +147,45 @@ def plan_phase(a, phase):
             print(w, flush=True)  # warnings (shared:, size:, publish) never block, same as `cs-plan check`
     metrics.event(Ctx(Run(stage=a.feature, dir=a.dir)), "phase-size", phase=phase["dir"], estimate=phase.get("tasks", 0), actual=n)
     print(progress.phase_line(folder, f"planned: {n} tasks" + (f", {len(probs)} problems" if probs else "")), flush=True)
-    return probs
+    if probs:
+        return probs
+    return _review_plan(a, phase, folder, n)
+
+
+def _review_kind(a, phase):
+    """`cover` for the last phase with tasks (the open phase right before the finish phase), else `task`."""
+    dirs = [p["dir"] for p in pf.read_phases(a)]
+    i = dirs.index(phase["dir"]) if phase["dir"] in dirs else len(dirs)
+    return plan_review.KIND_COVER if i + 1 < len(dirs) and pf.is_finish_dir(dirs[i + 1]) else plan_review.KIND_TASK
+
+
+def _review_plan(a, phase, folder, n):
+    """Plan review after the checks pass: one reviewer report, one architect fix round on FAIL, then a re-check. -> problems ([] = go on).
+    The cover review may refuse the plan (BLOCKED: another phase is needed); leftover gaps go to PLAN_REVIEW_GAPS_FILE and the phase continues."""
+    kind = _review_kind(a, phase)
+    report_path = os.path.join(folder, PLAN_REVIEW_REPORT_FILE)
+
+    def dispatch(model, k):
+        claude.session(claude.claude_args("plan-reviewer", model, None, plan_review.build_prompt(k, a.feature, report_path)), a.dir, None)
+        return read_text(report_path)
+
+    def fix(report):
+        note = f"\n\nThe plan review found these gaps; fix them in the task files and run `plan.py check --stage {pf.stage_of(a.feature, phase)}` until it prints OK:\n{report}"
+        claude.session(claude.claude_args("architect", None, None, plan_prompt(a, phase) + note), a.dir, None)
+
+    limit = int(project(a.dir).get("max_tasks") or 0)
+    res = plan_review.run_review(kind, dispatch, fix, n_tasks=n, limit=limit)
+    if kind == plan_review.KIND_COVER and res.verdict == plan_review.VERDICT_BLOCKED:
+        return [f"plan-review BLOCKED: another phase needed: {'; '.join(res.gaps[:10]) or 'the cover review found the request does not fit this plan'}"]
+    if res.rounds:
+        _, found = plan_check.check_stage(folder)
+        probs = plan_check.errors_of(found)
+        if probs:
+            return probs
+    if res.gaps:
+        write_text(os.path.join(folder, PLAN_REVIEW_GAPS_FILE), "\n".join(res.gaps) + "\n")
+        print(f"plan-review {kind}: {len(res.gaps)} gap(s) left, written to {PLAN_REVIEW_GAPS_FILE}:\n" + "\n".join(res.gaps[:10]), flush=True)
+    return []
 
 
 def run_done_when(a, phase):
