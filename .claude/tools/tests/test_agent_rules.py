@@ -1,0 +1,57 @@
+"""Agent files stay under their recorded size caps; gate-rule keywords survive the split into <agent>/rare-rules.md."""
+
+import glob
+import os
+import unittest
+
+AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "agents")
+
+# Recorded caps in bytes: the split files hold the rarely used rules, the main files stay small.
+CAPS = {"architect.md": 26000, "dev.md": 13500, "reviewer.md": 12200}
+
+# Gate-rule keywords that existed in the agent files before the split.
+KEYWORDS = ("ccn", "mutation check", "PLAN GAP", "Predicted paths", "VERDICT")
+
+
+def read(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def agent_text(name):
+    """The agent file plus its split files (<agents>/<name>/*.md)."""
+    stem = os.path.splitext(name)[0]
+    parts = [read(os.path.join(AGENTS, name))]
+    for path in sorted(glob.glob(os.path.join(AGENTS, stem, "*.md"))):
+        parts.append(read(path))
+    return "\n".join(parts)
+
+
+class AgentRules(unittest.TestCase):
+    def test_agent_files_under_recorded_size_caps(self):
+        for name, cap in CAPS.items():
+            size = os.path.getsize(os.path.join(AGENTS, name))
+            self.assertLessEqual(size, cap, name)
+
+    def test_gate_keywords_survive_the_split(self):
+        text = "\n".join(agent_text(name) for name in CAPS)
+        for word in KEYWORDS:
+            self.assertTrue(word in text, f"keyword missing: {word}")
+
+    def test_dev_batches_reads_and_runs_the_test_per_batch(self):
+        text = read(os.path.join(AGENTS, "dev.md"))
+        self.assertIn("in one Bash call", text)
+        self.assertIn("once per edit batch", text)
+
+    def test_reviewer_pass_report_is_counts_only(self):
+        text = read(os.path.join(AGENTS, "reviewer.md"))
+        self.assertIn("PASS: report only the verdict, the counts line", text)
+        self.assertIn("FAIL: keep every wrong item with its quote", text)
+
+    def test_architect_uses_batch(self):
+        text = read(os.path.join(AGENTS, "architect.md"))
+        self.assertIn("`cs-plan batch`", text)
+
+
+if __name__ == "__main__":
+    unittest.main()
