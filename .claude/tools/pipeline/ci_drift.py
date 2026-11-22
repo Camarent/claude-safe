@@ -96,3 +96,23 @@ def drift(project_dir, cfg):
                     continue
                 warns.append(f"CI runs `{n}` ({os.path.basename(f)}) but no gate covers it")
     return warns
+
+
+def ci_commands(repo, cfg):
+    """-> [command] the CI workflows of REPO run that no `gates` entry covers and `ci_drift_ignore` does not name (the lines pr-ready runs beyond the gates). Same reading as drift()."""
+    ignore = [_norm(i) for i in cfg.get("ci_drift_ignore", [])]
+    known = set()
+    for g in all_gates_of(cfg):
+        known.add(_norm(g["cmd"]))
+        known.update(_norm(p) for p in g["cmd"].split("&&") if p.strip())
+    out = []
+    for f in sorted(glob.glob(os.path.join(repo, ".github", "workflows", "*.yml"))):
+        with open(f, encoding="utf-8") as fh:
+            for cmd in ci_run_lines(fh.read()):
+                n = _norm(cmd)
+                if n.startswith("echo ") or n in SETUP_ONLY or n in known or all(_norm(q) in known for q in n.split("&&")):
+                    continue
+                if any(n == i or n.startswith(i + " ") for i in ignore) or n in out:
+                    continue
+                out.append(n)
+    return out

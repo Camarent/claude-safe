@@ -10,6 +10,7 @@ import tomllib
 from pathlib import Path
 
 from . import gitx, pr_mode, webskip, worktree
+from .ci_drift import ci_commands
 from .configuration import (
     BLOCKED,
     CHECKS_TIMEOUT_S,
@@ -27,10 +28,12 @@ from .configuration import (
     PUSH_ERR_TAIL,
     TASKS_FILE,
     WORK_DIR,
+    all_gates_of,
     project,
     release_branch,
     repo_path,
 )
+from .configuration.pr_gates import PR_GATE_TIMEOUT_S, PR_GATES_STEP
 from .plan_files import section_body
 from .run import Run
 from .util import TOOLS
@@ -225,6 +228,19 @@ def append_body(repo, br, note):
     if cur.returncode:
         return
     _run(["gh", "pr", "edit", br, "--body", f"{cur.stdout.rstrip()}\n\n{note}"], repo)
+
+
+def _gates_gate(repo, cfg, br, runner=None):
+    """Runs every project gate (`all_gates_of`) and each CI run line no gate covers, in REPO, before the push; a red one raises Blocked naming it. `runner(args, cwd, timeout)` -> returncode holder, default `_run`."""
+    run_cmd = runner or _run
+    cmds = [g["cmd"] for g in all_gates_of(cfg)] + ci_commands(repo, cfg)
+    red = []
+    for c in cmds:
+        if run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S).returncode:
+            red.append(c)
+    if red:
+        raise Blocked(f"{PR_GATES_STEP} red on {br}: {', '.join(f'`{c}`' for c in red)}; fix them, then run pr-ready again")
+    return f"{PR_GATES_STEP}: {len(cmds)} command(s) green"
 
 
 def _ready(repo, cfg, br):
@@ -811,6 +827,7 @@ def _pr_step(what, a_dir, repo, cfg, stage, br):
         return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
     if what == "merge" and _idle(repo, cfg, br):  # stage work only in nested repos: no PR to merge
         return f"{br} adds nothing to the main repo release branch" + _nested_unlanded(repo, cfg, br, "; ")
+    gates = _gates_gate(repo, cfg, br) if what == "ready" else ""  # red gates block before anything is pushed
     _pushed(repo, br)
     if what == "merge":
         return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
@@ -818,7 +835,7 @@ def _pr_step(what, a_dir, repo, cfg, stage, br):
         opened = _open_pr(a_dir, repo, cfg, stage, br)
         if note := web_note(a_dir, stage):
             append_body(repo, br, note)  # the skipped browser check must show in the PR, never silent
-        return opened + "; " + _ready(repo, cfg, br)
+        return gates + "; " + opened + "; " + _ready(repo, cfg, br)
     return _open_pr(a_dir, repo, cfg, stage, br)
 
 
