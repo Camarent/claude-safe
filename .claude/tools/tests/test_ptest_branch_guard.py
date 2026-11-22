@@ -28,14 +28,17 @@ def fixture_repo(test):
     return repo.name
 
 
-def write_tests(test, repo, leak):
-    """A scratch tests dir with one test file; the leaking one switches the fixture repo to a new branch."""
+SWITCH_LEAK = ["switch", "-q", "-c", "leak"]
+
+
+def write_tests(test, repo, leak_args=None):
+    """A scratch tests dir with one test file; a leaking one runs `git <leak_args>` in the fixture repo (switch to a new branch by default in the tests)."""
     tests = tracked_tmpdir(prefix="ptest-guard-tests-")
     test.addCleanup(tests.cleanup)
     body = (
         "import subprocess\nimport unittest\n\n\nclass T(unittest.TestCase):\n    def test_branch(self):\n"
-        f'        subprocess.run(["git", "switch", "-q", "-c", "leak"], cwd={repo!r}, check=True)\n'
-        if leak
+        f"        subprocess.run({['git', *leak_args]!r}, cwd={repo!r}, check=True)\n"
+        if leak_args
         else "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_clean(self):\n        pass\n"
     )
     with open(os.path.join(tests.name, "test_switch.py"), "w", encoding="utf-8") as f:
@@ -52,16 +55,29 @@ class BranchGuard(unittest.TestCase):
 
     def test_switching_test_fails_and_names_file(self):
         repo = fixture_repo(self)
-        rc, out = self.run_ptest(repo, write_tests(self, repo, leak=True))
+        rc, out = self.run_ptest(repo, write_tests(self, repo, SWITCH_LEAK))
         self.assertEqual(rc, 1, out)
         self.assertIn("main checkout branch changed during this run", out)
         self.assertIn("seen during test files: test_switch.py", out)
 
     def test_clean_run_stays_green(self):
         repo = fixture_repo(self)
-        rc, out = self.run_ptest(repo, write_tests(self, repo, leak=False))
+        rc, out = self.run_ptest(repo, write_tests(self, repo))
         self.assertEqual(rc, 0, out)
         self.assertNotIn("branch changed", out)
+
+    def test_job_branch_created_mid_run_stays_quiet(self):
+        repo = fixture_repo(self)
+        rc, out = self.run_ptest(repo, write_tests(self, repo, ["branch", "job/x"]))
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("branch changed", out)
+
+    def test_stage_branch_created_mid_run_warns(self):
+        repo = fixture_repo(self)
+        rc, out = self.run_ptest(repo, write_tests(self, repo, ["branch", "stage/x"]))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("main checkout branch changed during this run", out)
+        self.assertIn("new branches: stage/x", out)
 
 
 if __name__ == "__main__":

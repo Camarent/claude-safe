@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import subprocess
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -28,6 +29,26 @@ def stop_index_patch():
     _INDEX_PATCH.stop()
 
 
+CHECKOUT = Path(__file__).resolve().parents[3]  # .claude/tools/tests -> the checkout root
+
+
+def branch_refs():
+    """-> the local branch refs of the checkout (read-only `git for-each-ref`), or None when git or the checkout is unavailable."""
+    if not os.access(CHECKOUT, os.W_OK):  # read-only checkout: nothing a test could have written, nothing to compare
+        return None
+    try:
+        return subprocess.run(
+            ["git", "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"],
+            cwd=CHECKOUT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):  # no git (release container): nothing to compare
+        return None
+
+
 def argparse_ns(d):
     import argparse
 
@@ -47,6 +68,20 @@ else:
 
 class PhaseHarness(_Mixin):
     """merge per wave, tests, docs, audits, one fix cycle, retry/skip: setUp and helpers of the PhaseTest groups (mixed into a TestCase)."""
+
+    _refs_before: str | None = None  # set by setUpClass: branch refs of the checkout before the class ran
+
+    @classmethod
+    def setUpClass(cls):
+        cls._refs_before = branch_refs()
+
+    @classmethod
+    def tearDownClass(cls):
+        # a test must not create or move a branch of the real checkout: the refs must read the same after the class
+        if cls._refs_before is None:
+            return
+        after = branch_refs()
+        assert after == cls._refs_before, f"branch refs of the checkout changed during the tests:\n{cls._refs_before}---\n{after}"
 
     def setUp(self):
         for name, val in (
