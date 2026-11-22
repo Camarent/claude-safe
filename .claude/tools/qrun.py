@@ -16,7 +16,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the s
 import time
 
 from pipeline import gate_record
-from pipeline.configuration import ENV_QRUN_NO_RECORD, GATE_TIMEOUT_S, QRUN_ENV, QRUN_LOG_MAX_AGE_S, QRUN_LOG_MAX_COUNT, QRUN_LOG_MIN_KEEP, QRUN_TMP_PREFIX
+from pipeline.configuration import (
+    ENV_QRUN_NO_RECORD,
+    GATE_TIMEOUT_S,
+    QRUN_ENV,
+    QRUN_LOG_MAX_AGE_S,
+    QRUN_LOG_MAX_COUNT,
+    QRUN_LOG_MIN_KEEP,
+    QRUN_TMP_BASE,
+    QRUN_TMP_MAX_PATH,
+    QRUN_TMP_PREFIX,
+)
 from pipeline.util import script_timeout
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -274,9 +284,19 @@ def _become_subreaper():
         ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
 
 
+def _new_scratch():
+    """A fresh TMPDIR for one command: under QRUN_TMP_BASE when that dir is writable and the path fits QRUN_TMP_MAX_PATH (AF_UNIX socket paths must stay short), else the tempfile default."""
+    if os.path.isdir(QRUN_TMP_BASE) and os.access(QRUN_TMP_BASE, os.W_OK):
+        d = tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX, dir=QRUN_TMP_BASE)
+        if len(d) <= QRUN_TMP_MAX_PATH:
+            return d
+        shutil.rmtree(d, ignore_errors=True)  # too long for a socket path: not used
+    return tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX)
+
+
 def _run(cmd, log):
     """Run CMD with its own TMPDIR (removed when it ends, also on a crash or kill), write the ANSI-stripped output to LOG; return (output lines, exit code). A timeout, SIGTERM or Ctrl-C kills the command and everything it started."""
-    scratch = tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX)
+    scratch = _new_scratch()
     try:
         return _run_in(cmd, log, scratch)
     finally:

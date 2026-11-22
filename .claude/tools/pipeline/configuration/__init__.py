@@ -322,6 +322,8 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     QRUN_LOG_MAX_AGE_S,
     QRUN_LOG_MAX_COUNT,
     QRUN_LOG_MIN_KEEP,
+    QRUN_TMP_BASE,
+    QRUN_TMP_MAX_PATH,
     QRUN_TMP_PREFIX,
     REASON_CUT,
     REPORT_GRACE_S,
