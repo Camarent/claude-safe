@@ -87,6 +87,16 @@ def _set_wave(d, e):
         write_text(f, re.sub(r"(?m)^Wave: W\d+", f"Wave: W{e['wave']}", read_text(f), count=1))
 
 
+def _set_depends(d, e):
+    """Keep the `Depends:` line of task-N.md equal to the TASKS.md bullet depends; the file is written only when the line changes."""
+    f = os.path.join(d, e["id"] + ".md")
+    if os.path.exists(f):
+        txt = read_text(f)
+        new = pf.set_depends_line(txt, e["depends"])
+        if new != txt:
+            write_text(f, new)
+
+
 def _check_overlap(ents, new, paths, old_paths):
     """The new task must not share paths with another task of its (final) wave: the rule of plan check (pf.wave_conflict, so a shared `(rows)` file is fine). PATHS = the new task's `--paths` items, OLD_PATHS = {id: path_modes}."""
     new_modes = pf.path_modes(f"{pf.TASK_FIELDS['paths']}{', '.join(paths)}")
@@ -149,5 +159,6 @@ def insert_task(a):
     for e in ents:
         if e["wave"] != old_wave[e["id"]]:
             _set_wave(d, e)
+        _set_depends(d, e)  # renumbering rewrote the ids in TASKS.md depends: the file lines follow
     pf.write_tasks(d, [*ents, new])
     return plan_check.check_stage(d)

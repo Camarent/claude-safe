@@ -1,8 +1,9 @@
 """Plan writer for architects: writes Plan.md / TASKS.md / task-N.md in the exact format orch.py and wave.py parse, and validates them.
 
     cs-plan plan-init --feature F --goal TEXT             Plan.md skeleton + phases/
-    cs-plan phase --feature F --name N --goal G --done-when CMD [--depends A,B] --paths p1,p2 [--tasks N] [--after P]   append phase (or insert after phase P and renumber the later, unstarted ones), create phases/NN-name (paths must not overlap other phases)
+    cs-plan phase --feature F --name N --goal G --done-when CMD [--depends A,B] --paths p1,p2 [--tasks N] [--after P | --before P]   append phase (or insert after phase P, or ahead of phase P, and renumber the later, unstarted ones), create phases/NN-name (paths must not overlap other phases)
     cs-plan phase-done --feature F --name N               mark a phase done
+    cs-plan amend --feature F --phase P --note TEXT [--goal G] [--done-when CMD] [--paths p1,p2] [--depends A,B]   append the note to the phase goal ("Amended: "), replace the given fields of a not-done phase, then run the feature check (exit 2 on problems)
     cs-plan next-phase --feature F                        JSON of the first open phase whose depends are done
     cs-plan stage-init --stage S --goal G [--flags "ui docs"] [--pr-title "<type>(<area>): <what>"]   TASKS.md skeleton
     cs-plan task --stage S --id N --title T --paths p1,p2 --test CMD --done TEXT [--wave W] [--depends N,M]
@@ -12,6 +13,7 @@
     cs-plan edit-task --stage S --id N --field F --value V [--field F2 --value V2]   replace fields of task-N.md (title paths pattern test done turns); TASKS.md kept in sync
     cs-plan check --stage S | --feature F                 `OK n tasks` or one problem per line (exit 2)
     cs-plan dryrun --stage S                              run each task's `Dry run: <cmd>  # expect > N changes` in a temp worktree; exit 2 when a tool is a no-op
+    cs-plan testrun --stage S                             run each task's `Test:` line once in a temp worktree of HEAD; exit 2 when no test matches or the command cannot run (a failing test is accepted)
     cs-plan run --feature F --prompt-file P [--model sonnet|opus] [--dry-run]   one architect session (default Sonnet, ESCALATE -> Opus; --model opus starts on Opus when known ahead), check, one rerun
 Every command takes --dir (default .). --stage S = folder .work/S or .work/F/phases/NN-name. Exit 2 on invalid input.
 """
@@ -20,10 +22,11 @@ import argparse
 import os
 import sys
 
-from . import plan_check, plan_dryrun, plan_insert, pr_mode
+from . import plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
 from . import plan_files as pf
 from .branches import dirty_block, red_base_block
 from .configuration import BLOCKED_FILE, EXIT_BLOCKED, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+from .plan_amend import amend_phase
 from .plan_run import run
 from .util import default_dir, jprint, read_text, write_text
 
@@ -33,30 +36,73 @@ def cmd_plan_init(a):
     return 0
 
 
-def cmd_phase(a):
-    phases, paths = pf.read_phases(a), pf.csv(a.paths)
+def _validate_phase_args(a, phases):
+    """Raise PlanError for a bad `phase` request; return the `--before` phase ref (or None)."""
     if not os.path.exists(pf.plan_path(a)):
         raise pf.PlanError("Plan.md missing: run plan-init first")
+    if a.after and a.before:
+        raise pf.PlanError("--after and --before: give one of them")
     if pf.phase_ref(phases, a.name):
         raise pf.PlanError(f"phase {a.name} exists")
     for dep in pf.csv(a.depends):
         if not pf.phase_ref(phases, dep):
             raise pf.PlanError(f"depends on unknown phase {dep}")
+    before = pf.phase_ref(phases, a.before) if a.before else None
+    if a.before and before is None:
+        raise pf.PlanError(f"--before: unknown phase {a.before}")
+    return before
+
+
+def _resolve_deps(a, phases, before):
+    """Depends of the new phase: --depends, else --after's phase, else the phase before `before`."""
+    prev = []  # the phase before `before` (none when first)
+    if before is not None and phases.index(before):
+        prev = [phases[phases.index(before) - 1]["dir"]]
+    return pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else prev)
+
+
+def _check_overlap(a, phases, paths, deps, before):
+    """Raise PlanError when `paths` overlap an existing phase that is not ordered against the new one."""
+    probe = {
+        "dir": a.name,
+        "depends": deps + ([before["dir"]] if before else []),
+    }  # the new phase, so ordering sees its depends chain (and `before` waits for it)
     for p in phases:
         ov = pf.overlap(paths, p["paths"])
-        if ov:
+        if ov and not pf.phases_ordered([*phases, probe], a.name, p["dir"]):
             raise pf.PlanError(f"paths overlap with phase {p['dir']}: {ov[0]} / {ov[1]}")
+
+
+def _new_phase(a, phases, paths, deps):
+    """The phase record; numbered `NN-name` unless placed with --after/--before."""
     nn = max([int(p["dir"][:2]) for p in phases] or [0]) + 1
-    new = {
-        "dir": a.name if a.after else f"{nn:02d}-{a.name}",
+    return {
+        "dir": a.name if (a.after or a.before) else f"{nn:02d}-{a.name}",
         "goal": a.goal,
         "done_when": a.done_when,
-        "depends": pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else []),
+        "depends": deps,
         "paths": paths,
         "status": "todo",
         "tasks": a.tasks,
     }
-    pf.write_phases(a, pf.insert_phase(a, phases, new, a.after) if a.after else [*phases, new])
+
+
+def _place_phase(a, phases, new):
+    """The phase list with `new` inserted at --before, after --after, or appended."""
+    if a.before:
+        return pf.insert_before(a, phases, new, a.before)
+    if a.after:
+        return pf.insert_phase(a, phases, new, a.after)
+    return [*phases, new]
+
+
+def cmd_phase(a):
+    phases, paths = pf.read_phases(a), pf.csv(a.paths)
+    before = _validate_phase_args(a, phases)
+    deps = _resolve_deps(a, phases, before)
+    _check_overlap(a, phases, paths, deps, before)
+    new = _new_phase(a, phases, paths, deps)
+    pf.write_phases(a, _place_phase(a, phases, new))
     os.makedirs(os.path.join(pf.feature_dir(a), "phases", new["dir"]), exist_ok=True)
     jprint({"phase": new["dir"]})
     return 0
@@ -166,7 +212,7 @@ def _add_depends(d, ents, e, tid, spec):
 
 def _depends_report(d, ents, e, moved, had_deps):
     """-> the lines `edit-task --depends` prints: the dependencies now, the tasks moved to a later wave, the plan problems of moved tasks, and the notes a lead needs (dependency mode, a started task)."""
-    out = [f"{e['id']} now depends on {', '.join(e['depends'])}"]
+    out = [f"{e['id']} now depends on {', '.join(e['depends']) or 'nothing'}"]
     out += [f"{t} moved from wave {w0} to wave {w1}" for t, w0, w1 in moved]
     moved_ids = tuple(t for t, _w0, _w1 in moved)
     out += [p for p in plan_check.check_stage(d)[1] if moved_ids and p.startswith(moved_ids)]
@@ -195,10 +241,12 @@ def _apply_fields(d, ents, e, tid, pairs, txt):
 
 
 def _after_depends(d, ents, e, moved, had_deps, asked):
-    """After an edit-task: rewrite the `Wave:` line of each moved task file and, when --depends was given, print the report."""
+    """After an edit-task: rewrite the `Wave:` line of each moved task file, the `Depends:` line of the edited task, and, when --depends was given, print the report."""
     ids = {t for t, _w0, _w1 in moved}
     for x in (x for x in ents if x["id"] in ids):
         plan_insert._set_wave(d, x)
+    if e:
+        plan_insert._set_depends(d, e)
     if asked:
         print("\n".join(_depends_report(d, ents, e, moved, had_deps)))
 
@@ -209,17 +257,26 @@ def cmd_edit_task(a):
     f = os.path.join(d, tid + ".md")
     if not os.path.exists(f):
         raise pf.PlanError(f"unknown task {tid} in {d}")
-    if a.field and len(a.field) != len(a.value) or not (a.field or a.depends):
+    if a.field and len(a.field) != len(a.value) or a.depends is None and not a.field:
         raise pf.PlanError("edit-task needs matching --field/--value pairs or --depends")
     ents = pf.read_entries(d)
     e = next((x for x in ents if x["id"] == tid), None)
     had_deps = any(x["depends"] for x in ents)
     moved = _add_depends(d, ents, e, tid, a.depends) if a.depends else []
+    if e and a.depends == "":  # --depends "" clears the dependencies of the task (TASKS.md and its Depends line)
+        e["depends"] = []
     write_text(f, _apply_fields(d, ents, e, tid, zip(a.field, a.value, strict=False), read_text(f)))
     if e:
         pf.write_tasks(d, ents)
-    _after_depends(d, ents, e, moved, had_deps, bool(a.depends))
+    _after_depends(d, ents, e, moved, had_deps, a.depends is not None)
     return 0
+
+
+def _report_check(d, n, probs):
+    """Print the check of folder D (n tasks, problems) and -> exit code 2 on an error."""
+    probs = [*probs, *plan_check.request_problems(d), *plan_check.ci_drift_warnings(d)]
+    print("\n".join(probs) if probs else f"OK {n} tasks")
+    return 2 if plan_check.errors_of(probs) else 0
 
 
 def cmd_check(a):
@@ -227,15 +284,29 @@ def cmd_check(a):
         raise pf.PlanError("check needs exactly one of --stage / --feature")
     d = pf.stage_dir(a) if a.stage else pf.feature_dir(a)
     n, probs = plan_check.check_stage(d) if a.stage else plan_check.check_feature(a, d)
-    probs = [*probs, *plan_check.request_problems(d), *plan_check.ci_drift_warnings(d)]
-    print("\n".join(probs) if probs else f"OK {n} tasks")
-    return 2 if plan_check.errors_of(probs) else 0
+    return _report_check(d, n, probs)
+
+
+def cmd_amend(a):
+    if not os.path.exists(pf.plan_path(a)):
+        raise pf.PlanError("Plan.md missing: run plan-init first")
+    amend_phase(a, pf.read_phases(a))
+    d = pf.feature_dir(a)
+    n, probs = plan_check.check_feature(a, d)
+    return _report_check(d, n, probs)
 
 
 def cmd_dryrun(a):
     d = pf.stage_dir(a)
     n, probs = plan_dryrun.dryrun_stage(d, plan_check.repo_of(d))
     print("\n".join(probs) if probs else f"OK {n} dry runs")
+    return 2 if probs else 0
+
+
+def cmd_testrun(a):
+    d = pf.stage_dir(a)
+    n, probs = plan_testrun.testrun_stage(d, plan_check.repo_of(d))
+    print("\n".join(probs) if probs else f"OK {n} test lines")
     return 2 if probs else 0
 
 
@@ -273,7 +344,7 @@ def build():
         p.set_defaults(fn=fn)
 
     add("plan-init", cmd_plan_init, feature=True, goal=True)
-    add("phase", cmd_phase, feature=True, name=True, goal=True, done_when=True, depends="", paths=True, tasks=0, after="")
+    add("phase", cmd_phase, feature=True, name=True, goal=True, done_when=True, depends="", paths=True, tasks=0, after="", before="")
     for act in sub.choices["phase"]._actions:
         if act.dest == "tasks":
             act.type = int
@@ -309,11 +380,13 @@ def build():
     ep.add_argument("--value", action="append", default=[])
     ep.add_argument(
         "--depends",
-        default="",
-        help="add these tasks (N,M) to the task's dependencies (the task moves to the wave after them when needed): it is held until they are merged",
+        default=None,  # None: not given; "": clear the dependencies
+        help="add these tasks (N,M) to the task's dependencies (the task moves to the wave after them when needed): it is held until they are merged; an empty value clears them",
     )
+    add("amend", cmd_amend, feature=True, phase=True, note=True, goal="", done_when="", paths="", depends="")
     add("check", cmd_check, stage="", feature="")
     add("dryrun", cmd_dryrun, stage=True)
+    add("testrun", cmd_testrun, stage=True)
     add("run", cmd_run, feature=True, prompt_file=True)
     sub.choices["run"].add_argument("--dry-run", action="store_true")
     sub.choices["run"].add_argument("--model", choices=[MODEL_SONNET, MODEL_OPUS], default=MODEL_SONNET)

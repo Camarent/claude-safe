@@ -43,6 +43,7 @@ from .configuration import (
 )
 from .generated import generated_among, marker
 from .plan_files import PATH_FILE, acceptance_items, paths_in, task_type
+from .shellwords import split_commands
 from .stagedir import workspace_of
 from .util import read_text
 from .worktree import nested_repo_of, nested_repos
@@ -204,7 +205,7 @@ def check_negative_tag(d, tid):
     return out
 
 
-TASK_MENTION_RE = re.compile(r"\btask-(\d+)\b")
+TASK_MENTION_RE = re.compile(r"(?<![\w./-])task-(\d+)(?![\w/-])")  # a path part such as /x/task-1/repo (job worktree folder) is not a mention
 OTHER_SCOPE_RE = re.compile(r"\btask-\d+\s+(?:of|in)\s+(?:phase|stage)\b", re.I)  # `task-3 of phase 01`: a task of another phase, not of this stage
 
 
@@ -242,21 +243,20 @@ def check_unlisted_prereq(d, e, ents):
 
 
 DOCS_LINE_RE = re.compile(r"^\s*docs\s*:\s*\S", re.I | re.M)
-DOCS_SECTION_RE = re.compile(r"^##\s+Docs\b", re.M)
 
 
 def check_docs_target(tasks_md, workspace):
-    """Problem when TASKS.md has the `docs` flag but the final-docs step would find no target: a `docs:` line in TASKS.md or PROGRESS.md, or a `## Docs` section in the workspace CLAUDE.md. Without one the step ends BLOCKED, so the plan check stops it earlier."""
+    """Problem when TASKS.md has the `docs` flag but the final-docs step would find no target: a `docs:` line in TASKS.md or PROGRESS.md, or an existing `docs/` folder in the workspace. A `## Docs` section in CLAUDE.md alone does not count (it may say "No docs folder yet"). Without one the step ends BLOCKED, so the plan check stops it earlier."""
     from .tasks import parse_flags
 
     if not parse_flags(tasks_md)["docs"]:
         return []
     if DOCS_LINE_RE.search(read_text(tasks_md)) or DOCS_LINE_RE.search(read_text(os.path.join(workspace, "PROGRESS.md"))):
         return []
-    if DOCS_SECTION_RE.search(read_text(os.path.join(workspace, "CLAUDE.md"))):
+    if os.path.isdir(os.path.join(workspace, "docs")):
         return []
     return [
-        "flags: docs is set but there is no docs target: add a `docs: <folder>` (or `docs: skip`) line to TASKS.md, or a `## Docs` section to the workspace CLAUDE.md"
+        "flags: docs is set but there is no docs target: no `docs/` folder in the workspace and no `docs: <folder>` (or `docs: skip`) line in TASKS.md or PROGRESS.md"
     ]
 
 
@@ -459,6 +459,49 @@ def _reads_as_prose(text):
     return text.endswith(".") or low[0] in ACCEPTANCE_PROSE_OPENERS or sum(w in ACCEPTANCE_PROSE_WORDS for w in low) >= 2
 
 
+PATH_TEST_FLAGS = ("-f", "-e", "-s", "-d")
+PATH_GREP_FLAGS = ("-q", "-c")
+
+
+def _is_path_test(args):
+    """`test -f|-e|-s|-d X` (args after `test`, or after `[` with the closing `]` removed)."""
+    return len(args) == 2 and args[0] in PATH_TEST_FLAGS
+
+
+def _is_path_ls(args):
+    """`ls X` or `stat X`: one operand, no option."""
+    return len(args) == 1 and not args[0].startswith("-")
+
+
+def _is_path_grep(args):
+    """`grep -q|-c NAME FILE`: only the quiet or count option, two operands."""
+    opts = [a for a in args if a.startswith("-")]
+    operands = [a for a in args if not a.startswith("-")]
+    return bool(opts) and all(o in PATH_GREP_FLAGS for o in opts) and len(operands) == 2
+
+
+# command name -> predicate over its arguments; a command not listed here never only tests a path
+PATH_ONLY_PREDICATES = {"test": _is_path_test, "ls": _is_path_ls, "stat": _is_path_ls, "grep": _is_path_grep}
+
+
+def _path_only_segment(words):
+    """True when WORDS (one command segment, split on blanks) only tests that a path exists: `test -f|-e|-s|-d X`, `[ -f X ]`, `ls X`, `stat X`, `grep -q|-c NAME FILE`."""
+    name, args = words[0], words[1:]
+    if name == "[":
+        if not args or args[-1] != "]":
+            return False
+        name, args = "test", args[:-1]
+    predicate = PATH_ONLY_PREDICATES.get(name)
+    return predicate is not None and predicate(args)
+
+
+def _only_tests_path(text):
+    """True when every segment of TEXT (split at `&&`, `||`, `;`, `|`, `&`, newline) only tests that a path exists: a check that runs no behaviour."""
+    segs = [s.split() for s in split_commands(text)]
+    segs = [w for w in segs if w]
+    return bool(segs) and all(_path_only_segment(w) for w in segs)
+
+
 def _accept_cmd_problems(text, repo):
     """-> problem words for one `cmd:` text: the agents' sandbox denies `cd`, `&&` and an env prefix, and a job worktree is not the main checkout."""
     if not text:
@@ -474,6 +517,8 @@ def _accept_cmd_problems(text, repo):
         probs.append("names an absolute main-checkout path")
     if _reads_as_prose(text):
         probs.append("reads as a sentence, not a command (write the command that proves it, or use `eyes:`)")
+    if _only_tests_path(text):
+        probs.append("only tests that a path exists (write the command that runs the behaviour, or use `eyes:`)")
     return probs
 
 

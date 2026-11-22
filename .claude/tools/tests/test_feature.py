@@ -14,6 +14,7 @@ os.environ["PIPELINE_NO_LEADS"] = "1"  # no first code search (local.py find) in
 from pipeline import plan_files as pf
 from pipeline.run import Run
 from tests.isolated import isolate_cwd
+from tests.support.gitrepo import git
 from tests.support.tmpdirs import tracked_mkdtemp
 
 
@@ -21,6 +22,8 @@ class FeatureDriver(unittest.TestCase):
     def setUp(self):
         isolate_cwd(self)
         self.d = tracked_mkdtemp()
+        git(self.d, "init", "-q", "-b", "master")  # own repo: a branch switch by the driver stays in this temp repo, never in the checkout above TMPDIR
+        git(self.d, "commit", "-q", "--allow-empty", "-m", "init")
         cli_plan.main(["plan-init", "--feature", "F", "--goal", "g", "--dir", self.d])
         prev = None
         for n, done in (("a", "true"), ("b", "true"), ("c", "true")):
@@ -213,6 +216,8 @@ class FeatureDriver(unittest.TestCase):
 
     def test_single_stage_plan_runs_as_one_stage(self):
         d = tracked_mkdtemp()
+        git(d, "init", "-q", "-b", "master")  # own repo, as in setUp
+        git(d, "commit", "-q", "--allow-empty", "-m", "init")
         f = os.path.join(d, ".work", "S")
         os.makedirs(f)
         with open(os.path.join(f, "TASKS.md"), "w") as t:
@@ -225,6 +230,8 @@ class FeatureDriver(unittest.TestCase):
 
     def test_no_phases_and_no_tasks_still_blocks(self):
         d = tracked_mkdtemp()
+        git(d, "init", "-q", "-b", "master")  # own repo, as in setUp
+        git(d, "commit", "-q", "--allow-empty", "-m", "init")
         os.makedirs(os.path.join(d, ".work", "S"))
         a = cli_wave.argparse.Namespace(feature="S", dir=d, max_waves=12, max_dispatches=60, max_budget_usd=None, dry_run=False)
         with redirect_stdout(StringIO()):

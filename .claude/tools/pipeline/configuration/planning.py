@@ -145,8 +145,9 @@ SCOPE_TEST_RE = r"(?i)(?:^|[/._-])(?:tests?|spec)(?:[/._-]|$)"  # a test path
 SCOPE_SHOWN = 12  # files named in the scope note
 SCOPE_STRICT_NOTE = (
     " Scope check (must address): the job changed files outside the task's predicted paths and the task text does not name them: {files}. "
-    "Verdict FAIL unless the task text justifies each file; name every such file in your report."
+    "Judge each file: FAIL only for a side refactor; a file the task or a red gate needs is fine. Name every such file in your report."
 )
+SCOPE_HINT_NOTE = " Predicted paths are a planning hint: a file outside them is never a FAIL by itself."  # reviewer brief, every review
 SCOPE_WARN_NOTE = " Scope note: the job changed files outside the task's predicted paths and the task text does not name them: {files}. Name them in your report; this alone is not a FAIL."
 TESTCMD_WARN_PREFIX = "testcmd:"  # warning prefix of plan_testcmd.check_bare_test_runner; plan_check.errors_of never fails on it
 TESTCMD_HINT_KEY = "test_command_hint"  # pipeline.json: the project's real test command (what a `Test:` line should run instead of bare pytest); when unset a `gates` command that runs pytest through a wrapper is used

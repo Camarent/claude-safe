@@ -53,6 +53,14 @@ def _graph_order(rows, tasks_md):
     return order
 
 
+def _add_depends(row, line):
+    """Adds the ids of a `Depends:` line to the row's depends, no duplicates."""
+    dep = re.search(r"\bDepends\s*:\s*(.*)", line, re.I)
+    if dep:
+        row.setdefault("depends", [])
+        row["depends"] += [t for t in re.findall(r"(?:task|ops)-\d+", dep.group(1)) if t not in row["depends"]]
+
+
 def parse_tasks(tasks_md):
     """-> ordered list of {id, owner_sonnet, review_sonnet} from the TASKS.md table (wave order if a Graph line exists)."""
     if not os.path.exists(tasks_md):
@@ -63,10 +71,13 @@ def parse_tasks(tasks_md):
             row = _task_row(line)
             if row:
                 rows[row["id"]] = cur = row
-            dep = re.search(r"\bDepends\s*:\s*(.*)", line, re.I)
-            if dep and cur:  # on the task's own line or on a line after it, until the next task
-                cur.setdefault("depends", [])
-                cur["depends"] += [t for t in re.findall(r"(?:task|ops)-\d+", dep.group(1)) if t not in cur["depends"]]
+            if cur:  # on the task's own line or on a line after it, until the next task
+                _add_depends(cur, line)
+    for t, row in rows.items():  # the task file next to TASKS.md may also say `Depends:`; its ids join the TASKS.md ones
+        tf = os.path.join(os.path.dirname(tasks_md), t + ".md")
+        if os.path.exists(tf):
+            for line in read_text(tf).splitlines():
+                _add_depends(row, line)
     order = _graph_order(rows, tasks_md)
     top = max((rows[t]["wave"] for t in order), default=0)
     _mark_oversized(rows, tasks_md)

@@ -2,7 +2,7 @@
 """review_guard: PreToolUse hook for Edit, Write, NotebookEdit and Bash. Lets the reviewer run mutation checks in its scratch copy only.
 
 Active when the env var PIPELINE_REVIEW_DIR (pipeline.configuration.ENV_REVIEW_DIR) holds the job worktree path, and for any session whose hook input names the `reviewer` agent
-(`agent_type`): without the variable that session has no worktree, so it may write only report files and run no mutating command (fail closed). Every other session is untouched.
+(`agent_type`): without the variable that session has no worktree, so it may write only report files and run no mutating command (fail closed). Every other session is untouched, except that Edit/Write/NotebookEdit naming a file in the main checkout from inside a linked worktree is denied (main_checkout_why).
 Then
 1. Edit/Write/NotebookEdit are allowed only for real paths (symlinks and `..` resolved) under the job worktree, or a report file `.work/<stage>/reports/<file>`;
 2. a Bash command is denied when it visibly writes outside the job worktree (`mktemp` may create files under the scratch dir env TMPDIR,
@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -121,6 +122,8 @@ GIT_ENV = re.compile(r"^GIT_\w+=")
 TARGET_DIR_CMDS = {"cp", "install", "ln"}  # `-t DIR` names the destination
 REDIRECT = re.compile(r"^(?:\d*|&)>>?\|?(.*)$")
 DEVNULL = "/dev/null"
+GIT_BIN = "git"  # probes the worktree layout for main_checkout_why
+GIT_TIMEOUT = 10  # seconds; a stuck git must not hang the hook
 
 
 def under(path, root):
@@ -148,7 +151,39 @@ def malformed(data):
 
 
 def outside(why_path, root):
-    return f"Reviewer sessions may write only inside the job worktree {root} or the stage scratch dir (env {ENV_SCRATCH_DIR}); {why_path} is outside both. Edit the job worktree only, never the main checkout or another folder."
+    s = scratch_dir(root)
+    where = (
+        f"the stage scratch dir {s} (env {ENV_SCRATCH_DIR} or {SCRATCH_ENV})"
+        if s
+        else f"the stage scratch dir (env {ENV_SCRATCH_DIR} or {SCRATCH_ENV}; none set)"
+    )
+    return f"Reviewer sessions may write only inside the job worktree {root} or {where}; {why_path} is outside both. Write scratch files under {s or 'the stage scratch dir'}; edit the job worktree only, never the main checkout or another folder."
+
+
+def main_checkout_why(path, cwd):
+    """Deny text when PATH (a file the Edit/Write tool names) is in the main checkout of the linked worktree CWD is in, outside that worktree; '' otherwise (never raises)."""
+    try:
+        out = subprocess.run(
+            [GIT_BIN, "-C", cwd, "rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return ""
+    lines = out.stdout.splitlines()
+    if out.returncode != 0 or len(lines) != 3:
+        return ""
+    git_dir, common, top = (os.path.realpath(os.path.join(cwd, x)) for x in lines)
+    if git_dir == common:  # the main checkout itself: nothing to redirect
+        return ""
+    main = os.path.dirname(common)
+    real = resolve(path, cwd)
+    if under(real, top) or not under(real, main):
+        return ""
+    rel = os.path.relpath(real, main)  # the same file, as a path inside the worktree
+    return f"Edit the job worktree, not the main checkout: {path} is in {main}, outside this worktree {top}. Use the worktree-relative path {rel} (under {top}) instead."
 
 
 def file_verdict(tool, tool_input, root):
@@ -176,10 +211,9 @@ def report_target(tok, cwd):
 
 
 def in_scratch_write(real, root):
-    """True when REAL (already resolved) is under the stage scratch dir (env ENV_SCRATCH_DIR); an unset or root dir, or one holding the job worktree, allows nothing."""
-    s = os.environ.get(ENV_SCRATCH_DIR, "")
-    s = os.path.realpath(s) if s else ""
-    return s not in ("", os.sep) and not under(root, s) and under(real, s)
+    """True when REAL (already resolved) is under the stage scratch dir (scratch_dir); an unset or root dir, or one holding the job worktree, allows nothing."""
+    s = scratch_dir(root)
+    return bool(s) and under(real, s)
 
 
 def moves_git(args, i):
@@ -297,17 +331,25 @@ def cd_target(args, cwd):
     return resolve(args[0], cwd)
 
 
-def scratch_dir():
-    """-> the real path of the agent scratch dir (env SCRATCH_ENV), or '' when unset or the filesystem root (too broad to trust)."""
-    d = os.environ.get(SCRATCH_ENV, "")
+def real_scratch(d, root):
+    """-> the real path of scratch dir D, or '' when D is empty, the filesystem root, or holds the job worktree ROOT (too broad to trust)."""
     real = os.path.realpath(d) if d else ""
-    return "" if real in ("", os.sep) else real
+    return "" if real in ("", os.sep) or under(root, real) else real
 
 
-def in_scratch(tok, cwd):
-    """True when TOK resolves (symlinks and `..` resolved) under the scratch dir; no variables, globs or substitutions."""
-    s = scratch_dir()
-    return bool(s) and not re.search(r"[$`*?]", tok) and under(resolve(tok, cwd), s)
+def scratch_dir(root):
+    """-> the real stage scratch dir for redirects and Edit/Write: env ENV_SCRATCH_DIR when set (even empty), else SCRATCH_ENV (TMPDIR)."""
+    val = os.environ[ENV_SCRATCH_DIR] if ENV_SCRATCH_DIR in os.environ else os.environ.get(SCRATCH_ENV, "")
+    return real_scratch(val, root)
+
+
+def in_scratch(tok, cwd, root):
+    """True when TOK resolves (symlinks and `..` resolved) under the stage scratch dir or under TMPDIR, where mktemp writes; no variables, globs or substitutions."""
+    if re.search(r"[$`*?]", tok):
+        return False
+    real = resolve(tok, cwd)
+    dirs = (scratch_dir(root), real_scratch(os.environ.get(SCRATCH_ENV, ""), root))
+    return any(s and under(real, s) for s in dirs)
 
 
 def mktemp_verdict(args, cwd, root):
@@ -320,7 +362,7 @@ def mktemp_verdict(args, cwd, root):
             targets.append(a.split("=", 1)[1])
         elif not a.startswith("-") and "/" in a:
             targets.append(a)
-    bad = [t for t in targets if not (target_ok(t, cwd, root) or in_scratch(t, cwd))]
+    bad = [t for t in targets if not (target_ok(t, cwd, root) or in_scratch(t, cwd, root))]
     return outside(f"`mktemp {bad[0]}`", root) if bad else ""
 
 
@@ -462,12 +504,27 @@ def verdict(data, root):
     return ""
 
 
+def main_checkout_deny(data):
+    """Deny text for an Edit/Write/NotebookEdit call naming a file in the main checkout (see main_checkout_why); '' otherwise."""
+    if not isinstance(data, dict) or data.get("tool_name") not in PATH_KEYS or not isinstance(data.get("tool_input"), dict):
+        return ""
+    p = data["tool_input"].get(PATH_KEYS[data["tool_name"]])
+    cwd = data.get("cwd") or os.getcwd()
+    if not isinstance(p, str) or not p or not isinstance(cwd, str):
+        return ""
+    return main_checkout_why(p, cwd)
+
+
 def main():
     root = os.environ.get(ENV_REVIEW_DIR)
     try:
         data = json.load(sys.stdin)
     except ValueError:
         data = None
+    why = main_checkout_deny(data)  # every session: a linked worktree never writes the main checkout
+    if why:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why}}))
+        return 0
     if not root:
         if not (isinstance(data, dict) and _is_reviewer(data.get("agent_type"))):
             return 0  # not a reviewer session

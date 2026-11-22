@@ -6,8 +6,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import brieflint
+from pipeline import briefs, plan_check
 from pipeline.configuration import AGENTS_DIR, TOOLS_DIR
 from search import ctxpack
+from tests.support.tmpdirs import tracked_mkdtemp
 
 GOOD = "Files (only these): web/a.js\nLoop: python3 -I /root/.claude/tools/qrun.py -- node --test x\nDone: suite green. see web/a.js:24. turns <= 25\n"
 
@@ -168,6 +170,26 @@ class T(unittest.TestCase):
                 f.write('{"a": 1, "pad": "' + "x" * 1_100_000 + '"}')
             t = GOOD + "Test: python3 -I /root/.claude/tools/qrun.py -- jq -e '.zz' big.json\n"
             self.assertFalse(any("jq" in m for m in brieflint.lint(t, d)))
+
+
+class TestLeadVerifiedBrief(unittest.TestCase):
+    def test_dev_brief_note_counts_marked_lines_only(self):
+        f = os.path.join(tracked_mkdtemp(), "task-1.md")
+        with open(f, "w") as h:
+            h.write("Goal: check `lead-verified` lines\nDone: suite green. lead-verified\nTest: x\n")
+        self.assertIn("1 line(s) of the task file are marked lead-verified", briefs.lead_note(f))
+        with open(f, "w") as h:
+            h.write("Goal: check `lead-verified` lines\nDone: suite green\nTest: x\n")
+        self.assertEqual(briefs.lead_note(f), "")
+
+    def test_docs_index_line_needs_marker(self):
+        d = tracked_mkdtemp()
+        with open(os.path.join(d, "task-1.md"), "w") as h:
+            h.write("Test: python3 .claude/tools/docs_index.py\n")
+        with open(os.path.join(d, "task-2.md"), "w") as h:
+            h.write("Test: cs-docs-index --check  # lead-verified\n")
+        self.assertEqual(len(plan_check.check_lead_verified(d, "task-1")), 1)
+        self.assertEqual(plan_check.check_lead_verified(d, "task-2"), [])
 
 
 if __name__ == "__main__":

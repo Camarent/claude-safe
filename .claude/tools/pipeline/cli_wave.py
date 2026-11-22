@@ -15,9 +15,11 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 from pathlib import Path
 
 from . import driver, gitx, graph, lead_context, limits, metrics, pr_ops, progress
+from . import preflight as env_preflight
 from .branches import dirty_block, ensure_work_branch, red_base_block
 from .briefs import ENV_DRY_NO_CCN
 from .configuration import (
@@ -45,7 +47,7 @@ from .configuration import (
 from .ctx import Ctx
 from .run import Run
 from .tasks import parse_tasks
-from .util import add_subcommand, append_event, read_jsonl, read_text, work_path, write_text
+from .util import add_subcommand, append_event, read_jsonl, read_text, swallowed, work_path, write_text
 from .worktrees import review_recover
 
 
@@ -255,7 +257,21 @@ def _run_locked(a, c):
     if bad := review_recover(a):  # under the lock only: a crashed run left a reviewer's mutations in a job worktree
         print("blocked: review reset failed: " + "; ".join(bad))
         return 4
+    if problems := _env_preflight(a, c):
+        for msg, fix in problems:
+            print(f"blocked: {msg} (fix: {fix})")
+        print(f"blocked: env preflight failed, see {os.path.join(c.w, BLOCKED_FILE)}")
+        return 4
     return run_loop(a, c)
+
+
+def _env_preflight(a, c):
+    """-> the (message, fix) env problems of the stage's task files; preflight.run writes them to BLOCKED.md. A probe that raises is logged and the run goes on."""
+    try:
+        return env_preflight.run(repo_path(a.dir), c.w)
+    except Exception as ex:
+        swallowed("cli_wave.env_preflight", ex)
+        return []
 
 
 def _limit_hit(a, c, ds):
@@ -293,6 +309,7 @@ ASK_TAIL_LINES = 5  # last lines of the named report shown as the error tail
 ASK_REVIEW_MARK = "review failed"  # an ask cause that carries the reviewer's findings
 ASK_FINDINGS_LINES = 30  # report lines shown for such an ask (the findings and their fixes)
 ASK_NOTE_HINT = ' --note "<quote the reviewer\'s exact fix text>"'  # a retry after two failed reviews must carry the fix text
+ASK_ESCAPE_CATEGORIES = ("Cc", "Cf")  # unicode categories shown escaped in an error tail: control (Cc) and format, zero-width and bidi (Cf)
 
 
 def _ask_entries(msg):
@@ -311,13 +328,18 @@ def _ask_entries(msg):
     return [tuple(e) for e in seen.values()]
 
 
+def _escape_nonprintable(text):
+    """Show zero-width, bidi and control characters (tab kept) as \\uXXXX escapes; printable text unchanged."""
+    return "".join(f"\\u{ord(ch):04X}" if ch != "\t" and unicodedata.category(ch) in ASK_ESCAPE_CATEGORIES else ch for ch in text)
+
+
 def _ask_tail(line):
     """Last lines of the report file the ask names (first one that exists), or a note when it names none."""
     count = ASK_FINDINGS_LINES if ASK_REVIEW_MARK in line else ASK_TAIL_LINES
     for path in ASK_PATH_RE.findall(line):
         if os.path.isfile(path):
             tail = [x for x in read_text(path).splitlines() if x.strip()][-count:]
-            return f"error tail, {path}:\n" + "\n".join(f"    {x}" for x in tail)
+            return f"error tail, {path}:\n" + "\n".join(f"    {_escape_nonprintable(x)}" for x in tail)
     return "error tail: none, the ask names no report file"
 
 

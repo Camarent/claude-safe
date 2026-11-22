@@ -48,6 +48,20 @@ class ModelGuardTest(unittest.TestCase):
     def test_non_string_model_is_malformed(self):
         self.assertIn("string", model_guard.verdict({"subagent_type": "dev", "model": ["haiku"], "prompt": "x"}))
 
+    def test_deny_messages_have_no_hardcoded_root_path(self):
+        # messages must not embed a literal install path such as /root/.claude; the hook path lives in settings only
+        cases = [
+            {"subagent_type": "dev", "prompt": "x"},
+            {"subagent_type": "ops", "model": "sonnet", "prompt": "MODEL-REASON: long enough reason text here"},
+            {"subagent_type": "dev", "model": "sonnet", "prompt": "transcribe pages"},
+            {"subagent_type": "dev", "model": ["haiku"], "prompt": "x"},
+        ]
+        for tool_input in cases:
+            with self.subTest(tool_input=tool_input):
+                text = model_guard.verdict(tool_input)
+                self.assertTrue(text)
+                self.assertNotIn("/root/.claude", text)
+
     def test_main_denies_missing_model_on_stdout(self):
         r = run_hook(json.dumps({"tool_input": {"subagent_type": "dev", "prompt": "x"}}))
         self.assertEqual(r.returncode, 0)

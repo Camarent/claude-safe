@@ -78,8 +78,8 @@ def ignored_paths(root, rels):
     return {p for p in r.stdout.split("\0") if p}
 
 
-def modules_of(root):
-    listed = Path(root, "docs", "modules.txt")
+def modules_of(root, docs_dir="docs"):
+    listed = Path(root, docs_dir, "modules.txt")
     if listed.is_file():
         lines = listed.read_text(encoding="utf-8").splitlines()
         mods = sorted(line.strip().strip("/") for line in lines if line.strip() and not line.startswith("#"))
@@ -87,6 +87,11 @@ def modules_of(root):
         mods = sorted(p.name for p in Path(root).iterdir() if p.is_dir() and not p.name.startswith(".") and p.name not in IGNORE_DIRS)
     skip = ignored_paths(root, mods)
     return [m for m in mods if m not in skip]
+
+
+def module_headings(root, docs_dir="docs"):
+    """Module names that get an index heading, in index order (the same list build_index uses)."""
+    return modules_of(root, docs_dir)
 
 
 def walk(root, module):
@@ -159,7 +164,7 @@ def _module_section(root, module):
     return out
 
 
-def build_index(root):
+def build_index(root, docs_dir="docs"):
     out = [
         "# Index",
         "",
@@ -169,27 +174,27 @@ def build_index(root):
         ),
         "",
     ]
-    for module in modules_of(root):
+    for module in modules_of(root, docs_dir):
         out += _module_section(root, module)
     return "\n".join(out)
 
 
-def check(root):
+def check(root, docs_dir="docs"):
     problems = []
-    docs = os.path.join(root, "docs")
+    docs = os.path.join(root, docs_dir)
     if not os.path.isfile(os.path.join(docs, "ARCHITECTURE.md")):
-        problems.append("missing docs/ARCHITECTURE.md")
-    mods = modules_of(root)
+        problems.append(f"missing {docs_dir}/ARCHITECTURE.md")
+    mods = modules_of(root, docs_dir)
     for m in mods:
         if not os.path.isfile(os.path.join(docs, "modules", slug(m) + ".md")):
-            problems.append(f"module '{m}' has no docs/modules/{slug(m)}.md")
+            problems.append(f"module '{m}' has no {docs_dir}/modules/{slug(m)}.md")
     mod_dir = os.path.join(docs, "modules")
     known = {slug(m) for m in mods}
     if os.path.isdir(mod_dir):
         for name in sorted(os.listdir(mod_dir)):
             if name.endswith(".md") and name[:-3] not in known:
-                problems.append(f"docs/modules/{name} describes no existing module")
-    problems += check_references(root, mods)
+                problems.append(f"{docs_dir}/modules/{name} describes no existing module - fold it into its parent module doc")
+    problems += check_references(root, mods, docs_dir)
     return problems
 
 
@@ -204,9 +209,9 @@ def _is_address(rel, port):
     return "/" not in rel and port in COMMON_PORTS
 
 
-def check_references(root, mods):
+def check_references(root, mods, docs_dir="docs"):
     """Every `path:line[-line]` cited in docs/ must name an existing file and a line inside it."""
-    problems, docs = [], os.path.join(root, "docs")
+    problems, docs = [], os.path.join(root, docs_dir)
     line_counts = {}
 
     def length(path):
@@ -255,7 +260,9 @@ def git_candidates(root):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=".")
+    ap.add_argument("--docs-dir", default="docs", help="docs folder under --root (default: docs)")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--fresh", action="store_true", help="exit 1 when <docs-dir>/INDEX.md is missing or differs from the index built now; writes nothing")
     ap.add_argument("--allow-no-git", action="store_true")
     ap.add_argument("--suggest", action="store_true", help="with NEEDS_ROOT, also list nearby git repos (for the lead, not for docs-writer)")
     args = ap.parse_args()
@@ -267,13 +274,21 @@ def main():
             print("Candidates: " + (", ".join(cands) if cands else "none found - ask the user where the repo is"))
         sys.exit(2)
     if args.check:
-        problems = check(root)
+        problems = check(root, args.docs_dir)
         print("\n".join(problems) if problems else "docs OK")
         sys.exit(1 if problems else 0)
-    Path(root, "docs").mkdir(parents=True, exist_ok=True)
-    text = build_index(root)
-    Path(root, "docs", "INDEX.md").write_text(text + "\n", encoding="utf-8")
-    print(f"wrote docs/INDEX.md ({text.count(chr(10))} lines, {len(modules_of(root))} modules)")
+    text = build_index(root, args.docs_dir)
+    index = Path(root, args.docs_dir, "INDEX.md")
+    if args.fresh:
+        current = index.read_text(encoding="utf-8") if index.is_file() else None
+        if current != text + "\n":
+            print(f"{args.docs_dir}/INDEX.md is stale - regenerate it with docs_index.py --root {root}")
+            sys.exit(1)
+        print(f"{args.docs_dir}/INDEX.md is fresh")
+        sys.exit(0)
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(text + "\n", encoding="utf-8")
+    print(f"wrote {args.docs_dir}/INDEX.md ({text.count(chr(10))} lines, {len(modules_of(root, args.docs_dir))} modules)")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ failing gates' output (the dev reworks it), or `VERDICT: BLOCKED` when the task 
 import argparse
 import hashlib
 import os
+import re
 import sys
 
 sys.path[:0] = [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]  # -I drops the script dir
@@ -21,10 +22,12 @@ from pipeline.configuration import (  # noqa: E402
     BASE_WHY_BRANCH,
     BASE_WHY_DIRTY,
     BLOCKED,
+    COLLISION_FILE_RE,
     DIFF_SHA_LEN,
     DONE,
     FAIL,
     GATE_BASE_CHECK_KEY,
+    GATE_COLLISION_RERUNS_KEY,
     GATE_FLAKE_RERUN_KEY,
     GATE_KIND_TASK,
     METRICS_LOG,
@@ -82,8 +85,36 @@ def _extra(warn, green, env, cwd, git, names=()):
     return "\n".join(x for x in (warn, gatewatch.environment(env, cwd, hooks, names)) if x)
 
 
-def _run_gates(cfg, cmds, cwd, root, env, runner, stage):
-    """-> (results, commands cleared, {red command: why it was not cleared}, {flaky command: test ids}). The gates run in the job worktree CWD; with `gate_base_check` (default on) a red command that is red on the stage base ROOT too is not this task's failure; with `gate_flake_rerun` (default on) a red command left over runs once more, unchanged, and one that is green then is a flake."""
+def _collision_file(text):
+    """-> the one test file the red output names (COLLISION_FILE_RE), or "" when it names none or several."""
+    names = set(re.findall(COLLISION_FILE_RE, text))
+    return names.pop() if len(names) == 1 else ""
+
+
+def _collision_reruns(cfg, res, cwd, env, kw, run_id):
+    """-> (results with each red command whose output names one test file turned green when that file passes alone on a rerun, [(command, file, run ids, passed)]).
+    The file runs alone in the job worktree up to `gate_collision_reruns` times; the first green rerun ends it. Run ids: `<run_id>.1` is the first run, `.2`, `.3`... the reruns."""
+    n = cfg[GATE_COLLISION_RERUNS_KEY]
+    out, seen = [], []
+    for c, rc, secs, text in res:
+        f = _collision_file(text) if rc != 0 and rc not in final_check.WARN_BAD_RC else ""
+        if not f or n < 1:
+            out.append((c, rc, secs, text))
+            continue
+        ids, again_rc = [f"{run_id}.1"], rc
+        for k in range(n):
+            again_rc = final_check.run_all([f"{c} {f}"], cwd, env, **kw)[0][1]
+            ids.append(f"{run_id}.{k + 2}")
+            if again_rc == 0:
+                break
+        passed = again_rc == 0
+        seen.append((c, f, ids, passed))
+        out.append((c, 0 if passed else rc, secs, text))
+    return out, seen
+
+
+def _run_gates(cfg, cmds, cwd, root, env, runner, stage, run_id):
+    """-> (results, commands cleared, {red command: why it was not cleared}, {flaky command: test ids}, collisions). The gates run in the job worktree CWD; with `gate_base_check` (default on) a red command that is red on the stage base ROOT too is not this task's failure; with `gate_flake_rerun` (default on) a red command runs once more, unchanged, and one that is green then is a flake; a command still red whose output names one test file reruns that file alone (`gate_collision_reruns`, default 1)."""
     kw = {"runner": runner} if runner else {}
     res = final_check.run_all(cmds, cwd, env, groups=final_check.gate_groups(cfg, cwd), **kw)
     cleared, why = [], {}
@@ -98,8 +129,10 @@ def _run_gates(cfg, cmds, cwd, root, env, runner, stage):
     flaky = {}
     if cfg.get(GATE_FLAKE_RERUN_KEY, True):
         res, flaky = final_check.rerun_red(res, cwd, env, groups=final_check.gate_groups(cfg, cwd), **kw)
-        why = {c: w for c, w in why.items() if c not in flaky}
-    return res, cleared, why, flaky
+    res, collisions = _collision_reruns(cfg, res, cwd, env, kw, run_id)  # after the flake rerun: only the reds it left
+    passed = {c for c, _f, _ids, ok in collisions if ok}
+    why = {c: w for c, w in why.items() if c not in flaky and c not in passed}
+    return res, cleared, why, flaky, collisions
 
 
 def _base_problem(cfg, root, stage, git=gitx.try_out):
@@ -132,8 +165,8 @@ def _flake_line(c, res, names, why):
     return f"\n{BASE_FLAKE_PREFIX} {ids} (gate {names.get(c, c)}: {why})"
 
 
-def _gate_text(res, names, cleared, why, root, flaky=()):
-    """The gate report plus one line per command cleared against the stage base, one per flaky command, and one per red command that was not cleared (and why)."""
+def _gate_text(res, names, cleared, why, root, flaky=(), collisions=()):
+    """The gate report plus one line per command cleared against the stage base, one per flaky command, one per collision rerun, and one per red command that was not cleared (and why)."""
     return (
         final_check.report(res, names)
         + "".join(
@@ -142,12 +175,20 @@ def _gate_text(res, names, cleared, why, root, flaky=()):
             for c in cleared
         )
         + "".join(_flake_line(c, res, names, "red once, green on an unchanged rerun in the job worktree; not counted against this task") for c in flaky)
+        + "".join(_collision_line(f, ids, passed) for _c, f, ids, passed in collisions)
         + "".join(f"\ngate {names.get(c, c)}: not cleared against the stage base: {w}" for c, w in why.items())
     )
 
 
-def run(stage, task, d, runner=None, git=gitx.try_out):
-    """-> (verdict word, text). `runner` (final_check.run_group signature) and `git` are injectable for tests."""
+def _collision_line(f, ids, passed):
+    """`collision: <file> passed on rerun, first run id <id>` when the alone rerun was green; else the failed rerun with every run id."""
+    if passed:
+        return f"\ncollision: {f} passed on rerun, first run id {ids[0]}"
+    return f"\ncollision: {f} failed on every rerun; run ids {', '.join(ids)}"
+
+
+def run(stage, task, d, runner=None, git=gitx.try_out, run_id=None):
+    """-> (verdict word, text). `runner` (final_check.run_group signature) and `git` are injectable for tests; `run_id` prefixes the run ids of the collision reruns (default: this process id)."""
     cfg = project(d)
     cwd = testrun.workdir(d, stage, task)
     if cwd is None:
@@ -164,10 +205,10 @@ def run(stage, task, d, runner=None, git=gitx.try_out):
     env = {**os.environ, **test_env(cfg, d)}
     root, watch = repo_dir(d, cfg), cfg.get("gate_watch") or []
     before = gatewatch.snapshot(root, watch)
-    res, cleared, why, flaky = _run_gates(cfg, cmds, cwd, root, env, runner, stage)
+    res, cleared, why, flaky, collisions = _run_gates(cfg, cmds, cwd, root, env, runner, stage, run_id or str(os.getpid()))
     names = final_check.gate_names(cfg)
     final_check.log_gate_cmds(os.path.join(d, WORK_DIR, stage, METRICS_LOG), GATE_KIND_TASK, res, names, task, [*cleared, *flaky])
-    text = _gate_text(res, names, cleared, why, root, flaky)
+    text = _gate_text(res, names, cleared, why, root, flaky, collisions)
     green = text.startswith("VERDICT: DONE")
     if green and sha:
         write_text(sha_file(d, stage, task), sha + "\n")

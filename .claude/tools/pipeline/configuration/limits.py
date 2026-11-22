@@ -6,10 +6,14 @@ from pipeline import cmdnames
 
 from .layout import WORK_DIR
 from .paths import _cs_index
+from .verdicts import MODEL_HAIKU, MODEL_SONNET
 
 # limits
 MAX_ROUNDS = 2  # failed review rounds before the lead is asked
 MAX_TRIES = 4  # runs of one role (dev, reviewer) per task, any model; a fifth goes to the lead
+REVIEW_EXTRA_ROUNDS = 1  # extra dev rounds after the last failed review round (MAX_ROUNDS), each with the verbatim findings; 0 = the lead is asked at once
+REVIEW_EXTRA_OPUS_AFTER = 2  # the extra dev round runs on Opus once this many Sonnet devs ran on the task
+EXTRA_ROUND_WHY = "extra review round: the dev reworks the verbatim text of every failed review"  # dispatch reason of an extra dev round (counted from the log)
 REVIEW_SKIP_RC = 3  # `lp review` exit code for "skipped: diff too big"; callers treat it as no review, never as FAIL
 LOCAL_CONTEXT_TOKENS = 131072  # the Strata launch `--max-context`: one request must fit it
 LOCAL_ANSWER_TOKENS = 5000  # thinking + answer budget of a pre-review call
@@ -133,6 +137,8 @@ GATE_WATCH_SHOW = 10  # audit/gatewatch.py: changed paths one gate report lists
 GATE_ENV_NAMES = ("TZ", "TMPDIR", "HOME", "PATH")  # a red task gate report lists these environment variables ...
 GATE_ENV_PREFIXES = ("GIT_", "WT_")  # ... and every variable that starts with one of these (plus the names in the project's `test_env`)
 SCRIPT_TIMEOUT_S = 1800.0  # one no-model script step (audit_run, final_check, ux_run ...): killed after this
+AGENT_TOOL_TIMEOUT_S = 600  # the agent Bash tool kills a command after this (Claude Code maximum, 600000 ms)
+GATE_TIMEOUT_S = AGENT_TOOL_TIMEOUT_S - 60  # qrun and testrun kill a gate after this: below AGENT_TOOL_TIMEOUT_S, so the agent gets the output line
 GIT_NETWORK_TIMEOUT_S = 300  # one git push / fetch (pipeline/pr_ops.py)
 GIT_QUICK_TIMEOUT_S = 30  # one cheap git read (configuration.gitbranch._git_out, audit_run rev-parse)
 LIZARD_TIMEOUT_S = 120  # one `lizard --csv` run of pipeline/ccn.py
@@ -208,6 +214,8 @@ FAIL_ID_RES = (  # regexes (group 1 = test id) that read the failing test ids ou
     r"(?m)^FAIL\s+(\S+)",
 )
 FAIL_IDS_SHOWN = 10  # failing test ids named in a base-flake line
+# the test file a red gate's output names; exactly one of them makes the gate a collision candidate (rerun that file alone)
+COLLISION_FILE_RE = r"\btest_\w+\.py\b"
 PRE_EXISTING_RED = "pre-existing red: <command>"  # what a dev reports for a gate that is red on the base too
 LINK_FIX = (
     "If the task needs that repo, run `{add_repo}` (it gives your job worktree a real worktree of it; edit and commit there) and list the files under `Extra files:`; "
@@ -240,6 +248,13 @@ EV_FORCED_REMOVE = (
 )
 FORCED_WHY_MAX = 300  # chars of the refusal text kept in a `forced_remove` event
 PLAN_MAX_PHASES = 99  # highest NN- phase folder number
+PLAN_REVIEW_ROUNDS = 1  # plan-reviewer rounds per plan before the plan goes on (one review, one fix pass)
+PLAN_REVIEW_SMALL_MAX_TASKS = 7  # a one-phase plan with at most this many tasks gets the light review only
+PLAN_EXTRA_TASKS_ALLOWED = 10  # tasks the last-phase cover review may add to the plan (GAP-TASKS above this is refused)
+PLAN_REVIEW_MODEL_LIGHT = MODEL_HAIKU  # plan-reviewer model for the phase plan, the task plan and a small one-phase plan
+PLAN_REVIEW_MODEL_HEAVY = MODEL_SONNET  # plan-reviewer model for the last-phase cover review and a big one-phase plan
+PLAN_REVIEW_REPORT_FILE = "plan-review.md"  # plan-reviewer report, written into the phase folder
+PLAN_REVIEW_GAPS_FILE = "plan-review-gaps.md"  # gaps a plan review left after its fix round, written into the phase folder
 LOCAL_MAX_TURNS = 25  # localdev agent session turns
 EXPLORE_MAX_TURNS = 8  # local-model explore loop (localmodel/agent_files) turns before it must answer; keeps a plan-context build short
 LOCAL_MAX_TOKENS = 2500  # localdev model answer cap
@@ -279,6 +294,9 @@ QRUN_ENV = {
     "PYTHONDONTWRITEBYTECODE": "1"
 }  # env every qrun command gets before the project's `test_env` (which may override it): a Python test run leaves no untracked `__pycache__` that the dirty-tree preflight would stop on
 QRUN_TMP_PREFIX = "qrun-tmp-"  # each qrun command gets its own TMPDIR with this prefix, removed when the command ends (parallel tasks share /tmp; a project temp-leak guard would blame one task for the other's dirs)
+# dir the qrun TMPDIR is created in when it exists and is writable; a long parent TMPDIR would break AF_UNIX socket paths (sockets need short paths)
+QRUN_TMP_BASE = os.environ.get("QRUN_TMP_BASE", "/tmp")  # nosec B108 - only the parent of a private mkdtemp dir
+QRUN_TMP_MAX_PATH = int(os.environ.get("QRUN_TMP_MAX_PATH", 60))  # bytes: a qrun TMPDIR path longer than this is not used; the tempfile default is used instead
 GITHUB_HOSTS = ("github.com",)  # PR-flow hosts (pr_mode.py); `github_hosts` in pipeline.json overrides, [] = check off
 GIT_MIN_VERSION = (2, 38)  # `git merge-tree --write-tree` (pipeline/pr_ops.py `_landed`) needs it
 PUSH_ERR_HEAD = 200  # chars from the start of a failed push's output kept in the Blocked message (pipeline/pr_ops.py) ...

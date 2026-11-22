@@ -17,13 +17,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tests.support.tmpdirs import tracked_mkdtemp
+from tests.support.tmpdirs import SHORT_SOCK_BASE, tracked_mkdtemp
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOCAL = os.path.join(TOOLS, "search", "local.py")
 CODESRV = os.path.join(TOOLS, "search", "codesrv.py")
 CALL_TIMEOUT_S = 120  # rust-analyzer loads slowly on the first call
 SYMBOL = "helper"
+SOCK_PATH_MAX = 100  # AF_UNIX sun_path is 108 bytes; keep a margin below it
 
 
 def need(tool):
@@ -104,6 +105,8 @@ class Server:
     def __init__(self, tc, idle=1800):
         self.dir = tracked_mkdtemp(prefix="e2e-")
         self.sock = os.path.join(self.dir, "s.sock")
+        if len(self.sock.encode()) > SOCK_PATH_MAX:  # long TMPDIR: bind the socket in a short dir, removed with the test
+            self.sock = os.path.join(tracked_mkdtemp(prefix="e2e-s-", dir=SHORT_SOCK_BASE), "s.sock")
         self.env = {
             **os.environ,
             "CODESRV_SOCK": self.sock,

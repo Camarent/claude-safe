@@ -15,7 +15,18 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
 import time
 
-from pipeline.configuration import QRUN_ENV, QRUN_LOG_MAX_AGE_S, QRUN_LOG_MAX_COUNT, QRUN_LOG_MIN_KEEP, QRUN_TMP_PREFIX
+from pipeline import gate_record
+from pipeline.configuration import (
+    ENV_QRUN_NO_RECORD,
+    GATE_TIMEOUT_S,
+    QRUN_ENV,
+    QRUN_LOG_MAX_AGE_S,
+    QRUN_LOG_MAX_COUNT,
+    QRUN_LOG_MIN_KEEP,
+    QRUN_TMP_BASE,
+    QRUN_TMP_MAX_PATH,
+    QRUN_TMP_PREFIX,
+)
 from pipeline.util import script_timeout
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -224,8 +235,8 @@ def _parallelize(cmd, cwd):
 
 
 def _timeout():
-    """Seconds one run may take: env ORCH_SCRIPT_TIMEOUT (same name as the pipeline script steps), default SCRIPT_TIMEOUT_S."""
-    return script_timeout()
+    """Seconds one run may take: env ORCH_SCRIPT_TIMEOUT (same name as the pipeline script steps), default SCRIPT_TIMEOUT_S, never above GATE_TIMEOUT_S (below the agent tool timeout)."""
+    return min(script_timeout(), GATE_TIMEOUT_S)
 
 
 def _descendants(pid):
@@ -273,9 +284,19 @@ def _become_subreaper():
         ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
 
 
+def _new_scratch():
+    """A fresh TMPDIR for one command: under QRUN_TMP_BASE when that dir is writable and the path fits QRUN_TMP_MAX_PATH (AF_UNIX socket paths must stay short), else the tempfile default."""
+    if os.path.isdir(QRUN_TMP_BASE) and os.access(QRUN_TMP_BASE, os.W_OK):
+        d = tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX, dir=QRUN_TMP_BASE)
+        if len(d) <= QRUN_TMP_MAX_PATH:
+            return d
+        shutil.rmtree(d, ignore_errors=True)  # too long for a socket path: not used
+    return tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX)
+
+
 def _run(cmd, log):
     """Run CMD with its own TMPDIR (removed when it ends, also on a crash or kill), write the ANSI-stripped output to LOG; return (output lines, exit code). A timeout, SIGTERM or Ctrl-C kills the command and everything it started."""
-    scratch = tempfile.mkdtemp(prefix=QRUN_TMP_PREFIX)
+    scratch = _new_scratch()
     try:
         return _run_in(cmd, log, scratch)
     finally:
@@ -296,7 +317,7 @@ def _run_in(cmd, log, scratch):
         try:
             raw, rc = p.communicate(timeout=_timeout())[0], p.returncode
         except subprocess.TimeoutExpired:
-            raw, rc = (_kill_tree(p) or b"") + f"qrun: timed out after {_timeout():g}s (ORCH_SCRIPT_TIMEOUT)\n".encode(), 124
+            raw, rc = (_kill_tree(p) or b"") + f"qrun: timeout after {_timeout():g} s (ORCH_SCRIPT_TIMEOUT)\n".encode(), 124
         except BaseException:
             _kill_tree(p)
             raise
@@ -362,6 +383,19 @@ def _prune_old_logs(directory, max_age=LOG_MAX_AGE, min_keep=QRUN_LOG_MIN_KEEP, 
                 os.unlink(path)
 
 
+def _tree_before(cwd):
+    """Tree hash of cwd before the run -> str, or None (not a repo, or the hash failed): a record never changes the run."""
+    with contextlib.suppress(Exception):
+        return gate_record.tree_hash(cwd)
+    return None
+
+
+def _record_run(cwd, argv, rc, tree):
+    """Append the gate-run record; a failure is dropped: qrun's exit code and output never depend on it."""
+    with contextlib.suppress(Exception):
+        gate_record.record(cwd, argv, rc, tree=tree)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="qrun")
     ap.add_argument("--log")
@@ -376,8 +410,14 @@ def main(argv=None):
     log = a.log or os.path.join(tempfile.gettempdir(), f"qrun-{os.getpid()}-{time.time_ns()}.log")
     if not a.log:
         _prune_old_logs(tempfile.gettempdir())
-    cmd = _parallelize(cmd, os.getcwd())
+    recording = not os.environ.get(ENV_QRUN_NO_RECORD)
+    cwd = os.getcwd()
+    tree = _tree_before(cwd) if recording else None  # taken before the run: a test may write files
+    cmd_argv = cmd
+    cmd = _parallelize(cmd, cwd)
     lines, rc = _run(cmd, log)
+    if recording:
+        _record_run(cwd, cmd_argv, rc, tree)
     sm = summary(lines)
     if rc == 0:
         out, code = _report_ok(lines, sm, log)

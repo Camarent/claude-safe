@@ -98,7 +98,7 @@ class PlanTest(unittest.TestCase):
         )
 
     def stage(self):
-        Path(self.d, "CLAUDE.md").write_text("## Docs\ndocs/\n", encoding="utf-8")  # the docs flag needs a docs target (plan check)
+        os.makedirs(os.path.join(self.d, "docs"), exist_ok=True)  # the docs flag needs a docs/ folder or a docs: line (plan check)
         self.assertEqual(self.p("stage-init", "--stage", "s", "--goal", "g", "--flags", "ui docs")[0], 0)
 
     def test_stage_init_writes_the_pr_title_line(self):
@@ -269,7 +269,8 @@ class PlanTest(unittest.TestCase):
         self.assertIn("02-ui: folder", out)
         os.makedirs(f"{self.d}/.work/f/phases/02-ui")
         pl = f"{self.d}/.work/f/Plan.md"
-        s = Path(pl).read_text(encoding="utf-8").replace("| true |", "|  |").replace("src/ui", "src/core/x")
+        # drop ui's depends too: a depends chain orders the two phases, so their shared paths would be accepted
+        s = Path(pl).read_text(encoding="utf-8").replace("| true | core | src/ui |", "|  |  | src/core/x |")
         Path(pl).write_text(s, encoding="utf-8")
         out = self.p("check", "--feature", "f")[1]
         self.assertIn("no done_when", out)
@@ -360,6 +361,8 @@ class PlanTest(unittest.TestCase):
         def h(args):
             if "--agent" not in args:
                 return res("unexpected non-architect call")
+            if args[args.index("--agent") + 1] == "plan-reviewer":  # plan review: no report written, so no verdict and no fix
+                return res("")
             seq["n"] += 1
             return res(big_agent(seq["n"], args))
 

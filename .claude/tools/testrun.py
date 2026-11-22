@@ -16,19 +16,31 @@ from pathlib import Path
 
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402
-from pipeline import gitx, linkguard, maincheck  # noqa: E402
-from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd  # noqa: E402
+from pipeline import gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck  # noqa: E402
+from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GATE_TIMEOUT_S, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd, work_branch  # noqa: E402
+from pipeline.plan_check import LEAD_MARK, is_lead_verified  # noqa: E402
 from pipeline.plan_files import task_type  # noqa: E402
 from pipeline.util import read_text, work_path  # noqa: E402
 
-TIMEOUT_S = 900
+TIMEOUT_S = GATE_TIMEOUT_S
 TAIL_LINES = 40
 BLOCKED_EXIT = (126, 127)  # not executable / command not found
+SCAN_NOTE_PREFIXES = ("secret scan error:", "gitleaks exit ")  # gate_secrets.scan_diff reports its own failures as lines of these forms: notes, never findings
+
+
+def _test_cmds(text, lead):
+    """The commands of the `Test:` lines of a task brief, backticks stripped: the lead-verified ones when `lead` is True, else the ones the dev runs."""
+    return [c for c in (m[1].strip().strip("`").strip() for m in re.finditer(r"(?m)^Test:\s*(.+)$", text) if is_lead_verified(m[0]) == lead) if c]
 
 
 def test_lines(text):
-    """The commands of the `Test:` lines of a task brief, backticks stripped."""
-    return [m[1].strip().strip("`").strip() for m in re.finditer(r"(?m)^Test:\s*(.+)$", text) if m[1].strip().strip("`").strip()]
+    """The commands the dev runs: the `Test:` lines not marked lead-verified."""
+    return _test_cmds(text, lead=False)
+
+
+def lead_lines(text):
+    """The commands of the lead-verified `Test:` lines, marker and its `#` comment removed: the driver runs them after the dev reports DONE."""
+    return [re.sub(rf"(\s+#)?\s+{LEAD_MARK}\s*$", "", c).strip() for c in _test_cmds(text, lead=True)]
 
 
 def workdir(d, stage, task):
@@ -74,37 +86,107 @@ def outside_writes(d, stage, task):
     return "\n".join(n for n in notes if n)
 
 
-def run(stage, task, d, runner=subprocess.run):
-    """-> (verdict word, note). `runner` is injectable for tests."""
+def _tree(cwd):
+    """Tree hash of cwd for the gate-run record, or None: a record error never blocks the run."""
     try:
-        cmds = test_lines(Path(d, WORK_DIR, stage, f"{task}.md").read_text(encoding="utf-8", errors="replace"))
-    except OSError as e:
-        return BLOCKED, f"task brief unreadable, Test lines not run: {e}"
-    outside = outside_writes(d, stage, task)
-    if outside:
-        return FAIL, outside
-    if not cmds:
-        return DONE, "test run skipped: the task has no Test line"
-    cwd = workdir(d, stage, task)
-    if cwd is None:
-        return BLOCKED, "no job worktree for this task: the Test lines would run on the main checkout, so they were not run"
+        return gate_record.tree_hash(cwd)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return None
+
+
+def _passed(cwd, c, tree):
+    """The green record of Test line c on this tree (skip it), or None: a record error runs the line as before."""
+    try:
+        return gate_record.find_passed(cwd, shlex.split(c), tree)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return None
+
+
+def _run_lead(cwd, cmds, runner):
+    """Run the lead-verified Test lines in cwd, every time (no green-tree skip). -> FAIL note lines for the red ones; the dev verdict is not changed."""
+    notes = []
     for c in cmds:
         try:
             p = runner(shlex.split(c), cwd=cwd, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_S)
         except (OSError, ValueError, subprocess.TimeoutExpired) as e:
-            return BLOCKED, f"`{c}` could not run: {e}"
+            notes.append(f"FAIL lead-verified `{c}` could not run: {e}")
+            continue
         if p.returncode != 0:
             full = (p.stdout + p.stderr).strip()
             out = "\n".join(full.splitlines()[-TAIL_LINES:])
-            missing = re.search(r"No module named '?([\w.]+)", full)
-            if missing and not _imported_by_changes(cwd, missing.group(1).split(".")[0]):
-                return BLOCKED, f"`{c}` cannot run (module {missing.group(1)} not installed):\n{out}"
-            if missing:  # the dev's own bad import: a red test
-                return FAIL, f"`{c}` exited {p.returncode}: the changed code imports {missing.group(1)}:\n{out}"
-            if p.returncode in BLOCKED_EXIT or "command not found" in full:
-                return BLOCKED, f"`{c}` cannot run (exit {p.returncode}; missing command):\n{out}"
-            return FAIL, f"`{c}` exited {p.returncode}:\n{out}"
-    return DONE, f"{len(cmds)} Test line(s) green in {cwd}"
+            notes.append(f"FAIL lead-verified `{c}` exited {p.returncode}:\n{out}")
+    return notes
+
+
+def gate_findings(cwd, d, stage):
+    """Secret scan and path-dependent asserts of the task diff in cwd, against the job base (merge-base of HEAD and the stage work branch, else HEAD~1) -> finding lines and scanner note lines."""
+    base = (gitx.try_out(cwd, "merge-base", "HEAD", work_branch(project(d), stage)) or "").strip() or "HEAD~1"
+    return gate_secrets.scan_diff(cwd, base, project(d)) + gate_paths.path_dependent_tests(cwd, base)
+
+
+def _gate(cwd, d, stage, scan):
+    """-> (finding lines, note lines) of the secret and path gates. A scanner that cannot run is a note: it never blocks the run."""
+    try:
+        lines = scan(cwd, d, stage)
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        return [], [f"gate scan could not run: {e}"]
+    notes = [x for x in lines if x.startswith(SCAN_NOTE_PREFIXES)]
+    return [x for x in lines if not x.startswith(SCAN_NOTE_PREFIXES)], notes
+
+
+def _red_verdict(cwd, c, p):
+    """-> (BLOCKED or FAIL, note) of a Test line C that exited non-zero in process P: a missing module or command is BLOCKED, the dev's own bad import or a red test is FAIL."""
+    full = (p.stdout + p.stderr).strip()
+    out = "\n".join(full.splitlines()[-TAIL_LINES:])
+    missing = re.search(r"No module named '?([\w.]+)", full)
+    if missing and not _imported_by_changes(cwd, missing.group(1).split(".")[0]):
+        return BLOCKED, f"`{c}` cannot run (module {missing.group(1)} not installed):\n{out}"
+    if missing:  # the dev's own bad import: a red test
+        return FAIL, f"`{c}` exited {p.returncode}: the changed code imports {missing.group(1)}:\n{out}"
+    if p.returncode in BLOCKED_EXIT or "command not found" in full:
+        return BLOCKED, f"`{c}` cannot run (exit {p.returncode}; missing command):\n{out}"
+    return FAIL, f"`{c}` exited {p.returncode}:\n{out}"
+
+
+def _run_line(cwd, c, runner):
+    """-> (BLOCKED or FAIL, note) when the Test line C could not run or exited non-zero, else None."""
+    try:
+        p = runner(shlex.split(c), cwd=cwd, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_S)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+        return BLOCKED, f"`{c}` could not run: {e}"
+    return _red_verdict(cwd, c, p) if p.returncode != 0 else None
+
+
+def run(stage, task, d, runner=subprocess.run, scan=gate_findings):
+    """-> (verdict word, note). `runner` and `scan` are injectable for tests. A Test line already green on the identical tree is skipped, noted with its run id. A finding of the secret or path gate is FAIL before any Test line runs."""
+    try:
+        text = Path(d, WORK_DIR, stage, f"{task}.md").read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return BLOCKED, f"task brief unreadable, Test lines not run: {e}"
+    cmds, leads = test_lines(text), lead_lines(text)
+    outside = outside_writes(d, stage, task)
+    if outside:
+        return FAIL, outside
+    if not cmds and not leads:
+        return DONE, "test run skipped: the task has no Test line"
+    cwd = workdir(d, stage, task)
+    if cwd is None:
+        return BLOCKED, "no job worktree for this task: the Test lines would run on the main checkout, so they were not run"
+    findings, gate_notes = _gate(cwd, d, stage, scan)
+    if findings:
+        return FAIL, "\n".join(["secret or path gate: findings in the task diff", *findings])
+    tree = _tree(cwd)  # taken once, before any line runs: each line is keyed on the tree the dev left
+    skipped = []
+    for c in cmds:
+        hit = _passed(cwd, c, tree) if tree else None
+        if hit:
+            skipped.append(f"skipped {c}: identical passed tree, run {hit['run']}")
+            continue
+        red = _run_line(cwd, c, runner)
+        if red:
+            return red
+    lead_notes = _run_lead(cwd, leads, runner)  # a red lead-verified line is a note, never a BLOCKED or FAIL of the dev
+    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes])
 
 
 def main(argv=None):

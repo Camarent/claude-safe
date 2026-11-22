@@ -148,6 +148,36 @@ def warn_new_claude_changes(before, after):
     return new
 
 
+def main_branch_state():
+    """(current branch, sorted local branch names) of the main checkout (the one owning the shared .git, also when run from a worktree); ("", []) when git is unavailable."""
+    try:
+        common = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=HERE, capture_output=True, text=True, check=True, timeout=30
+        ).stdout.strip()
+        main_dir = os.path.dirname(common)
+        branch = subprocess.run(
+            ["git", "symbolic-ref", "--short", "-q", "HEAD"], cwd=main_dir, capture_output=True, text=True, check=False, timeout=30
+        ).stdout.strip()
+        names = subprocess.run(
+            ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads"], cwd=main_dir, capture_output=True, text=True, check=True, timeout=30
+        ).stdout.split()
+    except (OSError, subprocess.SubprocessError):  # no git (release container): nothing to compare, never fail the run
+        return "", []
+    return branch, sorted(names)
+
+
+def warn_branch_changes(before, after):
+    """Warn about a main-checkout branch switch or new branch during the run (a test left the checkout on another branch). -> True when the state changed."""
+    if before == after:
+        return False
+    (old_branch, old_names), (new_branch, new_names) = before, after
+    new = sorted(set(new_names) - set(old_names))
+    print(f"ptest: ERROR: main checkout branch changed during this run: {old_branch or '(none)'} -> {new_branch or '(none)'}")
+    if new:
+        print(f"  new branches: {', '.join(new)}")
+    return True
+
+
 def summary_line(names, bad, skipped, elapsed):
     """The closing line: failing file names (if any), file count, failed count, skipped count, elapsed seconds."""
     failed_names = f"FAILED {', '.join(r[2] for r in bad)}: " if bad else ""
@@ -167,6 +197,7 @@ def main(argv=None):
         return 1
     start = time.time()
     claude_before = main_claude_status()
+    branch_before = main_branch_state()
     cov_dir = tempfile.mkdtemp(prefix="ptest-cov-") if a.cov else None
     if cov_dir:
         cov_rc(cov_dir)
@@ -178,11 +209,12 @@ def main(argv=None):
     skipped = count_skipped(res)
     print(summary_line(names, bad, skipped, time.time() - start))
     warn_new_claude_changes(claude_before, main_claude_status())  # warning only: never changes the exit code
+    branch_moved = warn_branch_changes(branch_before, main_branch_state())  # a switched branch fails the run: it blocks merge-w3
     if skipped and os.environ.get(ENV_FAIL_ON_SKIP) == "1":
         print(f"ptest: {skipped} skipped tests fail the run ({ENV_FAIL_ON_SKIP}=1)")
         bad = bad or [None]
     cov_rc_failed = report_cov(cov_dir) if cov_dir else 0
-    return 1 if bad or cov_rc_failed else 0
+    return 1 if bad or cov_rc_failed or branch_moved else 0
 
 
 if __name__ == "__main__":

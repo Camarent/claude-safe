@@ -84,7 +84,7 @@ class Check(Tmp):
             D.check(self.d),
             [
                 "missing docs/ARCHITECTURE.md",
-                "docs/modules/ghost.md describes no existing module",
+                "docs/modules/ghost.md describes no existing module - fold it into its parent module doc",
                 "docs/modules/src.md: reference a.py:5 - file has only 2 lines",
                 "docs/modules/src.md: reference nope.py:1 - file not found",
             ],

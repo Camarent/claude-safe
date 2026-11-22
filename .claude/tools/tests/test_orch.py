@@ -493,7 +493,9 @@ class ParallelTest(unittest.TestCase):
             (r["dispatches"][0]["agent"], r["dispatches"][0]["model"]), ("reviewer", "haiku")
         )  # the reviewer moves up only by itself, not because the dev did
         self.finish("a6", "VERDICT: FAIL\nwrong: y")
-        self.assertEqual(self.go("next")["action"], "ask_main")  # second FAIL: back to the lead
+        r = self.go("next")  # second FAIL: one extra dev round with the verbatim findings
+        self.assertEqual([x["agent"] for x in r["dispatches"]], ["dev"])
+        self.assertIn("reviews-all-task-2", r["dispatches"][0]["prompt"])
 
     def test_unreported_member_of_a_batch_blocks(self):
         self.go("next")

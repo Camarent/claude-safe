@@ -44,6 +44,7 @@ from .configuration import (
     ui_paths,
 )
 from .plan_commands import command_findings
+from .plan_depends import depends_line_problems
 from .plan_files import (
     PATH_DIRS,
     PATH_NAME,
@@ -52,6 +53,7 @@ from .plan_files import (
     is_mid_phase,
     overlap,
     paths_in,
+    phases_ordered,
     plan_path,
     read_entries,
     read_phases,
@@ -67,6 +69,8 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
+from .plan_parallel import PARALLEL_WARN_PREFIX, parallel_candidates
+from .plan_ptest import ptest_selector_problems
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_rules import (
     _same,
@@ -215,6 +219,30 @@ def check_test_commands(d, tid, repo, produced):
     repos = nested_repos(repo)
     nested = sorted({os.path.join(repo, n) for n in (nested_repo(repo, p, repos) for p in paths_in(text)) if n})
     return command_findings(f"{tid} Test", m[1].replace("`", " "), repo, produced, nested)
+
+
+LEAD_MARK = "lead-verified"  # a Done: or Test: line with this word (outside a code span) is run by the driver after the dev, never by the dev
+_CODE_SPAN = re.compile(r"`[^`]*`")
+DOCS_INDEX_CMD = re.compile(r"docs_index|cs-docs-index")  # the docs index checker: a Done or Test line that runs it must be lead-verified
+
+
+def is_lead_verified(line):
+    """True for a `Done:` or `Test:` line whose marker word sits outside backtick code spans (a marker quoted in a code span is not a marker)."""
+    return line.startswith(("Done:", "Test:")) and LEAD_MARK in _CODE_SPAN.sub("", line)
+
+
+def lead_verified_lines(text):
+    """The `Done:` and `Test:` lines of a task file marked lead-verified."""
+    return [ln for ln in text.splitlines() if is_lead_verified(ln)]
+
+
+def check_lead_verified(d, tid):
+    """Problems for one task file: a `Done:` or `Test:` line that runs the docs index checker without the lead-verified marker (the lead runs that check, never the dev)."""
+    return [
+        f"{tid}: a Done or Test line runs the docs index checker without the lead-verified marker: {ln[:120]}"
+        for ln in read_text(os.path.join(d, tid + ".md")).splitlines()
+        if ln.startswith(("Done:", "Test:")) and DOCS_INDEX_CMD.search(ln) and not is_lead_verified(ln)
+    ]
 
 
 def check_test_quoting(d, tid):
@@ -370,9 +398,12 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         if not os.path.exists(f)
         else [f"{e['id']}: {m}" for m in _lint(read_text(f), repo, git)]
         + check_refs(d, e["id"], repo)
+        + depends_line_problems(d, [e])
         + check_test_refs(d, e["id"], repo)
         + check_test_globs(d, e["id"], repo)
+        + ptest_selector_problems(d, e["id"], repo)
         + check_test_quoting(d, e["id"])
+        + check_lead_verified(d, e["id"])
         + check_test_commands(d, e["id"], repo, produced)
         + check_git_paths(d, e["id"], repo)
         + check_repo_prefix(d, e["id"], repo)
@@ -577,7 +608,9 @@ def check_stage(d, repo=None):
         probs += _task_file_problems(d, e, ents, repo, gates, git, produced)
     return len(ents), probs + _overlap_problems(d, ents) + _carried_problems(d, ents) + publish_problems(d, ents) + shared_warnings(
         d, ents
-    ) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(d, ents)
+    ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(
+        d, ents
+    )
 
 
 def _carried_problems(d, ents):
@@ -612,7 +645,7 @@ MIN_PHASE, MAX_COMBINED = 10, 25
 
 
 def errors_of(probs):
-    """PROBS without the `combine:`, `size:`, `shared:`, `gate:`, `release:`, `ci-drift:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check)."""
+    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `ci-drift:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check)."""
     return [
         p
         for p in probs
@@ -629,6 +662,7 @@ def errors_of(probs):
                 "open-edit:",
                 "repos:",
                 UX_FLOWS_WARN_PREFIX,
+                PARALLEL_WARN_PREFIX,
                 AFFECTED_WARN_PREFIX,
                 NEG_WARN_PREFIX,
                 PREREQ_WARN_PREFIX,
@@ -738,7 +772,7 @@ def _phase_link_problems(p, earlier):
     probs = []
     for q in earlier:
         ov = overlap(p["paths"], q["paths"])
-        if ov:
+        if ov and not phases_ordered([*earlier, p], p["dir"], q["dir"]):
             probs.append(f"{p['dir']} and {q['dir']} share paths: {ov[0]} / {ov[1]}")
     for dep in p["depends"]:
         if not any(dep in (q["dir"], q["dir"][3:]) for q in earlier):

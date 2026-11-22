@@ -33,6 +33,11 @@ HEADLESS_ENTRYPOINT = "sdk-cli"
 # the lead is the session that runs these; ops_steps = the ops sessions (cleanup, push, digest)
 PIPELINE_TOOLS = ("wave.py", "plan.py", "orch.py", "ops_steps.py")
 KINDS = (("cache write", "cache_write"), ("cache read", "cache_read"), ("fresh input", "input"), ("output", "output"))
+# why a LEAD-COST line is $0.00 (printed as `reason: ...`)
+REASON_NO_WINDOW = "no orch window"
+REASON_NO_TRANSCRIPT = "no lead transcript found"
+REASON_NO_SESSION = "no lead session in window"
+REASON_TINY_OR_UNPRICED = "lead turns cost under $0.005 or are on an unpriced model"
 
 
 def _turns(path):
@@ -281,6 +286,22 @@ def lead_agent_rows(paths, lo, hi):
     return rows, unmatched
 
 
+def whole_session(paths):
+    """-> {lead_usd, agent_usd, agents, unmatched} over the lead transcripts PATHS with no window: every turn of each lead plus every subagents log under it.
+    `agents` counts the logs with a turn, `unmatched` the logs with no turn at all (nothing to price). Message ids count once, as in analyse_lead."""
+    res = {"lead_usd": 0.0, "agent_usd": 0.0, "agents": 0, "unmatched": 0}
+    for p in paths:
+        res["lead_usd"] += sum(analyse_lead(p)["usd"].values())
+        for log in _agent_logs(p):
+            r = analyse_lead(log)
+            if r["turns"]:
+                res["agents"] += 1
+                res["agent_usd"] += sum(r["usd"].values())
+            else:
+                res["unmatched"] += 1
+    return res
+
+
 def _tot(paths, lo, hi):
     rs = [analyse_lead(p, lo, hi) for p in paths]
     rs = [r for r in rs if r["turns"]]
@@ -299,35 +320,61 @@ def _total_lines(feature_dir, paths, rs, tot, lo, hi):
     """-> the feature's total LEAD-COST lines (header, split, outside-window and gap lines) over the sessions RS in the window LO..HI."""
     gaps, rew = sum(r["gaps"] for r in rs), sum(r["rewrite"] for r in rs)
     wall, act = sum(r["wall"] for r in rs), sum(r["active"] for r in rs)
+    whole = whole_session([p for p in paths if analyse_lead(p, lo, hi)["turns"]])
+    _rows, unmatched = lead_agent_rows(paths, lo, hi)
+    tail = f"; unmatched {unmatched}" if unmatched else ""
     return [
         (
             f"LEAD-COST feature {os.path.basename(os.path.normpath(feature_dir))}: ${sum(tot['usd'].values()):.2f} in {len(rs)} lead session(s), "
             f"{sum(r['turns'] for r in rs)} turns, wall {_hours(wall)}, active {100 * act / wall if wall else 0:.0f}%, peak ctx {max(r['peak'] for r in rs) // 1000}k"
         ),
         f"   {_split(tot)}",
-        f"   whole transcript(s) of these leads, outside the window too: ${sum(sum(analyse_lead(p)['usd'].values()) for p in paths if analyse_lead(p, lo, hi)['turns']):.2f}",
+        (
+            f"   whole session incl. {whole['agents']} subagent log(s): ${whole['lead_usd'] + whole['agent_usd']:.2f} "
+            f"(leads ${whole['lead_usd']:.2f} + subagents ${whole['agent_usd']:.2f}){tail}"
+        ),
         f"   gaps > {CACHE_TTL_S // 60} min: {gaps}; cache rewrites after them extra ${rew:.2f} over reading them (window includes time between phases)",
     ]
 
 
+def _zero_reason(hi, paths, rs):
+    """-> why a LEAD-COST line has no cost: no orch window (HI 0), no lead transcript (PATHS empty), no lead session in the window (RS empty); "" when there is cost."""
+    if not hi:
+        return REASON_NO_WINDOW
+    if not paths:
+        return REASON_NO_TRANSCRIPT
+    if not rs:
+        return REASON_NO_SESSION
+    return ""
+
+
 def _phase_line(d, o, paths):
-    """-> the LEAD-COST line of phase folder D (its orch.jsonl O) over the lead sessions in PATHS."""
+    """-> the LEAD-COST line of phase folder D (its orch.jsonl O) over the lead sessions in PATHS; ', reason: ...' when its cost is $0.00."""
     plo, phi = window([o])
     prs, ptot = _tot(paths, plo, phi) if phi else ([], {"usd": {}})
-    return f"   phase {d}: ${sum(ptot['usd'].values()):.2f}, {sum(r['turns'] for r in prs)} turns"
+    cost = sum(ptot["usd"].values())
+    line = f"   phase {d}: ${cost:.2f}, {sum(r['turns'] for r in prs)} turns"
+    sub = sum(sum(r["usd"].values()) for r in lead_agent_rows(paths, plo, phi)[0]) if phi else 0.0
+    if sub > 0:
+        line += f", subagents ${sub:.2f}"
+    if round(cost, 2) == 0:
+        reason = _zero_reason(phi, paths, prs) or REASON_TINY_OR_UNPRICED
+        line += f", reason: {reason}"
+    return line
 
 
 def feature_lines(feature_dir, projects):
-    """-> LEAD-COST lines for a whole feature: one total over the window of all phases, then one line per phase. [] without lead turns.
+    """-> LEAD-COST lines for a whole feature: one total over the window of all phases, then one line per phase.
+    Never []: without lead cost one line says why (`reason: ...`) and the feature's name.
     `feature_dir` is .work/<feature> with phases/<n>/orch.jsonl (+ metrics.jsonl)."""
     phases, orchs = _phases(feature_dir)
     paths = lead_paths(projects)
+    name = os.path.basename(os.path.normpath(feature_dir))
     lo, hi = window(orchs + [os.path.join(os.path.dirname(o), METRICS_LOG) for o in orchs])
-    if not hi:
-        return []
-    rs, tot = _tot(paths, lo, hi)
-    if not rs:
-        return []
+    rs, tot = _tot(paths, lo, hi) if hi and paths else ([], {"usd": {}})
+    reason = _zero_reason(hi, paths, rs)
+    if reason:
+        return [f"LEAD-COST feature {name}: $0.00, reason: {reason}"]
     out = _total_lines(feature_dir, paths, rs, tot, lo, hi)
     out += [_phase_line(d, o, paths) for d, o in zip(phases, orchs, strict=True)]
     return out

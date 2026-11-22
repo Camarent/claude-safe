@@ -295,7 +295,7 @@ def denial_lines(denials):
 
 
 def usage(res):
-    """Raw claude json -> {turns, input, output, cache_read, cache_write, cost_usd, seconds, result, error}."""
+    """Raw claude json -> {turns, input, output, cache_read, cache_write, cost_usd, seconds, seconds_api, result, error}."""
     u = res.get("usage") or {}
     return {
         "turns": res.get("num_turns", 0),
@@ -305,6 +305,7 @@ def usage(res):
         "cache_write": u.get("cache_creation_input_tokens", 0),
         "cost_usd": res.get("total_cost_usd", 0) or 0,
         "seconds": round((res.get("duration_ms", 0) or 0) / 1000, 1),
+        "seconds_api": round((res.get("duration_api_ms", 0) or 0) / 1000, 1),
         "result": res.get("result") or "",
         "error": bool(res.get("is_error")),
         "denials": denial_lines(res.get("permission_denials")),

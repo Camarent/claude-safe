@@ -11,16 +11,18 @@ from types import SimpleNamespace
 
 import review_guard
 from pipeline import driver
-from pipeline.configuration import ENV_REVIEW_DIR, ENV_SCRATCH_DIR
+from pipeline.configuration import ENV_REVIEW_DIR, ENV_SCRATCH_DIR, SCRATCH_ENV
 
 GUARD = os.path.abspath(review_guard.__file__)
 
 
 def run_hook(stdin_text, root=None):
-    env = {k: v for k, v in os.environ.items() if k != ENV_REVIEW_DIR}
+    # the stage scratch vars are the caller's: a hook run sees only what the test sets (the suite may run inside a scratch TMPDIR)
+    env = {k: v for k, v in os.environ.items() if k not in (ENV_REVIEW_DIR, ENV_SCRATCH_DIR, SCRATCH_ENV)}
     if root:
         env[ENV_REVIEW_DIR] = root
-    return subprocess.run([sys.executable, "-I", GUARD], check=False, input=stdin_text, capture_output=True, text=True, timeout=30, env=env)
+    # cwd is the root dir: outside any repo, so a payload without `cwd` is not read as a linked worktree (main_checkout_why)
+    return subprocess.run([sys.executable, "-I", GUARD], check=False, input=stdin_text, capture_output=True, text=True, timeout=30, env=env, cwd=os.sep)
 
 
 class GuardTest(unittest.TestCase):
@@ -32,6 +34,12 @@ class GuardTest(unittest.TestCase):
         os.makedirs(self.copy)
         os.makedirs(self.job)
         os.symlink(self.job, f"{self.copy}/escape")
+        # self.t lives under the ambient TMPDIR: unset the scratch vars so the case files are outside any scratch dir
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        for k in (ENV_SCRATCH_DIR, SCRATCH_ENV):
+            os.environ.pop(k, None)
 
     def edit(self, path, tool="Edit"):
         key = "notebook_path" if tool == "NotebookEdit" else "file_path"
@@ -73,6 +81,32 @@ class GuardTest(unittest.TestCase):
                 self.assertIn("outside", self.bash(f"echo x > {d}/x"))
                 self.assertIn("outside", self.edit(f"{d}/x", "Write"))
 
+    def test_scratch_env_shapes_allowed(self):  # task-4: TMPDIR and PIPELINE_SCRATCH_DIR differ, symlinked, or one unset
+        d = self.stage_scratch()
+        link = f"{self.t}/.work/s/tmplink"
+        os.symlink(d, link)
+        shapes = (
+            {ENV_SCRATCH_DIR: d, "TMPDIR": d},
+            {ENV_SCRATCH_DIR: d, "TMPDIR": link},  # symlinked TMPDIR
+            {ENV_SCRATCH_DIR: link, "TMPDIR": d},  # symlinked PIPELINE_SCRATCH_DIR
+            {ENV_SCRATCH_DIR: d},  # TMPDIR unset
+            {"TMPDIR": d},  # PIPELINE_SCRATCH_DIR unset
+        )
+        for env in shapes:
+            with self.subTest(env=env), mock.patch.dict(os.environ, {}, clear=True):
+                os.environ.update(env)
+                self.assertEqual(self.bash(f"mktemp -p {d} x.XXXX"), "")
+                self.assertEqual(self.bash(f"mktemp -p {link} x.XXXX"), "")
+                self.assertEqual(self.bash(f"echo x > {d}/a.txt"), "")
+                if ENV_SCRATCH_DIR in env:
+                    self.assertEqual(self.edit(f"{d}/n.txt", "Write"), "")
+
+    def test_scratch_escape_denial_names_scratch_dir(self):  # task-4 C3: the deny text tells the reviewer where to write
+        d = self.stage_scratch()
+        with mock.patch.dict(os.environ, {ENV_SCRATCH_DIR: d}):
+            self.assertIn(d, self.edit(f"{self.job}/x.md", "Write"))
+            self.assertIn(d, self.bash(f"echo x > {self.job}/x.md"))
+
     def test_scratch_python_script_judged_like_inline(self):
         """review_guard has no python rule: the scratch-script form passes as `python3 -I -c` does; a script elsewhere is judged by its redirects only."""
         d = self.stage_scratch()
@@ -94,7 +128,8 @@ class GuardTest(unittest.TestCase):
     def test_phase_stage_report_allowed(self):  # review audit H1
         os.makedirs(f"{self.t}/.work/F/phases/01-a/reports")
         self.assertEqual(self.edit(f"{self.t}/.work/F/phases/01-a/reports/report-a1.md", "Write"), "")
-        self.assertNotEqual(self.edit(f"{self.t}/elsewhere/reports/report-a1.md", "Write"), "")
+        # not under self.t: an ambient TMPDIR inside a `.work` folder would make it a phase report
+        self.assertNotEqual(self.edit(f"{os.sep}review-guard-elsewhere/reports/report-a1.md", "Write"), "")
 
     def test_report_file_allowed(self):
         os.makedirs(f"{self.t}/.work/s/reports")
@@ -381,6 +416,57 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(pre[i]["matcher"], "Edit|Write|NotebookEdit|Bash")
         with mock.patch.dict(os.environ, {}, clear=False):
             self.assertGreater(i, 0)
+
+
+class MainCheckoutTest(unittest.TestCase):
+    """A linked worktree never writes the main checkout; the worktree lives inside it (.wt/), as in the real layout."""
+
+    def setUp(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        self.t = os.path.realpath(t.name)
+        self.main = f"{self.t}/main"
+        self.wt = f"{self.main}/.wt/job"
+        os.makedirs(self.main)
+        self.git("init", "-q", cwd=self.main)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init", cwd=self.main)
+        self.git("worktree", "add", "-q", "-b", "job", self.wt, cwd=self.main)
+
+    def git(self, *args, cwd):
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+    def test_main_path_denied_with_relative_path(self):
+        why = review_guard.main_checkout_why(f"{self.main}/src/a.py", self.wt)
+        self.assertIn("Use the worktree-relative path src/a.py", why)
+        self.assertIn(self.wt, why)
+
+    def test_relative_path_resolves_against_cwd(self):
+        self.assertIn("Use the worktree-relative path src/a.py", review_guard.main_checkout_why("../../src/a.py", self.wt))
+
+    def test_worktree_path_allowed(self):
+        self.assertEqual(review_guard.main_checkout_why(f"{self.wt}/src/a.py", self.wt), "")
+
+    def test_sibling_sharing_main_prefix_allowed(self):
+        os.makedirs(f"{self.main}-x")
+        self.addCleanup(os.rmdir, f"{self.main}-x")
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}-x/a.py", self.wt), "")
+
+    def test_main_checkout_itself_allowed(self):
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}/a.py", self.main), "")
+
+    def test_plain_repo_and_missing_cwd_allowed(self):
+        plain = f"{self.t}/plain"
+        os.makedirs(plain)
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}/a.py", plain), "")
+        self.assertEqual(review_guard.main_checkout_why(f"{self.main}/a.py", f"{self.t}/missing"), "")
+
+    def test_hook_denies_main_edit_for_plain_session(self):
+        payload = {"tool_name": "Edit", "tool_input": {"file_path": f"{self.main}/src/a.py"}, "cwd": self.wt}
+        out = run_hook(json.dumps(payload))
+        self.assertEqual(out.returncode, 0, out.stderr)
+        decision = json.loads(out.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("src/a.py", decision["permissionDecisionReason"])
 
 
 if __name__ == "__main__":

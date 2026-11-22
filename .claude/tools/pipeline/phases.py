@@ -6,6 +6,8 @@ import re
 import shlex
 from pathlib import Path
 
+from docs_index import module_headings, slug
+
 from . import gitx, pr_mode
 from .audit_phases import (
     _wb,
@@ -53,6 +55,7 @@ from .configuration import (
     gates_of,
     merge_gates_of,
     project,
+    repo_dir,
     repo_path,
     tool_cmd,
     ui_paths,
@@ -532,8 +535,22 @@ def _docs_step(a, cfg):
         "docs-writer",
         MODEL_HAIKU,
         f"Stage {S}: update mode. Docs root, first match wins: a `docs:` line in .work/{S}/TASKS.md, then in PROGRESS.md, then the `## Docs` section of the project CLAUDE.md in the workspace root (it names the repo and its docs/ folder; find the repo there, do not search the tree); `docs: skip` -> nothing to do, VERDICT: DONE; none found -> BLOCKED. Changed files: git diff of the stage on `{_wb(a, cfg)}`; collect the DOCS-STALE lines of .work/{S}/report-*.md. When the docs are done, commit them on `{_wb(a, cfg)}`: `git add` only the files you changed (docs/ and the CLAUDE.md Docs section), subject `docs(<scope>): <what>`, TZ=UTC, `-F msgfile`; leave nothing uncommitted."
+        + _index_modules_note(a, cfg)
+        + " Before VERDICT: DONE run `cs-docs-index --root <repo root> --check` and fix what it reports, including `describes no existing module`."
         + tail(a, "{rid}", allowed(DONE, BLOCKED)),
         {DONE},
+    )
+
+
+def _index_modules_note(a, cfg):
+    """Brief text naming the index modules; '' when the root is no git repo or has no docs/ folder."""
+    root = repo_dir(a.dir, cfg)
+    if not os.path.exists(os.path.join(root, ".git")) or not os.path.isdir(os.path.join(root, "docs")):
+        return ""
+    listed = ", ".join(f"{m} (`{slug(m)}`)" for m in module_headings(root)) or "none"
+    return (
+        f" Index modules: {listed}. Write docs/modules/<slug>.md only for a listed module; "
+        "fold the content of a folder that is not an index module into its parent module doc."
     )
 
 

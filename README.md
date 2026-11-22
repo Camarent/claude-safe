@@ -110,6 +110,8 @@ container does not allow user namespaces.
     ./run.sh --here --with strata        the same + Strata (Qwen3.8 IQ3_XXS, ~50 GB RAM) beside it: /run-stage <stage>
 Details and status of the thin pipeline: `.claude/practices/orch-pipeline.md`. Tests of the tools: run them inside the container.
 
+Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<stage>/reports/report-<id>.md`) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
+
 ## Local cluster (`--with cluster`)
 
 `./run.sh --here --with cluster` adds the `cluster` profile and starts, as root in the entrypoint, an own `dockerd`
@@ -151,6 +153,10 @@ squash-merged once the GitHub `ci` workflow (`.github/workflows/ci.yml`: ruff, m
 vulture, bandit, complexity gate, gitleaks over the full history) is green. Before opening the PR run the same
 checks locally with `scripts/dev.sh` (`check`, `cov`, `dead`, `sec`, `ccn`); `scripts/release.sh` adds the
 container suite, which CI does not run (it needs the `claude-safe:rust` image).
+
+Deferred (decided, not done):
+- Devs using `lp nav` more: the audit finds file rereads in 2 of 303 sessions, too little value; revisit after phases 1 to 3.
+- Removing the local-model gate judge step when the model is down: it costs 0 s and only adds log noise; not worth a code path.
 
 ## Setting up a new machine
 

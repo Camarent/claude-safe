@@ -28,6 +28,7 @@ from .configuration import (
     work_branch,
 )
 from .plan_files import paths_in
+from .preflight import mode_lines
 
 SKIP = ("node_modules", "target", WORK_DIR, ".cache", "dist", ".wt", ".venv", "__pycache__", ".code-index", "vendor")
 LINK = ("node_modules",)
@@ -48,14 +49,36 @@ def _exclude_link(root, name):
     pathlib.Path(path).write_text(old + ("" if not old or old.endswith("\n") else "\n") + name + "\n", encoding="utf-8")
 
 
+def _looks_like_repo(root):
+    """True when ROOT/.git is a repo folder (has HEAD) or a gitfile (`gitdir: ...`); no git call."""
+    dot = os.path.join(root, ".git")
+    if os.path.isdir(dot):
+        return os.path.isfile(os.path.join(dot, "HEAD"))
+    try:
+        return pathlib.Path(dot).read_text(encoding="utf-8", errors="replace").startswith("gitdir:")
+    except OSError:
+        return False
+
+
+def _stray_ignored(repo, root):
+    """True when ROOT is git-ignored by REPO and its `.git` is a stray empty folder or file, not a valid repository. A real repo stays nested even when an exclude lists it, and costs no git call. Any git error (REPO not a repo): False, the old behaviour."""
+    if _looks_like_repo(root):
+        return False
+    try:
+        return gitx.run(repo, "check-ignore", "-q", "--", os.path.relpath(root, repo)).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def nested_repos(repo):
-    """Relative paths of git repos nested in `repo` (depth <= 3), not the repo itself."""
+    """Relative paths of git repos nested in `repo` (depth <= 3), not the repo itself. A git-ignored dir whose `.git` is a stray empty folder or file (no valid repo) is neither returned nor walked."""
     found = []
     base = repo.rstrip(os.sep).count(os.sep)
     for root, dirs, _ in os.walk(repo):
         dirs[:] = [d for d in dirs if d not in SKIP]
         if root != repo and (".git" in dirs or os.path.isfile(os.path.join(root, ".git"))):
-            found.append(os.path.relpath(root, repo))
+            if not _stray_ignored(repo, root):
+                found.append(os.path.relpath(root, repo))
             dirs[:] = []
         dirs[:] = [d for d in dirs if d != ".git"]  # seen for the check above; never walk into the repo's own object store
         if root.count(os.sep) - base >= 3:  # a repo at depth 3 is found above; nothing is searched below it
@@ -619,6 +642,35 @@ def dirty_report(a_dir, stage=None):
     return f"blocked: uncommitted changes in {a_dir}: {shown}. Commit or drop them (a hung agent may have left them), or rerun with --allow-dirty"
 
 
+def _regen_docs_index(r, w):
+    """Regenerate the docs index of job worktree W (repo R's `docs_dir`) before the commit, so a stale INDEX.md ships with the task. Only when the repo keeps an INDEX.md; a failure is logged and the commit goes on."""
+    docs = str(project(r).get("docs_dir") or "").strip("/")
+    if not docs or not os.path.isfile(os.path.join(w, docs, "INDEX.md")):
+        return
+    try:
+        res = util.run_py("docs_index.py", "--root", w, "--docs-dir", docs, timeout=util.script_timeout())
+        if res.returncode != 0:
+            raise RuntimeError(f"docs_index.py exit {res.returncode}: {res.stderr.strip()[:200]}")
+    except (OSError, subprocess.SubprocessError, RuntimeError) as ex:
+        util.swallowed("worktree._regen_docs_index", ex)
+
+
+def _apply_modes(a_dir, stage, task, rel, w):
+    """Set the index mode of each `Mode: <path> <mode>` line of the task brief that is staged in job worktree W (git update-index --chmod +x for a mode with an exec bit, -x otherwise), so the commit carries the brief's mode, not the disk's. A path not staged here is skipped. No brief: nothing."""
+    brief = pathlib.Path(a_dir, WORK_DIR, stage, f"{task}.md")
+    if not brief.is_file():
+        return
+    staged = set(git(w, "diff", "--cached", "--name-only", "--diff-filter=ACMR").split("\n"))
+    for mpath, mode in mode_lines(brief.read_text(encoding="utf-8", errors="replace")):
+        local = mpath[len(rel) + 1 :] if rel else mpath
+        if rel and not mpath.startswith(rel + "/"):
+            continue
+        if local not in staged:
+            continue
+        flag = "+x" if int(mode, 8) & 0o111 else "-x"
+        git(w, "update-index", f"--chmod={flag}", "--", local)
+
+
 def commit(a_dir, stage, task, subject):
     """Commit every change of the task's worktrees (one commit per repo, nested first) with `<type>(<area>): <what>`. -> {rel: short sha | None (nothing to commit)}."""
     if not subject_ok(subject):
@@ -626,6 +678,7 @@ def commit(a_dir, stage, task, subject):
     _cfg, _branch, parts = _parts(a_dir, stage, task)
     out: dict = {}
     for rel, r, w in parts:
+        _regen_docs_index(r, w)
         inner = nested_repos(r)
         if not _dirty(w, r, inner):
             out[rel or "."] = None
@@ -636,6 +689,7 @@ def commit(a_dir, stage, task, subject):
         for name in LINK:
             if os.path.islink(os.path.join(w, name)):
                 git(w, "reset", "-q", "--", name)  # a pipeline-made link is never part of a job commit, whatever the .gitignore says
+        _apply_modes(a_dir, stage, task, rel, w)
         git(w, "commit", "-q", "-m", subject)
         out[rel or "."] = git(w, "rev-parse", "--short", "HEAD")
     return out

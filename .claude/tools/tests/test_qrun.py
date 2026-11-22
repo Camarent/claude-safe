@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import signal
@@ -9,6 +10,8 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pipeline import gate_record as G
+from pipeline.configuration import ENV_QRUN_NO_RECORD
 from tests.support.tmpdirs import tracked_mkdtemp
 
 QRUN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "qrun.py")
@@ -179,6 +182,62 @@ class T(unittest.TestCase):
         self.assertFalse(alive() and "grandchild survived")
         self.assertEqual(rc, 124)
         self.assertIn("started", out)
+
+
+class RecordTests(unittest.TestCase):  # qrun writes one gate-run record per run into the git common dir
+    def setUp(self):
+        self.d = tracked_mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d, ignore_errors=True)
+        subprocess.run(["git", "init", "-q", self.d], check=True)
+        self.log = os.path.join(self.d, "l.log")
+        self.rec = os.path.join(self.d, ".git", G.RECORD_FILE)
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop(ENV_QRUN_NO_RECORD, None)
+
+    def run_q(self, *cmd):
+        r = subprocess.run(
+            [sys.executable, "-I", QRUN, "--log", self.log, "--", *list(cmd)],
+            capture_output=True,
+            text=True,
+            cwd=self.d,
+            check=False,
+        )
+        return r.returncode
+
+    def records(self):
+        if not os.path.exists(self.rec):
+            return []
+        return [json.loads(line) for line in Path(self.rec).read_text(encoding="utf-8").splitlines()]
+
+    def test_green_run_records_rc0_and_pre_run_tree(self):  # C1
+        before = G.tree_hash(self.d)
+        rc = self.run_q("bash", "-c", "echo x > new.txt")  # the run writes a file: the record keeps the tree before it
+        self.assertEqual(rc, 0)
+        recs = self.records()
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["rc"], 0)
+        self.assertEqual(recs[0]["tree"], before)
+        self.assertNotEqual(G.tree_hash(self.d), before)
+
+    def test_red_run_records_nonzero_rc(self):  # C2
+        rc = self.run_q("bash", "-c", "exit 3")
+        self.assertEqual(rc, 3)
+        recs = self.records()
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["rc"], 3)
+
+    def test_no_record_env_writes_nothing(self):  # C3
+        os.environ[ENV_QRUN_NO_RECORD] = "1"
+        rc = self.run_q("true")
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.records(), [])
+
+    def test_broken_record_path_keeps_exit_code(self):  # C4: a directory at the record path makes the append fail
+        os.makedirs(self.rec)
+        rc = self.run_q("bash", "-c", "exit 5")
+        self.assertEqual(rc, 5)
 
 
 if __name__ == "__main__":

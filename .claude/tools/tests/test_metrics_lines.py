@@ -28,10 +28,8 @@ class MetricsTest(unittest.TestCase):
         return read_jsonl(self.c.metrics)
 
     def test_session_line_keeps_sid_verdict_and_adds_cost(self):
-        rec = metrics.session_line(self.c, "a1", "dev", "haiku", usage(0.25), verdict="DONE", task="task-1")
-        self.assertEqual(
-            (rec["ev"], rec["agent"], rec["model"], rec["sid"], rec["verdict"], rec["task"]), ("session", "dev", "haiku", "sess-1", "DONE", "task-1")
-        )
+        rec = metrics.session_line(self.c, "a1", "dev", "haiku", usage(0.25), verdict="DONE", task="t1")
+        self.assertEqual((rec["ev"], rec["agent"], rec["model"], rec["sid"], rec["verdict"], rec["task"]), ("session", "dev", "haiku", "sess-1", "DONE", "t1"))
         self.assertEqual(self.c.cost, 0.25)
         self.assertEqual(self.lines(), [rec])
 
@@ -58,6 +56,24 @@ class MetricsTest(unittest.TestCase):
         self.assertNotIn("tools", plain)
         self.assertNotIn("search", plain)
         self.assertEqual((rich["tools"], rich["search"]), ({"Grep": 3}, {"grep": 3}))
+
+    def test_seconds_api_is_stored_only_when_present(self):
+        plain = metrics.session_line(self.c, "a1", "dev", "haiku", usage())
+        rich = metrics.session_line(self.c, "a2", "dev", "haiku", usage(seconds_api=4.5))
+        self.assertNotIn("seconds_api", plain)
+        self.assertEqual(rich["seconds_api"], 4.5)
+
+    def test_wave_line_sums_seconds_api_only_when_a_session_has_it(self):
+        self.c.wave = 1
+        metrics.session_line(self.c, "a1", "dev", "haiku", usage())
+        metrics.wave_line(self.c, 1.0)
+        bare = [r for r in self.lines() if r["ev"] == "wave"][-1]
+        self.assertNotIn("seconds_api", bare)
+        metrics.session_line(self.c, "a2", "dev", "haiku", usage(seconds_api=2.0))
+        metrics.session_line(self.c, "a3", "dev", "haiku", usage(seconds_api=3.5))
+        metrics.wave_line(self.c, 1.0)
+        summed = [r for r in self.lines() if r["ev"] == "wave"][-1]
+        self.assertEqual(summed["seconds_api"], 5.5)
 
     def test_event_line_is_free_form_and_not_a_session(self):
         metrics.event(self.c, "context", files=7, skipped=False)

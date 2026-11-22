@@ -77,6 +77,12 @@ Every failure, stall or repeated round yields a lesson. Name the cause in one li
 - Last step `cleanup` (ops, default on, `flags: no-clean` off): deletes the stage's finished task-*.md, leads/ and reports/report-a*.md from `.work/<stage>/`, keeps TASKS.md and orch.jsonl, so old plans do not pile up.
 - `orch.py retry --step <task> --from review` reruns only the reviewer on an existing DONE dev result.
 
+## Lead session rules
+- Waiting (lead only): wait on a long run with one Monitor until-loop, not many wake-ups on a long context. The "never Monitor" rule in Briefs is for briefs to agents.
+- Start each feature from a cleared or compacted context: a long lead context re-reads itself on every turn.
+- Notify on finish and on BLOCKED: the owner learns of a stop without polling the session.
+- Never mix pipeline source work into a feature's lead session: run it as a subagent or in a separate session.
+
 ## Classifier blocks
 If an agent is refused by the classifier several times in a row inside a job worktree, the lead may try those separate small edits/commands itself, one at a time (pre-authorised); the agent does the rest (tests, guards, mutations, commit). No workarounds via scripts, sed/python batches or foreign paths; if the lead is refused too, stop and tell the owner.
 

@@ -26,6 +26,8 @@ A test that depends on wall-clock time (sleep, a timing threshold, the real `now
 
 Docs: if `docs/ARCHITECTURE.md` exists, read it first, then `docs/modules/<module>.md` and `docs/INDEX.md` to locate code; confirm a cited `path:line` first. A doc contradicting the code: add `DOCS-STALE: <doc> - <what is wrong>` to your reply (outside its length limit); do not edit docs, `docs-writer` owns them.
 
+Never write invisible characters (zero-width, bidi or other) into code, tests or reports. When a failure message shows an escape like \u200b, search the file for it and remove it.
+
 Temp files: never build paths from env vars like $TMPDIR (unset in the sandbox); use `mktemp -d` or the lead's scratchpad; never write outside repo/worktree and scratchpad; no `||` fallback after `cp` to an unchecked path.
 
 Tests: run every test/build/check command as `cs-qrun -- <command>` (one OK line, or only failing pieces; full log at the printed path). Never `| tail`/`| head` on tests; exit 3 = skipped or empty = not green. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test), e.g. `cs-qrun -- pytest && ls out`.

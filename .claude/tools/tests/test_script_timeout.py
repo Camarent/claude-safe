@@ -9,9 +9,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import index_step
 import qrun
 from audit import audit_run, final_check
+from pipeline.configuration import GATE_TIMEOUT_S
 
 ENV = "ORCH_SCRIPT_TIMEOUT"
-DEFAULTS = [(qrun, 1800.0), (audit_run, 1800.0), (final_check, 1800.0), (index_step, 900.0)]
+DEFAULTS = [(qrun, float(GATE_TIMEOUT_S)), (audit_run, 1800.0), (final_check, 1800.0), (index_step, 900.0)]
 
 
 class ScriptTimeoutTest(unittest.TestCase):

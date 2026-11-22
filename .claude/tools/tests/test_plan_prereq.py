@@ -44,6 +44,10 @@ class UnlistedPrereq(unittest.TestCase):
         for text in ("Pattern: task-3 style", "see task-3 of phase 01 for the idea", "Brief.\n## ADDENDUM 2026-11-17 10:00 UTC\n\nneeds task-3"):
             self.assertEqual(self.lint("task-2", text), [], text)
 
+    def test_a_task_folder_inside_a_path_is_not_a_mention(self):
+        self.assertEqual(self.lint("task-2", "Work in /w/.wt/x/task-3/repo only."), [])
+        self.assertEqual(len(self.lint("task-2", "Needs task-3.")), 1)
+
     def test_the_own_id_unknown_ids_and_the_heading_do_not_count(self):
         self.assertEqual(self.lint("task-3", "This is task-3 and not task-99."), [])
 

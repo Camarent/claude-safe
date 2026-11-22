@@ -31,6 +31,7 @@ class PlanModelFlagTest(unittest.TestCase):
             mock.patch.object(plan_run, "session", side_effect=lambda a, c, m, p, tag: seen.append((m, tag)) or "DONE"),
             mock.patch.object(plan_run, "code_context", return_value=""),
             mock.patch.object(plan_run, "check_now", return_value=(3, [])),
+            mock.patch.object(plan_run, "review_plan", return_value=(3, [], [])),
             mock.patch.object(plan_run, "step"),
             mock.patch("builtins.print"),
         ):

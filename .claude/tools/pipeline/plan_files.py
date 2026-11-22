@@ -221,15 +221,11 @@ def _refuse_started(root, later):
             raise PlanError(f"cannot insert before {p['dir']}: it has started (status {p['status']} or files in its folder)")
 
 
-def insert_phase(a, phases, new, after):
-    """Put `new` (its `dir` is set here) after phase `after` and renumber the later phases: rows, folders, depends. A closing `NN-finish` phase also depends on `new`. Refuses when a later phase has started (not `todo`, or files in its folder). -> the new list."""
-    pos = next((i for i, p in enumerate(phases) if after in (p["dir"], p["dir"][3:])), None)
-    if pos is None:
-        raise PlanError(f"--after: unknown phase {after}")
-    later = phases[pos + 1 :]
+def _place(a, phases, new, pos, num):
+    """Put `new` at index `pos` with number `num` (its `dir` is set here) and renumber phases[pos:]: rows, folders, depends. A closing `NN-finish` phase also depends on `new`. Refuses when one of them has started (not `todo`, or files in its folder). -> the new list."""
     root = os.path.join(feature_dir(a), "phases")
+    later = phases[pos:]
     _refuse_started(root, later)
-    num = int(phases[pos]["dir"][:2]) + 1
     new["dir"] = f"{num:02d}-{new['dir']}"
     ren = {p["dir"]: f"{num + 1 + i:02d}-{p['dir'][3:]}" for i, p in enumerate(later)}
     for p in reversed(later):  # highest number first: no target name is taken yet
@@ -241,7 +237,25 @@ def insert_phase(a, phases, new, after):
         p["dir"] = ren.get(p["dir"], p["dir"])
         if is_finish_dir(p["dir"]) and new["dir"] not in p["depends"]:
             p["depends"] = [*p["depends"], new["dir"]]
-    return [*phases[: pos + 1], new, *later]
+    return [*phases[:pos], new, *later]
+
+
+def insert_phase(a, phases, new, after):
+    """Put `new` after phase `after` and renumber the later phases (see `_place`). -> the new list."""
+    pos = next((i for i, p in enumerate(phases) if after in (p["dir"], p["dir"][3:])), None)
+    if pos is None:
+        raise PlanError(f"--after: unknown phase {after}")
+    return _place(a, phases, new, pos + 1, int(phases[pos]["dir"][:2]) + 1)
+
+
+def insert_before(a, phases, new, before):
+    """Put `new` ahead of phase `before` and renumber it and the later phases (see `_place`): `new` takes the number after the phase before it (00 when first) and `before` gets the new phase in its depends. -> the new list."""
+    pos = next((i for i, p in enumerate(phases) if before in (p["dir"], p["dir"][3:])), None)
+    if pos is None:
+        raise PlanError(f"--before: unknown phase {before}")
+    out = _place(a, phases, new, pos, int(phases[pos - 1]["dir"][:2]) + 1 if pos else 0)
+    out[pos + 1]["depends"] = [*out[pos + 1]["depends"], new["dir"]]  # `before` waits for the new phase
+    return out
 
 
 def write_phases(a, phases):
@@ -258,6 +272,26 @@ def write_phases(a, phases):
 def phase_ref(phases, name):
     """-> phase whose folder is `name` or `NN-name`'s suffix is `name`, else None."""
     return next((p for p in phases if name in (p["dir"], p["dir"][3:])), None)
+
+
+def _depends_reach(phases, src, dst):
+    """True when phase SRC reaches phase DST by following depends (transitively)."""
+    target = phase_ref(phases, dst)
+    seen, todo = set(), [src]
+    while todo:
+        p = phase_ref(phases, todo.pop())
+        if p is None or p["dir"] in seen:
+            continue
+        if p is target:
+            return True
+        seen.add(p["dir"])
+        todo.extend(p["depends"])
+    return False
+
+
+def phases_ordered(phases, x_dir, y_dir):
+    """-> True when one phase reaches the other through depends (transitively; names match like phase_ref), so their paths never run at once."""
+    return _depends_reach(phases, x_dir, y_dir) or _depends_reach(phases, y_dir, x_dir)
 
 
 def next_open_phase(phases):
@@ -423,12 +457,25 @@ def set_task_field(txt, tid, field, value):
     return re.sub(r"(?m)^" + pat + r".*$", lambda m: pre + value, txt, count=1)
 
 
+def depends_line(deps):
+    """-> the `Depends:` line of a task file (task ids, comma and space), or '' when the task has no dependency."""
+    return f"Depends: {', '.join(deps)}\n" if deps else ""
+
+
+def set_depends_line(txt, deps):
+    """-> task-N.md text whose `Depends:` line equals DEPS: the old line goes, the new one follows the `Wave:` line."""
+    head, *rest = re.split(r"(?m)^(?=## ADDENDUM)", txt, maxsplit=1)  # a retry addendum is the lead's note, never edited here
+    head = re.sub(r"(?m)^Depends: .*\n", "", head, count=1)
+    head = re.sub(r"(?m)^Wave: W\d+\n", lambda m: m[0] + depends_line(deps), head, count=1)
+    return head + "".join(rest)
+
+
 def render_task(e, a, paths):
     cmd = with_qrun(a.test)
     pat = a.pattern or (paths[0] + ":1" if paths else "")
     aff = f"Affected tests: {a.affected}\n" if getattr(a, "affected", "") else ""
     return (
-        f"# {e['id']}: {e['title']}\nUI: no\nWave: W{e['wave']}\n\n"  # no Goal line: it would repeat the title
+        f"# {e['id']}: {e['title']}\nUI: no\nWave: W{e['wave']}\n{depends_line(e.get('depends', []))}\n"  # no Goal line: it would repeat the title
         f"Predicted paths: {', '.join(paths)}\nPattern: {pat}\n{aff}\n"
         f"Test: {cmd}\nDone: {a.done}\nturns <= {a.turns}\nReply in 3 lines: files changed, test result, ESCALATE.\n"
     )
