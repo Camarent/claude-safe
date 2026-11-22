@@ -3,6 +3,7 @@
 import hashlib
 import os
 import re
+import shlex
 
 from .briefs import ENV_DRY_NO_CCN, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
 from .ccn import CCN_REVIEW_BRIEF, CCN_REVIEW_WHY, review_ccn_hit
@@ -52,6 +53,7 @@ from .configuration import (
 )
 from .plan_files import paths_in, task_type
 from .stagedir import resolve_stage
+from .steps_docfix import DOCFIX_WHY, repeated_pair
 from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
 from .steps_verify import VERIFY_WHY, blocked_for_checks
 from .steps_verify import command as verify_command
@@ -492,7 +494,36 @@ def _script_followup(a, task, mine, rid, s, last):
         if env_repair_kind(mine, last["id"]) == TEST_KIND:
             return _test_run_script(a, task, rid)
         return _taskgates_script(a, task, rid)
+    if last["id"] in script_ids(mine, DOCFIX_WHY):
+        return _docfix_done(a, task, mine, rid, s, last)
     return None
+
+
+def _docfix_dispatch(a, task, mine, rid, last):
+    """A reviewer FAIL that repeats one docs-only one-line finding (the same `old -> new` line in the last two FAIL reports): a script applies it, then the reviewer runs again. None otherwise; once per task."""
+    if script_ids(mine, DOCFIX_WHY):
+        return None
+    fails = _failed_review_reports(mine)
+    if len(fails) < 2 or fails[-1]["id"] != last["id"]:
+        return None
+    pair = repeated_pair(read_text(fails[-2]["file"]), read_text(fails[-1]["file"]))
+    if pair is None:
+        return None
+    path, old, new = pair
+    return _script(
+        task, rid, DOCFIX_WHY, f"{tool_cmd('pipeline/steps_docfix.py')} --file {shlex.quote(path)} --old {shlex.quote(old)} --new {shlex.quote(new)}"
+    )
+
+
+def _docfix_done(a, task, mine, rid, s, last):
+    """The docfix script ran: applied -> the reviewer judges the new commit (not a reviewer try); not applied -> the normal review round."""
+    if last["verdict"] == DONE:
+        d = _disp_reviewer(a, task, rid, s, mine)
+        if d["agent"] == "reviewer":
+            d["free"] = True
+        return d
+    rev = next(e for e in reversed(mine) if e["ev"] == EV_REPORT and e["role"] == "reviewer")
+    return _after_reviewer(a, task, mine, rid, s, rev)
 
 
 def _after_script(a, task, mine, rid, s, last):
@@ -593,6 +624,8 @@ def _after_reviewer(a, task, mine, rid, s, last):
     if (why := _plan_error(last)) is not None:
         return _plan_fix(a, task, mine, rid, last, why)
     if last["verdict"] in (FAIL, ESCALATE):
+        if last["verdict"] == FAIL and (d := _docfix_dispatch(a, task, mine, rid, last)) is not None:
+            return d
         if s.rounds > MAX_ROUNDS - 1:
             if _extra_rounds_ran(mine) < REVIEW_EXTRA_ROUNDS:
                 return _extra_round(a, task, mine, rid)
