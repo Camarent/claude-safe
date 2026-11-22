@@ -36,7 +36,7 @@ import re
 import subprocess
 import sys
 
-from . import gitx, lead_context, worktree
+from . import gitx, lead_context, verify_retry, worktree
 from .briefs import leads_for
 from .configuration import (
     ADDENDUM_HEADING,
@@ -548,6 +548,19 @@ def _prereq_warning(a, ids):
     )
 
 
+def _checks_for_verify(a):
+    """retry --verify: the checks run only on a job that holds commits; no commits -> nothing to verify."""
+    return _checks_green(a) if _job_has_commits(a) else None
+
+
+def _verify_or_green(a, log):
+    """retry: --verify checks the existing job commit and returns True (no dev, no reset, no refresh). Otherwise True when a BLOCKED task is green already."""
+    if getattr(a, "verify", False):
+        verify_retry.verify_step(a, log, _checks_for_verify)
+        return True
+    return not getattr(a, "from_step", "") and _blocked_dev_is_green(a, log)
+
+
 def cmd_reset(a):
     """retry: forget a step's history so it runs again. skip: count the step as satisfied (the owner decided)."""
     root = stage_root(a.dir, a.stage)
@@ -559,7 +572,7 @@ def cmd_reset(a):
         _skip_guard(a)
     if a.cmd == "retry" and getattr(a, "addendum", ""):  # before any other write: a refused script step changes nothing
         _apply_addendum(a)
-    if a.cmd == "retry" and not getattr(a, "from_step", "") and _blocked_dev_is_green(a, log):
+    if a.cmd == "retry" and _verify_or_green(a, log):
         return
     warn = _unmerged_prereqs(a, read_jsonl(log)) if a.cmd == "retry" else []  # before the retry writes anything
     if a.cmd == "retry":
@@ -608,6 +621,9 @@ def main(argv=None):
             if name == "retry":
                 p.add_argument("--from", dest="from_step", default="", choices=["", "review"])
                 p.add_argument("--addendum", default="")
+                p.add_argument(
+                    "--verify", action="store_true", help="run the task's Test lines and Done gates on the job commit; record DONE if green, start no dev"
+                )
     a = ap.parse_args(argv)
     lead_context.check()
     a.fn(a)
