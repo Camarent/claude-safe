@@ -143,6 +143,27 @@ def _drop_worktree(repo, path, nested=()):
     gitx.try_out(repo, "worktree", "prune")
 
 
+def _populate(repo, branch, wt, cfg):
+    """-> nested worktrees added under WT: the seed build, the nested repos and the private links of the checkout. Same steps as before the split."""
+    _seed_build(repo, wt, cfg.get("seed_build") or [])
+    names = nested_repos(repo)
+    nested = _add_nested(repo, branch, wt, names)
+    link_private(repo, wt, cfg.get("nested_repo_dir_prefix") or "", {os.path.relpath(dest, wt) for _sub, dest in nested}, names)
+    return nested
+
+
+def _apply_review(lines, items, branch, cfg, reviewer):
+    """-> (lines, not_pass): with a REVIEWER and MANUAL items, the reviewer verdicts replace the MANUAL lines; not_pass counts the items not PASS."""
+    manual_items = [text for tag, text in items if tag == ACCEPTANCE_EYES_TAG]
+    if not (reviewer and manual_items):
+        return lines, 0
+    reply = reviewer(manual_review_brief(manual_items, branch, cfg["branch_release"], cfg.get("manual_review_docs") or []))
+    verdicts = manual_verdicts(reply, len(manual_items))
+    review = iter(f"- {ACCEPTANCE_MANUAL} {i}: {v}: {text}" for i, (v, text) in enumerate(zip(verdicts, manual_items, strict=True), 1))
+    lines = [next(review) if ln.startswith(f"- {ACCEPTANCE_MANUAL}:") else ln for ln in lines]
+    return lines, sum(v != PASS for v in verdicts)
+
+
 def run(workspace, stage, name, runner=qrun_runner, reviewer=None):
     """-> (verdict, text). Writes .work/<stage>/acceptance.md; DONE when every cmd passed (no cmd = DONE), else FAIL.
     REVIEWER(brief) -> reply text dispatches the reviewer for the MANUAL items: any item not PASS (UNKNOWN when its line is missing) makes the step FAIL. No reviewer: MANUAL items stay for the lead."""
@@ -156,23 +177,12 @@ def run(workspace, stage, name, runner=qrun_runner, reviewer=None):
         return FAIL, f"cannot create a worktree of `{branch}`: {e}"
     nested = []
     try:
-        _seed_build(repo, wt, cfg.get("seed_build") or [])
-        names = nested_repos(repo)
-        nested = _add_nested(repo, branch, wt, names)
-        link_private(repo, wt, cfg.get("nested_repo_dir_prefix") or "", {os.path.relpath(dest, wt) for _sub, dest in nested}, names)
+        nested = _populate(repo, branch, wt, cfg)
         prep = [(ACCEPTANCE_CMD_TAG, c) for c in cfg.get("acceptance_prep") or []]
         lines, bad = run_items(prep + items, wt, runner, ACCEPTANCE_CMD_TIMEOUT_S)
     finally:
         _drop_worktree(repo, wt, nested)
-    manual_items = [text for tag, text in items if tag == ACCEPTANCE_EYES_TAG]
-    not_pass = 0
-    if reviewer and manual_items:
-        base = cfg["branch_release"]
-        reply = reviewer(manual_review_brief(manual_items, branch, base, cfg.get("manual_review_docs") or []))
-        verdicts = manual_verdicts(reply, len(manual_items))
-        not_pass = sum(v != PASS for v in verdicts)
-        review = iter(f"- {ACCEPTANCE_MANUAL} {i}: {v}: {text}" for i, (v, text) in enumerate(zip(verdicts, manual_items, strict=True), 1))
-        lines = [next(review) if ln.startswith(f"- {ACCEPTANCE_MANUAL}:") else ln for ln in lines]
+    lines, not_pass = _apply_review(lines, items, branch, cfg, reviewer)
     verdict = FAIL if bad or not_pass else DONE
     body = "\n".join(lines)
     write_text(os.path.join(workspace, WORK_DIR, stage, ACCEPTANCE_FILE), f"# Acceptance of `{branch}`: {verdict}\n\n{body}\n")

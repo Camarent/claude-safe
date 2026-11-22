@@ -187,6 +187,13 @@ def run_guarded(tests_dir, name, cov_dir=None):
     return res, (name if before != main_branch_state() else None)
 
 
+def run_all(tests_dir, names, cov_dir, jobs):
+    """-> (results sorted, names whose run window saw a main checkout branch switch: parallel runs make every overlapping file one)."""
+    with ThreadPoolExecutor(jobs) as pool:
+        guarded = list(pool.map(lambda n: run_guarded(tests_dir, n, cov_dir), names))
+    return sorted((r for r, _ in guarded), reverse=True), [n for _, n in guarded if n]
+
+
 def summary_line(names, bad, skipped, elapsed):
     """The closing line: failing file names (if any), file count, failed count, skipped count, elapsed seconds."""
     failed_names = f"FAILED {', '.join(r[2] for r in bad)}: " if bad else ""
@@ -210,10 +217,7 @@ def main(argv=None):
     cov_dir = tempfile.mkdtemp(prefix="ptest-cov-") if a.cov else None
     if cov_dir:
         cov_rc(cov_dir)
-    with ThreadPoolExecutor(a.jobs) as pool:
-        guarded = list(pool.map(lambda n: run_guarded(a.dir, n, cov_dir), names))
-    res = sorted((r for r, _ in guarded), reverse=True)
-    switched = [n for _, n in guarded if n]  # files whose run window saw a branch switch (parallel runs: every overlapping file)
+    res, switched = run_all(a.dir, names, cov_dir, a.jobs)
     print_slowest(res)
     bad = [r for r in res if r[1]]
     print_failures(bad)

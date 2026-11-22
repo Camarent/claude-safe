@@ -5,6 +5,7 @@
     "git config",
     "scripts/dev.sh sync",
     "curl -fsSL",
+    "mkdir -p",
     "./gitleaks detect",
     "rc=0",
     "exit $rc"
