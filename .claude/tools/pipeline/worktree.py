@@ -48,14 +48,36 @@ def _exclude_link(root, name):
     pathlib.Path(path).write_text(old + ("" if not old or old.endswith("\n") else "\n") + name + "\n", encoding="utf-8")
 
 
+def _looks_like_repo(root):
+    """True when ROOT/.git is a repo folder (has HEAD) or a gitfile (`gitdir: ...`); no git call."""
+    dot = os.path.join(root, ".git")
+    if os.path.isdir(dot):
+        return os.path.isfile(os.path.join(dot, "HEAD"))
+    try:
+        return pathlib.Path(dot).read_text(encoding="utf-8", errors="replace").startswith("gitdir:")
+    except OSError:
+        return False
+
+
+def _stray_ignored(repo, root):
+    """True when ROOT is git-ignored by REPO and its `.git` is a stray empty folder or file, not a valid repository. A real repo stays nested even when an exclude lists it, and costs no git call. Any git error (REPO not a repo): False, the old behaviour."""
+    if _looks_like_repo(root):
+        return False
+    try:
+        return gitx.run(repo, "check-ignore", "-q", "--", os.path.relpath(root, repo)).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def nested_repos(repo):
-    """Relative paths of git repos nested in `repo` (depth <= 3), not the repo itself."""
+    """Relative paths of git repos nested in `repo` (depth <= 3), not the repo itself. A git-ignored dir whose `.git` is a stray empty folder or file (no valid repo) is neither returned nor walked."""
     found = []
     base = repo.rstrip(os.sep).count(os.sep)
     for root, dirs, _ in os.walk(repo):
         dirs[:] = [d for d in dirs if d not in SKIP]
         if root != repo and (".git" in dirs or os.path.isfile(os.path.join(root, ".git"))):
-            found.append(os.path.relpath(root, repo))
+            if not _stray_ignored(repo, root):
+                found.append(os.path.relpath(root, repo))
             dirs[:] = []
         dirs[:] = [d for d in dirs if d != ".git"]  # seen for the check above; never walk into the repo's own object store
         if root.count(os.sep) - base >= 3:  # a repo at depth 3 is found above; nothing is searched below it
