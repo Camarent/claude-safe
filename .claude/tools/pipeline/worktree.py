@@ -24,6 +24,7 @@ from .configuration import (
     METRICS_LOG,
     ORCH_LOG,
     PROJECT_DEFAULTS,
+    STAGE_LOCK,
     WORK_DIR,
     project,
     repo_dir,
@@ -810,6 +811,8 @@ def merge(a_dir, stage, task):
     want = work_branch(cfg, stage)
     if marked_merged(a_dir, stage, task):
         return {"skipped": "marked merged"}
+    if holder := _driver_holder(a_dir, stage):  # fail fast: a merge under a running driver races its branch switches
+        raise Blocked(f"stage {stage} driver (pid {holder}) holds {STAGE_LOCK}: merge after it stops")
     _check_merge_preconditions(a_dir, stage, parts, want)  # everything first so a refusal leaves every repo as it was
     out = {}
     for rel, r, _w in parts:
@@ -824,6 +827,24 @@ def merge(a_dir, stage, task):
             raise Conflict(f"conflict merging {branch} into {want} in {r}: {(sq.stdout + sq.stderr).strip()[-300:]}\n{hunks}")
         out[rel or "."] = _commit_squash(r, branch)
     return out
+
+
+def _driver_holder(a_dir, stage):
+    """-> the pid of a live driver that holds the stage lock (STAGE_LOCK), else None. The lock file holds the driver's pid (cli_wave._take_lock);
+    a dead pid, a missing or unreadable file is a free lock. Our own pid and our parent (the driver that runs `wt.py merge`) are not a rival."""
+    try:
+        pid = int(pathlib.Path(a_dir, WORK_DIR, stage, STAGE_LOCK).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    if pid <= 0 or pid in (os.getpid(), os.getppid()):
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:  # alive, owned by another user
+        pass
+    return pid
 
 
 def _check_merge_preconditions(a_dir, stage, parts, want):

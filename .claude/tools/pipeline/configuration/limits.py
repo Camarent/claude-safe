@@ -134,6 +134,7 @@ CODESRV_REQUEST_LIMIT_S = float(
     os.environ.get("CODESRV_REQUEST_LIMIT", "600")
 )  # server watchdog: a request running longer ends the server (the next call starts a fresh one)
 CHECKOUT_LOCK = "checkout.lock"  # per main checkout (all stages on it): in its git dir, or in WORK_DIR when not a git checkout
+STAGE_LOCK = "wave.lock"  # per stage, in its WORK_DIR folder: the driver holds it (flock) and writes its pid; wt.py merge reads the pid
 INDEX_TIMEOUT_S = 900.0  # one `local.py index` run of index_step (ORCH_SCRIPT_TIMEOUT overrides)
 CI_EMPTY_POLLS = 3  # fallback CI wait: reads that may return no run (not registered yet) before "no checks" is believed, when the repo has workflows
 CI_RUNS_LIMIT = 50  # fallback CI wait: workflow runs read per commit

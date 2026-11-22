@@ -366,6 +366,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     SHELL_BUILTINS,
     SHELL_KEYWORDS,
     SLOT_TIMEOUT_S,
+    STAGE_LOCK,
     STALE_REPORT_NOTE,
     STALE_RETRY_STEP,
     TOOL_PROBE_TIMEOUT_S,

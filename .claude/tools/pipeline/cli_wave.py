@@ -37,6 +37,7 @@ from .configuration import (
     PGID_FILE_NAME,
     RERUN_FROM,
     SQUASH_MSG_FILE,
+    STAGE_LOCK,
     STALE_RERUN_MAX,
     STEP_OK,
     TASKS_FILE,
@@ -241,7 +242,7 @@ def cmd_run(a):
         return dry_walk(a)
     c = Ctx(a)
     os.makedirs(c.w, exist_ok=True)
-    lock = os.path.join(c.w, "wave.lock")  # one driver per stage: an unreported dispatch at `next` means its session died
+    lock = os.path.join(c.w, STAGE_LOCK)  # one driver per stage: an unreported dispatch at `next` means its session died
     if not _take_lock(lock):
         print(f"blocked: wave.py already runs this stage ({lock})")
         return 4
