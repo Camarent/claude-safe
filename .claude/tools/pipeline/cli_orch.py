@@ -60,6 +60,7 @@ from .configuration import (
 from .graph import decide
 from .plan_files import is_last_phase
 from .requests import take_request
+from .steps_verify import blocked_for_checks
 from .triggers import is_trigger, log_trigger, retro_signals, trigger_log
 from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now, paths, read_jsonl, read_text, stage_root, unreported, work_path, write_text
 from .verdicts import ROLES, is_unclear, missing_note, verdict
@@ -400,16 +401,6 @@ def _checks_green(a):
     return None if any(r[1] for r in results) else (note, len(cmds))
 
 
-_OWNER_WORDS = re.compile(r"owner|decision|decide|scope|unsafe|security|permission|not allowed|forbidden|ambiguous|unclear|which of", re.I)
-_CHECK_WORDS = re.compile(r"\btests?\b|environment|\benv\b|sandbox|network|install|timeout|timed out|toolchain|missing (?:tool|binary)|flaky", re.I)
-
-
-def _blocked_for_checks(rep):
-    """True when the BLOCKED reason is about tests or the environment, not an owner decision, scope or safety question."""
-    text = " ".join(str(rep.get(k) or "") for k in ("reason", "why")) + " " + read_text(rep.get("file") or "")
-    return bool(_CHECK_WORDS.search(text)) and not _OWNER_WORDS.search(text)
-
-
 def _job_has_commits(a):
     """True when the task's job branch holds commits its base branch lacks (a blocked dev with nothing committed has nothing to call done)."""
     info = worktree.live_job(a.dir, a.stage, a.step)
@@ -425,7 +416,7 @@ def _blocked_dev_is_green(a, log):
     reps = [e for e in evs if e.get("task") == a.step and e["ev"] == EV_REPORT and e.get("role") == "dev"]
     if not reps or reps[-1]["verdict"] != BLOCKED or not os.path.isfile(os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")):
         return False
-    if not _blocked_for_checks(reps[-1]) or not _job_has_commits(a):
+    if not blocked_for_checks(reps[-1]) or not _job_has_commits(a):
         return False
     ok = _checks_green(a)
     if not ok:

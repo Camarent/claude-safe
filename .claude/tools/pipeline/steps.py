@@ -52,6 +52,8 @@ from .configuration import (
 from .plan_files import paths_in, task_type
 from .stagedir import resolve_stage
 from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
+from .steps_verify import VERIFY_WHY, blocked_for_checks
+from .steps_verify import command as verify_command
 from .util import append_jsonl, now, paths, read_text, work_path, write_text
 from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
@@ -440,10 +442,26 @@ def _after_dev_other(a, task, mine, rid, s, last):
             {"ev": "note", "ts": now(), "stage": a.stage, "task": task["id"], "text": "verdict from evidence: commit + green Test lines"},
         )
         return _to_review(a, task, mine, rid, s)
+    if _checks_blocked(a, task, last):  # the checks decide, not the lead: the Test lines and gates run once, green -> review, red -> dev
+        return _script(task, rid, VERIFY_WHY, verify_command(a, task["id"]))
     return {
         "action": "ask_main",
         "message": f"{task['id']}: dev verdict {last['verdict']} ({last.get('reason', '')}); report {last['file']}" + hint(a, task["id"]),
     }
+
+
+def _checks_blocked(a, task, last):
+    """True when the dev BLOCKED for a tests or environment reason and left a commit (a BLOCKED with no commit still asks the lead)."""
+    return last["verdict"] == BLOCKED and blocked_for_checks(last) and bool(job_diff(a, task["id"]))
+
+
+def _after_verify(a, task, mine, rid, s, last):
+    """The verify step after a BLOCKED dev: green -> the review (no ask); red -> the dev reworks with the output; anything else -> the lead."""
+    if last["verdict"] == DONE:
+        return _to_review(a, task, mine, rid, s)
+    if last["verdict"] == FAIL:
+        return _disp(a, task, rid, "dev", task["owner_sonnet"] or sonnet_dev_dispatched(mine), rework=last["file"])
+    return {"action": "ask_main", "message": f"{task['id']}: checks cannot run after the dev BLOCKED; output {last['file']}" + hint(a, task["id"])}
 
 
 def _gap_text(last):
@@ -458,15 +476,25 @@ def _reviewer_before(mine, dev_report):
     return rep if rep and rep["verdict"] in (FAIL, ESCALATE) else None
 
 
-def _after_script(a, task, mine, rid, s, last):
+def _script_followup(a, task, mine, rid, s, last):
+    """The script steps that name a follow-up (escalation gate, checks after a BLOCKED dev, environment repair). None for the others."""
     if last["id"] in script_ids(
         mine, "escalation gate"
     ):  # the gate only guards the step before it: plan that step again without the gate events (`_gate` then reads the verdict)
         return _next_step(a, task, [e for e in mine if e.get("id") != last["id"]], rid)
+    if last["id"] in script_ids(mine, VERIFY_WHY):  # the checks after a BLOCKED dev: green -> review, red -> the dev with the output
+        return _after_verify(a, task, mine, rid, s, last)
     if last["id"] in script_ids(mine, ENV_REPAIR_WHY):  # the environment repair ran: the red step (test run or task gates) runs again
         if env_repair_kind(mine, last["id"]) == TEST_KIND:
             return _test_run_script(a, task, rid)
         return _taskgates_script(a, task, rid)
+    return None
+
+
+def _after_script(a, task, mine, rid, s, last):
+    followup = _script_followup(a, task, mine, rid, s, last)
+    if followup is not None:
+        return followup
     if last["id"] in s.test_ids:  # the test run: BLOCKED -> lead; FAIL -> dev ladder like an ESCALATE; DONE -> pre-review / reviewer
         return _after_test(a, task, mine, rid, s, last)
     if last["id"] in s.gate_ids:  # the task gates: BLOCKED -> lead; FAIL -> free dev rounds, one Sonnet dev, then the lead; DONE -> quality run / review
