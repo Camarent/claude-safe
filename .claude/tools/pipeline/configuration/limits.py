@@ -69,6 +69,17 @@ LANG_MARKERS = (
     ("python", ("pyproject.toml", "setup.py", "requirements.txt"), ("",)),
     ("csharp", ("*.csproj", "*.sln"), ("",)),
 )  # guidelines.py: language slug -> (file name patterns, repo subfolders searched, top level only); "" = the repo root
+LANG_EXTENSIONS = (
+    ("cpp", (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp")),
+    ("rust", (".rs",)),
+    ("typescript", (".ts", ".tsx")),
+    ("js", (".js", ".jsx", ".mjs", ".cjs")),
+    ("python", (".py",)),
+    ("csharp", (".cs",)),
+)  # guidelines.py digest: language slug -> changed file extensions that select its <lang>.md
+GUIDELINES_EXT = ".md"  # guidelines.py digest: one file per language and base.md, all in GUIDELINES_DIR
+BASE_GUIDELINE = "base.md"  # guidelines.py digest: the guideline file that applies to every change
+GUIDELINES_DIGEST_MAX_LINES = 60  # guidelines.py digest: most lines digest() returns, pointers included
 TOOL_PROBE_TIMEOUT_S = 30  # prepare_repo.py: one `<python> -c "import pytest"` probe
 SHELL_KEYWORDS = frozenset(
     {"if", "then", "elif", "else", "fi", "for", "while", "until", "do", "done", "case", "esac", "in", "function", "select", "time", "!", "{", "}", "(", ")"}
