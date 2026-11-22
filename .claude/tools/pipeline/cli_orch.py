@@ -61,8 +61,8 @@ from .graph import decide
 from .plan_files import is_last_phase
 from .requests import take_request
 from .triggers import is_trigger, log_trigger, retro_signals, trigger_log
-from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now, paths, read_jsonl, read_text, stage_root, work_path, write_text
-from .verdicts import ROLES, missing_note, verdict
+from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now, paths, read_jsonl, read_text, stage_root, unreported, work_path, write_text
+from .verdicts import ROLES, is_unclear, missing_note, verdict
 
 
 def cmd_triggers(a):
@@ -127,16 +127,6 @@ def warm_index(a):
         )
     except OSError:
         pass  # a missing index only makes search slower, never blocks the stage
-
-
-def _unreported(evs):
-    """Ids of dispatches that got neither a report nor a later retry/skip of the same task."""
-    reported = {e["id"] for e in evs if e["ev"] == EV_REPORT}
-
-    def cleared(i, e):  # a later retry/skip of the same task settles the dispatch
-        return any(x["ev"] in ("retry", "skip") and x.get("task") == e.get("task") for x in evs[i + 1 :])
-
-    return [e["id"] for i, e in enumerate(evs) if e["ev"] == EV_DISPATCH and e["id"] not in reported and not cleared(i, e)]
 
 
 def _record_dispatch(a, log, evs, d):
@@ -223,7 +213,7 @@ def cmd_next(a):
     warm_index(a)
     w, log = paths(a)
     evs = read_jsonl(log)
-    pending = _unreported(evs)
+    pending = unreported(evs)
     if pending:
         msg = f"dispatch {pending[0]} was never reported; run `orch.py report --id {pending[0]}`"
         _log_ask(log, evs, msg)
@@ -311,7 +301,7 @@ def _auto_retry(log, evs, d, reason):
     """First unclear verdict of a role: run the agent once more. -> True when a retry was logged."""
     if (
         d["role"] not in ROLES
-        or reason not in ("no clear verdict", "no report file written")
+        or not is_unclear(reason)
         or any(e["ev"] == EV_RETRY and e.get("auto") and e.get("task") == d["task"] and e.get("role") == d["role"] for e in evs)
     ):
         return False

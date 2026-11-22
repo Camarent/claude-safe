@@ -41,6 +41,15 @@ def _final_word(text):
     return m.group(1) if m else None
 
 
+UNCLEAR_REASONS = ("no clear verdict", "no report file written")  # the dev reasons the auto retry (cli_orch _auto_retry) has already run for
+KILLED_RC = "rc=-"  # a claude run ended by a signal (`wave: claude rc=-9`): as unclear as a missing verdict, retried the same way
+
+
+def is_unclear(reason):
+    """True when the report reason is one the auto retry runs for: no verdict line, no report file, or a run killed by a signal."""
+    return reason in UNCLEAR_REASONS or KILLED_RC in (reason or "")
+
+
 def missing_note(role, reason):
     """The retry prompt for an unclear report: names the missing line and the words the role may answer with."""
     allowed, _ = ROLES[role]

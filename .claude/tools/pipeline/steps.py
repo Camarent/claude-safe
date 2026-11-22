@@ -52,6 +52,7 @@ from .configuration import (
 from .plan_files import paths_in, task_type
 from .stagedir import resolve_stage
 from .util import append_jsonl, now, paths, read_text, work_path, write_text
+from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
 
@@ -387,9 +388,6 @@ def straight_to_sonnet(a, task, mine):
     return None
 
 
-UNCLEAR_REASONS = ("no clear verdict", "no report file written")  # the dev reasons the auto retry (cli_orch _auto_retry) has already run for
-
-
 def _test_run(a, tid):
     """The task's Test lines run in its job worktree -> (verdict, note). Lazy import: testrun imports wt, which imports this package."""
     import testrun
@@ -399,7 +397,7 @@ def _test_run(a, tid):
 
 def _evidence_green(a, task, last):
     """True when the dev's unclear BLOCKED left a commit and its Test lines run green: the reviewer judges the commit, no synthetic DONE is written."""
-    if last["verdict"] != BLOCKED or last.get("reason") not in UNCLEAR_REASONS or not job_diff(a, task["id"]):
+    if last["verdict"] != BLOCKED or not is_unclear(last.get("reason")) or not job_diff(a, task["id"]):
         return False
     v, note = _test_run(a, task["id"])
     return v == DONE and "skipped" not in note
