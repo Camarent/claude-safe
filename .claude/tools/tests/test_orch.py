@@ -18,6 +18,8 @@ from pipeline.util import read_jsonl
 from tests.support.tmpdirs import tracked_mkdtemp
 
 _INDEX_PATCH = mock.patch.object(graph, "run_index", return_value=0)  # tests never run the real indexer
+TASK1 = "task-1"  # task ids held as data, so asserts name them through the constant
+TASK2 = "task-2"
 
 
 def setUpModule():
@@ -101,7 +103,7 @@ class OrchTest(unittest.TestCase):
     def test_happy_path_two_tasks(self):
         a = self.nxt()
         self.assertEqual((a["agent"], a["model"]), ("dev", "haiku"))
-        self.assertIn("task-1.md", a["prompt"])
+        self.assertIn(f"{TASK1}.md", a["prompt"])
         self.rep(a["id"], "task-1 changed, tests pass")
         a = self.nxt()
         self.assertEqual((a["agent"], a["model"]), ("reviewer", "haiku"))
@@ -127,9 +129,9 @@ class OrchTest(unittest.TestCase):
         info = {"branch": "job/t1", "base": "abc", "repos": {"r": "/w/r"}}
         with mock.patch("pipeline.briefs.job_info", return_value=info), mock.patch("pipeline.briefs.job_diff", return_value=""):
             with mock.patch("pipeline.briefs.testrun_on", return_value=True):
-                self.assertIn("Driver test run:", briefs.prompt_for(A, {"id": "task-1"}, "reviewer", None, "x3"))
+                self.assertIn("Driver test run:", briefs.prompt_for(A, {"id": TASK1}, "reviewer", None, "x3"))
             with mock.patch("pipeline.briefs.testrun_on", return_value=False):
-                self.assertNotIn("Driver test run:", briefs.prompt_for(A, {"id": "task-1"}, "reviewer", None, "x4"))
+                self.assertNotIn("Driver test run:", briefs.prompt_for(A, {"id": TASK1}, "reviewer", None, "x4"))
 
     def test_reviewer_brief_states_lint_left_count(self):
         class A:
@@ -141,13 +143,13 @@ class OrchTest(unittest.TestCase):
         text = "head\n\nrepo (eslint): 2 finding(s)\n  a.js:1\n\nrepo2 (clippy): 1 finding(s)\n  b.rs:3"
         with mock.patch("pipeline.briefs.qualityrun_on", return_value=True):
             with mock.patch.object(qualityrun, "run", return_value=("FAIL", text)):
-                self.assertIn("Driver lint left: 3 finding(s)", briefs._lint_left(A, {"id": "task-1"}))
+                self.assertIn("Driver lint left: 3 finding(s)", briefs._lint_left(A, {"id": TASK1}))
             with mock.patch.object(qualityrun, "run", return_value=("DONE", "clean")):
-                self.assertEqual(briefs._lint_left(A, {"id": "task-1"}), "")
+                self.assertEqual(briefs._lint_left(A, {"id": TASK1}), "")
             with mock.patch.object(qualityrun, "run", side_effect=RuntimeError("x")):
-                self.assertEqual(briefs._lint_left(A, {"id": "task-1"}), "")
+                self.assertEqual(briefs._lint_left(A, {"id": TASK1}), "")
         with mock.patch("pipeline.briefs.qualityrun_on", return_value=False):
-            self.assertEqual(briefs._lint_left(A, {"id": "task-1"}), "")
+            self.assertEqual(briefs._lint_left(A, {"id": TASK1}), "")
 
     def test_dev_escalate_goes_to_sonnet_once(self):
         a = self.nxt()
@@ -248,7 +250,7 @@ class OrchTest(unittest.TestCase):
         self.run_cmd("skip", "--step", "ops-1")
         a = self.nxt()
         self.assertEqual((a["action"], a["agent"]), ("dispatch", "dev"))
-        self.assertIn("task-1.md", a["prompt"])
+        self.assertIn(f"{TASK1}.md", a["prompt"])
 
     def test_pending_message_names_report_command(self):
         a = self.nxt()
@@ -299,7 +301,7 @@ class OrchTest(unittest.TestCase):
 
     def test_ordering_and_done(self):
         order = [t["id"] for t in tasks.parse_tasks(f"{self.d}/.work/s/TASKS.md")]
-        self.assertEqual(order, ["task-1", "task-2"])
+        self.assertEqual(order, [TASK1, TASK2])
 
     def test_sonnet_plan_row_dispatches_haiku_first(self):
         t = f"{self.d}/.work/s/TASKS.md"
@@ -316,7 +318,7 @@ class OrchTest(unittest.TestCase):
                 "- wave 1: task-2 (x)\n"
             )
         got = [(x["id"], x["owner_sonnet"], x["review_sonnet"]) for x in tasks.parse_tasks(t)]
-        self.assertEqual(got, [("task-2", False, False), ("task-1", False, False)])  # sonnet words in the plan are ignored
+        self.assertEqual(got, [(TASK2, False, False), (TASK1, False, False)])  # sonnet words in the plan are ignored
         Path(t).write_text("task-1 is mentioned in prose only\n", encoding="utf-8")
         self.assertEqual(self.nxt()["action"], "ask_main")
 
@@ -484,9 +486,9 @@ class ParallelTest(unittest.TestCase):
         self.finish("a4", "VERDICT: FAIL\nwrong: x")
         r = self.go("next")  # task-2 reworked; task-3 (wave 2) must wait
         self.assertEqual([x["agent"] for x in r["dispatches"]], ["dev"])
-        self.assertIn("task-2.md", r["dispatches"][0]["prompt"])
+        self.assertIn(f"{TASK2}.md", r["dispatches"][0]["prompt"])
         self.assertEqual(r["dispatches"][0]["id"], "a5")  # ids stay unique when task-1 already passed
-        self.assertEqual(r["dispatches"][0]["model"], "sonnet")  # one FAIL: the rework dev is Sonnet, the reviewer stays Haiku
+        self.assertEqual(r["dispatches"][0]["model"], "haiku")  # one FAIL: the rework dev is Haiku, the reviewer stays Haiku
         self.finish("a5", "VERDICT: DONE")
         r = self.go("next")
         self.assertEqual(
@@ -495,7 +497,7 @@ class ParallelTest(unittest.TestCase):
         self.finish("a6", "VERDICT: FAIL\nwrong: y")
         r = self.go("next")  # second FAIL: one extra dev round with the verbatim findings
         self.assertEqual([x["agent"] for x in r["dispatches"]], ["dev"])
-        self.assertIn("reviews-all-task-2", r["dispatches"][0]["prompt"])
+        self.assertIn(f"reviews-all-{TASK2}", r["dispatches"][0]["prompt"])
 
     def test_unreported_member_of_a_batch_blocks(self):
         self.go("next")

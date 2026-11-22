@@ -19,6 +19,8 @@ from pipeline import graph, steps, worktree
 from pipeline.configuration import EXTRA_ROUND_WHY
 
 TASK = {"id": "task-1", "owner_sonnet": False, "review_sonnet": False}
+TASK1 = "task-1"  # task ids held as data, so asserts name them through the constant
+TASK2 = "task-2"
 
 
 def ev(kind, **kw):
@@ -83,7 +85,7 @@ class NextStepTest(unittest.TestCase):
         self.assertEqual(r["action"], "ask_main")
         self.assertEqual(
             r["message"],
-            "a1 (dev on task-1) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step task-1` (or `skip`)",
+            f"a1 (dev on {TASK1}) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step {TASK1}` (or `skip`)",
         )
 
     def test_dev_done_goes_to_reviewer_or_prereview(self):
@@ -93,7 +95,7 @@ class NextStepTest(unittest.TestCase):
         self.cfg(prereview=True)
         r = self.nxt(mine)
         self.assertEqual((r["agent"], r["model"], r["why"]), ("script", None, "local pre-review (lp review); FAIL goes back to the dev"))
-        self.assertIn("localmodel/prereview.py --stage s --task task-1 --dir " + self.d, r["prompt"])
+        self.assertIn(f"localmodel/prereview.py --stage s --task {TASK1} --dir " + self.d, r["prompt"])
 
     def test_test_run_after_every_dev_done(self):
         self.cfg(testrun=True)
@@ -166,7 +168,7 @@ class NextStepTest(unittest.TestCase):
         self.cfg(qualityrun=True)
         r = self.nxt([dispatch("a1", "dev"), dev_rep("a1", "DONE")])
         self.assertEqual((r["action"], r["role"]), ("dispatch", "script"))
-        self.assertIn("qualityrun.py --stage s --task task-1", r["prompt"])
+        self.assertIn(f"qualityrun.py --stage s --task {TASK1}", r["prompt"])
         q = dispatch("a2", "script", model=None, why="quality run (x)")
         base = [dispatch("a1", "dev"), dev_rep("a1", "DONE"), q]
         clean = ev("report", id="a2", role="script", verdict="DONE", file="q.md")
@@ -251,7 +253,7 @@ class NextStepTest(unittest.TestCase):
         r = self.nxt([dispatch("a1", "dev"), dev_rep("a1", "BLOCKED", "b.md")])
         self.assertEqual(r["action"], "ask_main")
         self.assertTrue(r["message"].startswith("task-1: dev verdict BLOCKED ("))
-        self.assertIn("report b.md; fix the cause, then `orch.py retry --stage s --step task-1`", r["message"])
+        self.assertIn(f"report b.md; fix the cause, then `orch.py retry --stage s --step {TASK1}`", r["message"])
         # owner_sonnet dev escalating also asks the lead
         r = self.nxt([dispatch("a1", "dev", "sonnet"), dev_rep("a1", "ESCALATE")], {**TASK, "owner_sonnet": True})
         self.assertEqual(r["action"], "ask_main")
@@ -259,12 +261,12 @@ class NextStepTest(unittest.TestCase):
     def test_reviewer_fail_rounds(self):
         d1 = [dispatch("a1", "dev"), dev_rep("a1", "DONE"), rev_rep("a2", "FAIL", "r1.md")]
         r = self.nxt(d1)
-        self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
+        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))  # first FAIL: Haiku rework
         self.assertIn("Rework: fix the findings in r1.md first.", r["prompt"])
-        d2 = [*d1, dispatch("a3", "dev", "sonnet"), dev_rep("a3", "DONE"), rev_rep("a4", "FAIL", "r2.md")]
+        d2 = [*d1, dispatch("a3", "dev", "haiku"), dev_rep("a3", "DONE"), rev_rep("a4", "FAIL", "r2.md")]
         r = self.nxt(d2)  # second FAIL: one extra dev round with the verbatim findings
         self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
-        self.assertIn("reviews-all-task-1", r["prompt"])
+        self.assertIn(f"reviews-all-{TASK1}", r["prompt"])
         d3 = [*d2, dispatch("a5", "dev", "sonnet", why=EXTRA_ROUND_WHY), dev_rep("a5", "DONE"), rev_rep("a6", "FAIL", "r3.md")]
         r = self.nxt(d3)  # the extra round failed too: back to the lead
         self.assertEqual(r["action"], "ask_main")
@@ -277,7 +279,7 @@ class NextStepTest(unittest.TestCase):
         # a Sonnet reviewer already ran: an ESCALATE now counts as a failed round
         mine += [dispatch("a3", "reviewer", "sonnet"), rev_rep("a3", "ESCALATE", "r2.md")]
         r = self.nxt(mine)
-        self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
+        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))  # the Sonnet reviewer's ESCALATE is the first failed round: Haiku rework
         self.assertIn("Rework: fix the findings in r2.md first.", r["prompt"])
 
     def test_sonnet_reviewer_escalate_loop_ends_at_the_lead(self):
@@ -420,7 +422,7 @@ class DecideTest(unittest.TestCase):
     def test_wave_dispatches_in_parallel_and_asks_otherwise(self):
         self.tasks(extra="| task-2 | b | dev | 1 | wave W1, haiku |", more=", task-2")
         r = graph.decide(self.a)
-        self.assertEqual([(d["id"], d["task"]) for d in r["dispatches"]], [("a1", "task-1"), ("a2", "task-2")])
+        self.assertEqual([(d["id"], d["task"]) for d in r["dispatches"]], [("a1", TASK1), ("a2", TASK2)])
         self.log(dispatch("a1", "dev"), ev("dispatch", id="a2", agent="dev", role="dev", model="haiku", why=None) | {"task": "task-2"})
         r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")
@@ -439,7 +441,7 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(r["action"], "dispatch")
         (m,) = r["dispatches"]
         self.assertEqual((m["task"], m["agent"], m["model"], m["id"]), ("merge-w1", "merger", "haiku", "a3"))
-        self.assertIn("task-1 (dev report d1.md)", m["prompt"])
+        self.assertIn(f"{TASK1} (dev report d1.md)", m["prompt"])
         # merger FAIL -> one Sonnet fix, then a second merge
         self.log(
             {"ev": "dispatch", "task": "merge-w1", "id": "a3", "agent": "merger", "role": "merger", "model": "haiku"},
@@ -493,7 +495,7 @@ class DecideTest(unittest.TestCase):
             {"ev": "report", "task": "merge-w1", "role": "merger", "verdict": "DONE", "file": "m2.md"},
         )
         r = graph.decide(self.a)
-        self.assertEqual([d["task"] for d in r["dispatches"]], ["task-2"])
+        self.assertEqual([d["task"] for d in r["dispatches"]], [TASK2])
 
     def test_done_task_with_unmerged_worktree_asks_lead(self):
         Path(self.d, "pipeline.json").write_text(json.dumps({"gate": False, "testrun": False, "qualityrun": False, "worktrees": True}), encoding="utf-8")
@@ -508,7 +510,7 @@ class DecideTest(unittest.TestCase):
             )
             r = graph.decide(self.a)
             self.assertEqual(r["action"], "ask_main")  # late merge done, worktree still there: the old ask is the fallback
-            self.assertIn("task-1", r["message"])
+            self.assertIn(TASK1, r["message"])
             self.assertIn("unmerged", r["message"])
             self.log({"ev": "skip", "task": "task-1"})
             self.assertNotIn("unmerged", graph.decide(self.a).get("message", ""))
@@ -549,7 +551,7 @@ class DecideTest(unittest.TestCase):
             r = graph.decide(self.a)
         self.assertNotIn("unmerged", r.get("message", ""))
         self.assertFalse(os.path.isdir(root))
-        self.assertNotIn("task-1", worktree.read_manifest(self.d, "s"))
+        self.assertNotIn(TASK1, worktree.read_manifest(self.d, "s"))
 
     def _squash_into_stage_branch(self):
         """What a merge with a red gate leaves: the job's content is on the stage branch (squash merge, no ancestry), the job branch and worktree stay."""
@@ -567,7 +569,7 @@ class DecideTest(unittest.TestCase):
             r = graph.decide(self.a)
         self.assertNotIn("unmerged", r.get("message", ""))
         self.assertFalse(os.path.isdir(root))
-        self.assertNotIn("task-1", worktree.read_manifest(self.d, "s"))
+        self.assertNotIn(TASK1, worktree.read_manifest(self.d, "s"))
 
     def test_done_task_marked_merged_by_hand_is_removed_not_blocking(self):
         root = self._job_repo(commit=True)

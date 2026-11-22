@@ -5,7 +5,7 @@ import os
 import re
 
 from .briefs import ENV_DRY_NO_CCN, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
-from .ccn import review_ccn_hit
+from .ccn import CCN_REVIEW_BRIEF, CCN_REVIEW_WHY, review_ccn_hit
 from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
     ARCHITECT,
@@ -23,6 +23,7 @@ from .configuration import (
     GATE_FREE_ROUNDS,
     GATE_PLAN_ERROR,
     HAIKU_DEV_TRIES,
+    HAIKU_REWORK_TRIES,
     MAX_ROUNDS,
     MAX_TRIES,
     METRICS_LOG,
@@ -168,9 +169,11 @@ class _TaskState:
         self.test_fails = _reports(mine, None, FAIL, self.test_ids)
         self.dev_done = _reports(mine, "dev", DONE)
         self.sonnet_dev = sonnet_dev_dispatched(mine)
+        ccn_ids = {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "reviewer" and str(e.get("why") or "").startswith(CCN_REVIEW_WHY)}
+        self.ccn_fail = _reports(mine, "reviewer", FAIL, ccn_ids) > 0
         self.reviewer_sonnet = (
-            task["review_sonnet"] or self.rev_esc or sonnet_review_dispatched(mine)
-        )  # the reviewer goes to Sonnet only by itself (gate or its own ESCALATE) and then stays; a Sonnet dev does not move it
+            task["review_sonnet"] or self.rev_esc or self.ccn_fail or sonnet_review_dispatched(mine)
+        )  # the reviewer goes to Sonnet only by itself (gate, its own ESCALATE, or a FAIL of a ccn-hit Haiku reviewer) and then stays; a Sonnet dev does not move it
 
 
 REPORT_WHY = "report task: content review on Sonnet"
@@ -229,9 +232,10 @@ def _disp_reviewer_model(a, task, rid, s):
     if os.environ.get(ENV_DRY_NO_CCN):  # dry run: no job worktree, the gate cannot fire
         return _disp(a, task, rid, "reviewer", False)
     why = review_ccn_hit(a, task["id"])
-    d = _disp(a, task, rid, "reviewer", bool(why))
+    d = _disp(a, task, rid, "reviewer", False)  # a ccn hit starts Haiku with the ccn brief; its FAIL or ESCALATE goes on to Sonnet
     if why:
         d["why"] = why
+        d["prompt"] += CCN_REVIEW_BRIEF
     return d
 
 
@@ -593,7 +597,8 @@ def _after_reviewer(a, task, mine, rid, s, last):
             if _extra_rounds_ran(mine) < REVIEW_EXTRA_ROUNDS:
                 return _extra_round(a, task, mine, rid)
             return {"action": "ask_main", "message": f"{task['id']}: review failed {s.rounds} rounds; findings {last['file']}" + hint(a, task["id"])}
-        return _disp(a, task, rid, "dev", True, rework=last["file"])  # owner 2026-10-29: Haiku dev+review, one FAIL -> Sonnet dev+review, a second FAIL -> lead
+        # first FAIL: Haiku rework (HAIKU_REWORK_TRIES); Sonnet only when that rework also failed review
+        return _disp(a, task, rid, "dev", task["owner_sonnet"] or s.sonnet_dev or s.rounds > HAIKU_REWORK_TRIES, rework=last["file"])
     return None
 
 

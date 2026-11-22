@@ -8,7 +8,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import steps
-from pipeline.configuration import EXTRA_ROUND_WHY, MODEL_OPUS, MODEL_SONNET
+from pipeline.configuration import EXTRA_ROUND_WHY, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 from test_task_gates import TASK, _SeqBase, dev, done, ev
 
 
@@ -52,7 +52,7 @@ class ExtraReviewRoundTest(_SeqBase):
     def test_first_fail_is_a_normal_dev_round(self):
         mine = [dev("d1"), done("d1"), rev_dispatch("r1"), self.review_fail("r1", "one\n")]
         r = self.nxt(mine)
-        self.assertEqual((r["action"], r["role"], r["model"]), ("dispatch", "dev", MODEL_SONNET))
+        self.assertEqual((r["action"], r["role"], r["model"]), ("dispatch", "dev", MODEL_HAIKU))  # first FAIL: Haiku rework
         self.assertNotEqual(r.get("why"), EXTRA_ROUND_WHY)
 
     def test_second_fail_dispatches_extra_round_with_both_findings_verbatim(self):

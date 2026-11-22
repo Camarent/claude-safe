@@ -92,7 +92,7 @@ class DryGate(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True):
             d, hit = self.dispatch({})
         hit.assert_called_once()
-        self.assertEqual(d["model"], "sonnet")
+        self.assertEqual(d["model"], "haiku")  # a ccn hit starts Haiku with the ccn brief
 
 
 if __name__ == "__main__":
