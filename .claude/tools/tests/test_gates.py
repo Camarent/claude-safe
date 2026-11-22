@@ -103,13 +103,13 @@ class DriftTest(unittest.TestCase):
 
 
 class DriftWiringTest(unittest.TestCase):
-    def test_plan_check_warning_does_not_fail(self):
+    def test_plan_check_drift_fails(self):
         d = make({"gates": G[:1]}, CI)
         stage = os.path.join(d, ".work", "s1")
         os.makedirs(stage)
         w = plan_check.ci_drift_warnings(stage)
         self.assertTrue(w and all(x.startswith("ci-drift:") for x in w))
-        self.assertEqual(plan_check.errors_of(w), [])
+        self.assertEqual(plan_check.errors_of(w), w)
 
     def test_tools_check_output_has_warning(self):
         d = make({"gates": G[:1]}, CI)

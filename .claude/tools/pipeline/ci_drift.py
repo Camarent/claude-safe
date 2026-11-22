@@ -68,9 +68,10 @@ def ci_run_lines(yml_text):
 
 
 def drift(project_dir, cfg):
-    """-> [warning]: CI commands missing from the gates (`&&` parts count). Never raises on config; `ci_drift: false` disables."""
+    """-> [problem]: CI commands missing from the gates (`&&` parts count). Never raises on config; `ci_drift: false` disables. `ci_drift_ignore` lists CI-only commands (setup, CI-only jobs) by exact text or leading words."""
     if cfg.get("ci_drift") is False:
         return []
+    ignore = [_norm(i) for i in cfg.get("ci_drift_ignore", [])]
     files = sorted(glob.glob(os.path.join(repo_dir(project_dir, cfg), ".github", "workflows", "*.yml")))
     if not files:
         return []
@@ -90,6 +91,8 @@ def drift(project_dir, cfg):
             for cmd in ci_run_lines(fh.read()):
                 n = _norm(cmd)
                 if n.startswith("echo ") or n in SETUP_ONLY or n in known or all(_norm(q) in known for q in n.split("&&")):
+                    continue
+                if any(n == i or n.startswith(i + " ") for i in ignore):
                     continue
                 warns.append(f"CI runs `{n}` ({os.path.basename(f)}) but no gate covers it")
     return warns

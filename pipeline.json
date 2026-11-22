@@ -1,6 +1,14 @@
 {
   "audit_file": "AUDIT.md",
   "branch_release": "master",
+  "ci_drift_ignore": [
+    "git config",
+    "scripts/dev.sh sync",
+    "curl -fsSL",
+    "./gitleaks detect",
+    "rc=0",
+    "exit $rc"
+  ],
   "gates": [
     {
       "name": "check",
@@ -9,6 +17,22 @@
     {
       "name": "test",
       "cmd": "scripts/dev.sh test"
+    },
+    {
+      "name": "cov",
+      "cmd": "scripts/dev.sh cov"
+    },
+    {
+      "name": "dead",
+      "cmd": "test -z \"$(scripts/dev.sh dead)\""
+    },
+    {
+      "name": "sec",
+      "cmd": "scripts/dev.sh sec"
+    },
+    {
+      "name": "ccn",
+      "cmd": "scripts/dev.sh ccn"
     }
   ],
   "worktrees": true

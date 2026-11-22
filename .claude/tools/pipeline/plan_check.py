@@ -645,7 +645,7 @@ MIN_PHASE, MAX_COMBINED = 10, 25
 
 
 def errors_of(probs):
-    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `ci-drift:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check)."""
+    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check). `ci-drift:` is an error."""
     return [
         p
         for p in probs
@@ -656,7 +656,6 @@ def errors_of(probs):
                 "shared:",
                 "gate:",
                 "release:",
-                "ci-drift:",
                 "done:",
                 "cmd:",
                 "open-edit:",
@@ -675,7 +674,7 @@ def errors_of(probs):
 
 
 def ci_drift_warnings(d):
-    """-> [`ci-drift:` warning] for the project that owns .work folder D (see ci_drift.drift; a bad config yields none)."""
+    """-> [`ci-drift:` problem, an error in cs-plan check] for the project that owns .work folder D (see ci_drift.drift; a bad config yields none)."""
     ws = _workspace(d)
     try:
         cfg = project(ws)
