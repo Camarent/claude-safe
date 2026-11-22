@@ -181,6 +181,13 @@ class BuildPromptTest(unittest.TestCase):
         self.assertIn("GAP-TASKS: n", pr.build_prompt(pr.KIND_COVER, "feat", "r.md"))
         self.assertNotIn("GAP-TASKS", pr.build_prompt(pr.KIND_TASK, "feat", "r.md"))
 
+    def test_task_reviews_check_affected_tests_against_importers(self):
+        for kind in (pr.KIND_TASK, pr.KIND_SINGLE):
+            text = pr.build_prompt(kind, "feat", "r.md")
+            self.assertIn("`Affected tests:` line must name every test file that imports", text)
+            self.assertIn("affected.py", text)
+        self.assertNotIn("Affected tests:", pr.build_prompt(pr.KIND_PHASE, "feat", "r.md"))
+
     def test_unknown_kind_raises(self):
         with self.assertRaises(ValueError):
             pr.build_prompt("nope", "feat", "r.md")

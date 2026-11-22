@@ -31,6 +31,12 @@ VERDICT_EMPTY, VERDICT_ERROR = "", "ERROR"
 _VERDICT_RE = re.compile(r"^VERDICT:\s*(DONE|FAIL|BLOCKED)\b", re.M)
 _GAP_TASKS_RE = re.compile(r"^GAP-TASKS:\s*(\d+)", re.M)
 _GAP_RE = re.compile(r"^GAP:.*$", re.M)
+# kinds that review task files: each task's `Affected tests:` must name every importer of its predicted paths
+_AFFECTED_KINDS = (KIND_TASK, KIND_SINGLE)
+_AFFECTED_CHECK = (
+    "For each task, its `Affected tests:` line must name every test file that imports a module of its predicted paths "
+    "(run `python3 -I .claude/tools/pipeline/affected.py <predicted paths>` and compare); a missing importer is a GAP line."
+)
 
 # what each kind reviews; one entry per kind (adding a kind is one line here plus its model rule)
 _KIND_SCOPE = {
@@ -88,10 +94,11 @@ def build_prompt(kind: str, feature: str, report_path: str) -> str:
         raise ValueError(f"unknown review kind: {kind!r}")
     folder = os.path.join(WORK_DIR, feature)
     gap_tasks = " Also write the line `GAP-TASKS: n` (n = tasks the gaps need)." if kind == KIND_COVER else ""
+    affected = f" {_AFFECTED_CHECK}" if kind in _AFFECTED_KINDS else ""
     return (
         f"Review the plan of feature {feature}. Scope: {_KIND_SCOPE[kind]}.\n"
         f"Read {os.path.join(folder, REQUEST_FILE)}, {os.path.join(folder, PLAN_FILE)} and {os.path.join(folder, TASKS_FILE)}.\n"
-        f"Write your report to {report_path}. For each problem write one line `GAP: <what is missing or wrong, and where>`.{gap_tasks}\n"
+        f"Write your report to {report_path}. For each problem write one line `GAP: <what is missing or wrong, and where>`.{gap_tasks}{affected}\n"
         "End with exactly one line `VERDICT: DONE` (no gaps), `VERDICT: FAIL` (gaps the architect can fix) or `VERDICT: BLOCKED` (the request cannot be planned as written)."
     )
 
