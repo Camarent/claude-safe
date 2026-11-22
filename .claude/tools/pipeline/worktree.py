@@ -619,6 +619,19 @@ def dirty_report(a_dir, stage=None):
     return f"blocked: uncommitted changes in {a_dir}: {shown}. Commit or drop them (a hung agent may have left them), or rerun with --allow-dirty"
 
 
+def _regen_docs_index(r, w):
+    """Regenerate the docs index of job worktree W (repo R's `docs_dir`) before the commit, so a stale INDEX.md ships with the task. Only when the repo keeps an INDEX.md; a failure is logged and the commit goes on."""
+    docs = str(project(r).get("docs_dir") or "").strip("/")
+    if not docs or not os.path.isfile(os.path.join(w, docs, "INDEX.md")):
+        return
+    try:
+        res = util.run_py("docs_index.py", "--root", w, "--docs-dir", docs, timeout=util.script_timeout())
+        if res.returncode != 0:
+            raise RuntimeError(f"docs_index.py exit {res.returncode}: {res.stderr.strip()[:200]}")
+    except (OSError, subprocess.SubprocessError, RuntimeError) as ex:
+        util.swallowed("worktree._regen_docs_index", ex)
+
+
 def commit(a_dir, stage, task, subject):
     """Commit every change of the task's worktrees (one commit per repo, nested first) with `<type>(<area>): <what>`. -> {rel: short sha | None (nothing to commit)}."""
     if not subject_ok(subject):
@@ -626,6 +639,7 @@ def commit(a_dir, stage, task, subject):
     _cfg, _branch, parts = _parts(a_dir, stage, task)
     out: dict = {}
     for rel, r, w in parts:
+        _regen_docs_index(r, w)
         inner = nested_repos(r)
         if not _dirty(w, r, inner):
             out[rel or "."] = None
