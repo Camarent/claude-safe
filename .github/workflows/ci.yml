@@ -23,6 +23,8 @@ jobs:
           git config --global init.defaultBranch master
       - run: scripts/dev.sh sync
       - run: scripts/dev.sh check
+      # Stale docs index check (`docs_index.py --fresh`) is not a step here: this repo has no docs/INDEX.md.
+      # Add `- run: python3 -I .claude/tools/docs_index.py --root . --fresh` once docs/INDEX.md is committed.
       - run: scripts/dev.sh cov
       - run: test -z "$(scripts/dev.sh dead)"
       - run: scripts/dev.sh sec
