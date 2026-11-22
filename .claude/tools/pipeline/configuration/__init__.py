@@ -5,6 +5,12 @@ A package: each submodule holds one topic and this file re-exports every name, s
 
 import subprocess  # noqa: F401  (tests patch configuration.subprocess)
 
+from .cleanup import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    ACCEPTANCE_TMP_PREFIX,
+    CLEANUP_DRY_RUN_FLAG,
+    CLEANUP_TMP_MIN_AGE_S,
+    CLEANUP_WT_DIR,
+)
 from .defaults import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     AUDITOR_ESCALATE_MAX_TURNS,
     AUDITOR_MAX_TURNS,
