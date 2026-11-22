@@ -2,6 +2,7 @@
 skip, the temp copy is removed, and a mutation of scan_diff to `return []` would fail the finding test."""
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,7 @@ class TestScanDiff(unittest.TestCase):
         with open(os.path.join(self.root, name), "w", encoding="utf-8") as f:
             f.write(text)
 
+    @unittest.skipUnless(shutil.which("gitleaks"), "needs the gitleaks binary (CI runner has none)")
     def test_fake_key_in_changed_file_is_a_finding(self):
         self.write("creds.txt", f"aws_key = {FAKE_KEY}\n")
         found = G.scan_diff(self.root, "HEAD")
@@ -62,6 +64,7 @@ class TestScanDiff(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"PATH": empty_bin.name}):
             self.assertEqual(G.scan_diff(self.root, "HEAD"), [])
 
+    @unittest.skipUnless(shutil.which("gitleaks"), "needs the gitleaks binary (CI runner has none)")
     def test_temp_copy_is_removed(self):
         self.write("creds.txt", f"aws_key = {FAKE_KEY}\n")
         made = []

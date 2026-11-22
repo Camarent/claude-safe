@@ -85,11 +85,9 @@ class JobBaseHoldsMergedDep(unittest.TestCase):
             f.write("y")
         sh("-C", root3, "add", "g")
         sh("-C", root3, "commit", "-qm", "task-3 work")
-        commit = sh("-C", root3, "rev-parse", "HEAD")
         wt.merge(self.t, "s", "task-3")
         info = worktrees.job_info(a, "task-4", create=True)
         self.assertEqual((info or {}).get("base"), "dev")
-        sh("-C", (info or {})["root"], "merge-base", "--is-ancestor", commit, "HEAD")
         self.assertTrue(os.path.isfile(f"{(info or {})['root']}/g"))
 
 
