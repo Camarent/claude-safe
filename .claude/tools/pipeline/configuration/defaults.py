@@ -103,3 +103,10 @@ GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
 GATE_COLLISION_RERUNS_KEY = "gate_collision_reruns"  # the PROJECT_DEFAULTS key above
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above
+SECRET_SCAN_CONFIG_KEY = (
+    "secret_scan_config"  # pipeline.json key, not a PROJECT_DEFAULTS key: a gitleaks config path (relative to the repo); unset = gitleaks' own rules
+)
+GITLEAKS_TOOL = "gitleaks"  # the secret scanner binary (gate_secrets.scan_diff)
+GITLEAKS_CLEAN_RC = 0  # gitleaks exit code: no leak found
+GITLEAKS_LEAKS_RC = 1  # gitleaks exit code: at least one leak found
+SECRET_SCAN_TIMEOUT_S = 120  # seconds for one gitleaks run over the task diff

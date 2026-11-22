@@ -12,6 +12,9 @@ from .defaults import (  # noqa: F401  (re-export: the facade keeps every name i
     GATE_BASE_CHECK_KEY,
     GATE_COLLISION_RERUNS_KEY,
     GATE_FLAKE_RERUN_KEY,
+    GITLEAKS_CLEAN_RC,
+    GITLEAKS_LEAKS_RC,
+    GITLEAKS_TOOL,
     PREFLIGHT_KEY,
     PROJECT_DEFAULTS,
     REMIT_MATCH_CHARS,
@@ -19,6 +22,8 @@ from .defaults import (  # noqa: F401  (re-export: the facade keeps every name i
     SEC_AUDIT_PATHS,
     SEC_AUDIT_WORDS,
     SEC_CODE_EXTS,
+    SECRET_SCAN_CONFIG_KEY,
+    SECRET_SCAN_TIMEOUT_S,
 )
 from .env import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     ADD_DIR_AGENTS,
