@@ -154,6 +154,10 @@ vulture, bandit, complexity gate, gitleaks over the full history) is green. Befo
 checks locally with `scripts/dev.sh` (`check`, `cov`, `dead`, `sec`, `ccn`); `scripts/release.sh` adds the
 container suite, which CI does not run (it needs the `claude-safe:rust` image).
 
+Deferred (decided, not done):
+- Devs using `lp nav` more: the audit finds file rereads in 2 of 303 sessions, too little value; revisit after phases 1 to 3.
+- Removing the local-model gate judge step when the model is down: it costs 0 s and only adds log noise; not worth a code path.
+
 ## Setting up a new machine
 
 1. Clone the repo, then `scripts/dev.sh sync` (needs `uv` and a system Python 3.11+).
