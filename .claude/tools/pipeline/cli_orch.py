@@ -546,7 +546,7 @@ def cmd_reset(a):
     warn = _unmerged_prereqs(a, read_jsonl(log)) if a.cmd == "retry" else []  # before the retry writes anything
     if a.cmd == "retry":
         _refresh_job(a, log)
-    ev = {"ev": a.cmd, "task": a.step, "note": a.note, **({"from": "review"} if getattr(a, "from_step", "") == "review" else {})}
+    ev = {"ev": a.cmd, "task": a.step, "note": a.note, **({"from": "review", "role": "reviewer"} if getattr(a, "from_step", "") == "review" else {})}
     if a.cmd == "retry":
         _reset_fix_chain(log, a)
     append_event(log, ev)

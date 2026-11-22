@@ -695,7 +695,7 @@ def _next_webtest(a, task, mine, rid):
         return d
     if last["ev"] == EV_DISPATCH:
         return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
-    if last["role"] == WEB_TESTER:
+    if last.get("role") == WEB_TESTER:
         if last["verdict"] != PASS:
             return {
                 "action": "ask_main",
@@ -727,11 +727,11 @@ def _next_step(a, task, mine, rid):
         return _disp(a, task, rid, "dev", task["owner_sonnet"])
     if last["ev"] == EV_DISPATCH:
         return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
-    if last["role"] == ARCHITECT:
+    if last.get("role") == ARCHITECT:
         return _after_plan_fix(a, task, mine, rid, s, last)
-    if last["role"] == "dev":
+    if last.get("role") == "dev":
         return _after_dev(a, task, mine, rid, s, last)
-    if last["role"] == "script":
+    if last.get("role") == "script":
         return _after_script(a, task, mine, rid, s, last)
     return _after_reviewer(a, task, mine, rid, s, last)  # last was a reviewer report
 
