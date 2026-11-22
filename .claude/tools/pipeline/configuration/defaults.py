@@ -74,6 +74,7 @@ PROJECT_DEFAULTS: dict = {
     "webtest_requires_tools": ["mcp__chrome-devtools"],  # tool-name prefixes the browser check needs; [] = never skip it
     "webtest_build": None,  # optional build command: the web-tester runs it first on the stage branch checkout and serves only that fresh build, naming the commit in its report; None = brief unchanged
     "docs_dir": "docs",  # folder below the repo that prepare-repo names in a `## Docs` section of CLAUDE.md (written only when the folder exists)
+    "manual_review_docs": [],  # doc paths (repo-relative) the acceptance reviewer reads with the diff to judge each `eyes:` item; [] = none listed
     "acceptance_prep": [],  # setup commands (npm ci, a venv, a build) the acceptance step runs first in its fresh worktree, before the checklist commands; a failing one fails the step
     "worktree_setup": [],  # commands (venv, npm ci) run with sh -c in each NEW job worktree right after it is created, so a dev starts with a ready environment; a failing one removes the worktree and stops task creation; [] = none
     "worktree_setup_timeout": 900,  # seconds one worktree_setup command may run

@@ -4,6 +4,7 @@ The worktree is removed in a finally; the stage branch and the main checkout sta
 into acceptance.md as MANUAL and listed in the output for the lead."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,8 @@ from .configuration import (
     ACCEPTANCE_EYES_TAG,
     ACCEPTANCE_FILE,
     ACCEPTANCE_MANUAL,
+    ACCEPTANCE_REVIEW_AGENT,
+    ACCEPTANCE_REVIEW_FILE,
     ACCEPTANCE_TAIL_LINES,
     DONE,
     ENV_SCRIPT_TIMEOUT,
@@ -46,6 +49,46 @@ def qrun_runner(cmd, cwd, timeout):
     except (OSError, subprocess.TimeoutExpired) as e:
         return 127, f"cannot run: {e}"
     return r.returncode, (r.stdout + r.stderr).strip()
+
+
+PASS, UNKNOWN = "PASS", "UNKNOWN"  # verdicts of a MANUAL item (FAIL is imported from configuration)
+_MANUAL_VERDICT_RE = re.compile(r"^\s*(?:[-*]\s*)?MANUAL (\d+):\s*(PASS|FAIL|UNKNOWN)\b", re.MULTILINE)
+
+
+def manual_review_brief(manual, branch, base, docs):
+    """-> reviewer brief for the `eyes:` texts MANUAL: check each against the diff `base...branch` and the DOCS, one `MANUAL n: PASS|FAIL|UNKNOWN` line per item."""
+    refs = ", ".join(f"`{d}`" for d in docs) or "none listed"
+    items = "\n".join(f"{n}. {text}" for n, text in enumerate(manual, 1))
+    return (
+        f"Check each manual item below against the code. Read the diff: `git diff {base}...{branch}`. Read these docs: {refs}. "
+        "You cannot run the app: judge from the code, with file:line evidence.\n"
+        "Answer with exactly one line per item, in this form and no other: `MANUAL n: PASS|FAIL|UNKNOWN - <evidence>`. "
+        "PASS = the code shows the item holds; FAIL = it does not; UNKNOWN = you cannot tell. A missing line counts as UNKNOWN and blocks.\n"
+        f"Items:\n{items}\n"
+    )
+
+
+def manual_verdicts(reply, n):
+    """-> the n verdicts of the reviewer REPLY (`MANUAL i: PASS|FAIL|UNKNOWN`, first line per item wins); an item with no line is UNKNOWN."""
+    found: dict[int, str] = {}
+    for m in _MANUAL_VERDICT_RE.finditer(reply):
+        found.setdefault(int(m.group(1)), m.group(2))
+    return [found.get(i, UNKNOWN) for i in range(1, n + 1)]
+
+
+def claude_reviewer(workspace, stage):
+    """-> reviewer(brief) -> reply text: runs the reviewer agent in WORKSPACE; it writes its verdict lines to .work/<stage>/manual-review.md, which is the reply."""
+    from . import claude
+
+    path = os.path.join(workspace, WORK_DIR, stage, ACCEPTANCE_REVIEW_FILE)
+
+    def reviewer(brief):
+        write_text(path, "")
+        prompt = f"{brief}\nWrite the answer lines to `{os.path.relpath(path, workspace)}`."
+        claude.session(claude.claude_args(ACCEPTANCE_REVIEW_AGENT, None, None, prompt, workspace), workspace, None)
+        return read_text(path)
+
+    return reviewer
 
 
 def _line(status, rc, cmd, text):
@@ -100,8 +143,9 @@ def _drop_worktree(repo, path, nested=()):
     gitx.try_out(repo, "worktree", "prune")
 
 
-def run(workspace, stage, name, runner=qrun_runner):
-    """-> (verdict, text). Writes .work/<stage>/acceptance.md; DONE when every cmd passed (no cmd = DONE), else FAIL."""
+def run(workspace, stage, name, runner=qrun_runner, reviewer=None):
+    """-> (verdict, text). Writes .work/<stage>/acceptance.md; DONE when every cmd passed (no cmd = DONE), else FAIL.
+    REVIEWER(brief) -> reply text dispatches the reviewer for the MANUAL items: any item not PASS (UNKNOWN when its line is missing) makes the step FAIL. No reviewer: MANUAL items stay for the lead."""
     cfg = project(workspace)
     repo, branch = repo_dir(workspace, cfg), work_branch(cfg, name)
     plan = os.path.join(workspace, WORK_DIR, str(stage).split("/phases/")[0], PLAN_FILE)
@@ -120,9 +164,23 @@ def run(workspace, stage, name, runner=qrun_runner):
         lines, bad = run_items(prep + items, wt, runner, ACCEPTANCE_CMD_TIMEOUT_S)
     finally:
         _drop_worktree(repo, wt, nested)
-    verdict = FAIL if bad else DONE
+    manual_items = [text for tag, text in items if tag == ACCEPTANCE_EYES_TAG]
+    not_pass = 0
+    if reviewer and manual_items:
+        base = cfg["branch_release"]
+        reply = reviewer(manual_review_brief(manual_items, branch, base, cfg.get("manual_review_docs") or []))
+        verdicts = manual_verdicts(reply, len(manual_items))
+        not_pass = sum(v != PASS for v in verdicts)
+        review = iter(f"- {ACCEPTANCE_MANUAL} {i}: {v}: {text}" for i, (v, text) in enumerate(zip(verdicts, manual_items, strict=True), 1))
+        lines = [next(review) if ln.startswith(f"- {ACCEPTANCE_MANUAL}:") else ln for ln in lines]
+    verdict = FAIL if bad or not_pass else DONE
     body = "\n".join(lines)
     write_text(os.path.join(workspace, WORK_DIR, stage, ACCEPTANCE_FILE), f"# Acceptance of `{branch}`: {verdict}\n\n{body}\n")
     manual = [ln for ln in lines if ln.startswith(f"- {ACCEPTANCE_MANUAL}")]
-    head = f"{bad} of {len(items) - len(manual)} commands failed" if bad else "all commands passed"
+    if bad:
+        head = f"{bad} of {len(items) - len(manual)} commands failed"
+    elif not_pass:
+        head = f"{not_pass} of {len(manual)} {ACCEPTANCE_MANUAL} item(s) not PASS"
+    else:
+        head = "all commands passed"
     return verdict, f"{head}; {len(manual)} {ACCEPTANCE_MANUAL} item(s) for the lead\n{body}"

@@ -187,6 +187,8 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     ACCEPTANCE_MANUAL,
     ACCEPTANCE_PROSE_OPENERS,
     ACCEPTANCE_PROSE_WORDS,
+    ACCEPTANCE_REVIEW_AGENT,
+    ACCEPTANCE_REVIEW_FILE,
     ACCEPTANCE_STEP,
     ACCEPTANCE_TAIL_LINES,
     ADD_REPO_CMD,
