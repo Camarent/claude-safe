@@ -34,7 +34,9 @@ from pathlib import Path
 IMPORT_FAILURE = ""  # set when the pipeline package does not import: verdict() then denies every command (fail closed)
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import denial_log
     from pipeline.configuration import (
+        CLEANUP_WT_DIR,
         QRUN_CHAIN_READ_ONLY,
         QRUN_PATTERN,
         SED_PRINT_SCRIPT,
@@ -217,8 +219,14 @@ def in_cwd(directory):
     return not UNSAFE_DIR.search(directory) and os.path.realpath(directory) == os.path.realpath(os.getcwd())
 
 
+def git_suggestion(seg, directory):
+    """-> the git command of SEG as `git -C DIRECTORY ...`, quotes kept (the real segment text); `<args>` when it has none."""
+    new = insert_git_c(seg.strip(), directory) or f"git -C {directory}"
+    return new if len(git_words(seg)) > 1 else f"{new} <args>"
+
+
 def cd_git_why(segs):
-    """-> deny reason for a `cd <dir>` segment followed by a git command in the same command line, else ''."""
+    """-> deny reason for a `cd <dir>` segment followed by a git command without its own `-C` in the same command line, else ''."""
     cd_dir = ""
     for seg in segs:
         words = seg.split()
@@ -226,10 +234,13 @@ def cd_git_why(segs):
             cd_dir = words[1] if len(words) > 1 else "<dir>"
             if in_cwd(cd_dir):
                 cd_dir = ""
-        elif cd_dir and git_words(seg):
+        elif cd_dir and git_words(seg) and git_words(seg)[1:2] != ["-C"]:
+            in_wt = CLEANUP_WT_DIR in Path(os.getcwd()).parts  # the hook's cwd is a job worktree
             return (
                 f"No `cd {cd_dir}` before git: Claude Code denies a cd before a version-control command (untrusted hooks). "
-                f"Run `git -C {cd_dir} {' '.join(git_words(seg)[1:]) or '<args>'}` instead, or plain `git <args>` (your cwd is already the job worktree). `-c safe.directory` is not needed."
+                f"Run `{git_suggestion(seg, cd_dir)}` instead"
+                + (", or plain `git <args>` (your cwd is already the job worktree)" if in_wt else "")
+                + ". `-c safe.directory` is not needed."
             )
     return ""
 
@@ -369,20 +380,32 @@ def segments_why(segs):
     return ""
 
 
-def verdict(cmd):
-    """-> deny reason or ''."""
+def verdict_rule(cmd):
+    """-> (rule, deny reason) or ('', '') when allowed; the rule names the check that denied (denial log)."""
     if IMPORT_FAILURE:
-        return IMPORT_FAILURE
+        return "import", IMPORT_FAILURE
     for body in SHELL_C.findall(strip_heredocs(cmd)):
-        why = verdict(body[1])
+        rule, why = verdict_rule(body[1])
         if why:
-            return why
+            return rule, why
     text = strip_quotes(cmd)
     segs = split_commands(text)
-    why = qrun_why(text) or cd_git_why(segs) or servectl_why(segs) or sed_why(segs)
-    if why:
-        return why
-    return segments_why(segs)
+    for rule, why in (
+        ("qrun", lambda: qrun_why(text)),
+        ("cd_git", lambda: cd_git_why(segs)),
+        ("servectl", lambda: servectl_why(segs)),
+        ("sed", lambda: sed_why(segs)),
+    ):
+        reason = why()
+        if reason:
+            return rule, reason
+    reason = segments_why(segs)
+    return ("segments", reason) if reason else ("", "")
+
+
+def verdict(cmd):
+    """-> deny reason or ''."""
+    return verdict_rule(cmd)[1]
 
 
 def git_cd_reason(why):
@@ -397,7 +420,7 @@ def main():
     except (ValueError, AttributeError):
         return 0
     cmd = cmd if isinstance(cmd, str) else ""
-    why = verdict(cmd)
+    rule, why = verdict_rule(cmd)
     if not why or git_cd_reason(why):  # a cd into the cwd is allowed by verdict but still rewritten: Claude Code denies any cd before git
         new = rewrite_cd_git(cmd)
         if new and not verdict(new):
@@ -406,6 +429,8 @@ def main():
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": ti}}))
             return 0
     if why:
+        if not IMPORT_FAILURE:  # the log module imports the pipeline package too: no log when that failed
+            denial_log.append(rule, cmd, os.getcwd())
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why}}))
     return 0
 
