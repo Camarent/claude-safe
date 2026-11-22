@@ -1,0 +1,12 @@
+"""Named settings of the stage's tuning knobs: error patterns that mark an environment failure, repair and rerun caps, gate skip paths, slice sizes, rework and review limits, and the names of the state files the stage writes. One owner: other modules import these from pipeline.configuration."""
+
+ENV_ERROR_PATTERN = r"No module named|ModuleNotFoundError|no config path|command not found"  # regex: a failing output that names a missing environment piece (the repair step may fix it)
+ENV_REPAIR_MAX = 1  # how many environment repair attempts a failing step gets before it is reported
+STALE_RERUN_MAX = 2  # how many times a stale failing report is rerun before the lead decides
+GATE_SKIP_PATHS = ("*.md",)  # changed-file globs that never trigger a task gate (docs only)
+LEAD_SLICE_CHARS_WITH_PATTERN = 3000  # chars of a brief the lead reads when a pattern file is named
+HAIKU_REWORK_TRIES = 1  # rework rounds a Haiku dev gets before the task escalates
+REVIEW_DOCS_MAX_TURNS = 12  # `--max-turns` of a docs review session
+DENIAL_LOG_NAME = "denials.log"  # file in the stage folder that collects permission denials of headless sessions
+PGID_FILE_NAME = "wave.pgid"  # file in the stage folder that holds the process group id of a running wave driver
+MERGE_RESIDUE_FILE = "merge-residue.txt"  # file in the stage folder that lists merge leftovers a later merge must clean up

@@ -484,6 +484,18 @@ from .serve import (  # noqa: F401  (re-export: the facade keeps every name impo
     SERVE_TTL_S,
     SERVE_WRAPPER,
 )
+from .tuning import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    DENIAL_LOG_NAME,
+    ENV_ERROR_PATTERN,
+    ENV_REPAIR_MAX,
+    GATE_SKIP_PATHS,
+    HAIKU_REWORK_TRIES,
+    LEAD_SLICE_CHARS_WITH_PATTERN,
+    MERGE_RESIDUE_FILE,
+    PGID_FILE_NAME,
+    REVIEW_DOCS_MAX_TURNS,
+    STALE_RERUN_MAX,
+)
 from .verdicts import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     ARCHITECT,
     AUDIT_ESCALATE_SUFFIX,
