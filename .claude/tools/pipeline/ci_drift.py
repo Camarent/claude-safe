@@ -68,7 +68,7 @@ def ci_run_lines(yml_text):
 
 
 def drift(project_dir, cfg):
-    """-> [warning]: CI commands missing from the gates (`&&` parts count). Never raises on config; `ci_drift: false` disables."""
+    """-> [problem]: CI commands missing from the gates (`&&` parts count). Never raises on config; `ci_drift: false` disables. `ci_drift_ignore` lists CI-only commands (setup, CI-only jobs) by exact text or leading words."""
     if cfg.get("ci_drift") is False:
         return []
     files = sorted(glob.glob(os.path.join(repo_dir(project_dir, cfg), ".github", "workflows", "*.yml")))
@@ -80,16 +80,34 @@ def drift(project_dir, cfg):
         gates = []
     if not gates:
         return ["no gates configured; CI drift not checked"]
+    return [f"CI runs `{n}` ({os.path.basename(f)}) but no gate covers it" for f, n in _uncovered(files, gates, cfg)]
+
+
+def _uncovered(files, gates, cfg):
+    """-> [(workflow file, command)] of the CI run lines in FILES that no gate in GATES covers and `ci_drift_ignore` does not name."""
+    ignore = [_norm(i) for i in cfg.get("ci_drift_ignore", [])]
     known = set()
     for g in gates:
         known.add(_norm(g["cmd"]))
         known.update(_norm(p) for p in g["cmd"].split("&&") if p.strip())
-    warns = []
+    out = []
     for f in files:
         with open(f, encoding="utf-8") as fh:
             for cmd in ci_run_lines(fh.read()):
                 n = _norm(cmd)
                 if n.startswith("echo ") or n in SETUP_ONLY or n in known or all(_norm(q) in known for q in n.split("&&")):
                     continue
-                warns.append(f"CI runs `{n}` ({os.path.basename(f)}) but no gate covers it")
-    return warns
+                if any(n == i or n.startswith(i + " ") for i in ignore):
+                    continue
+                out.append((f, n))
+    return out
+
+
+def ci_commands(repo, cfg):
+    """-> [command] the CI workflows of REPO run that no `gates` entry covers and `ci_drift_ignore` does not name (the lines pr-ready runs beyond the gates). Same reading as drift()."""
+    files = sorted(glob.glob(os.path.join(repo, ".github", "workflows", "*.yml")))
+    out = []
+    for _, n in _uncovered(files, all_gates_of(cfg), cfg):
+        if n not in out:
+            out.append(n)
+    return out

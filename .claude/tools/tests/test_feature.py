@@ -199,6 +199,18 @@ class FeatureDriver(unittest.TestCase):
         self.assertIn("done_when failed", out)
         self.assertTrue(os.path.exists(os.path.join(self.d, ".work", "F", "BLOCKED.md")))
 
+    def test_manual_done_when_pauses_the_lead_and_is_not_run_as_a_shell_command(self):
+        self.plan("01-a")
+        phases = pf.read_phases(cli_wave.argparse.Namespace(dir=self.d, feature="F"))
+        phases[0]["done_when"] = "MANUAL: open the dashboard"
+        pf.write_phases(cli_wave.argparse.Namespace(dir=self.d, feature="F"), phases)
+        rc, out = self.run_feature()
+        self.assertEqual(rc, 4)
+        self.assertEqual(self.status()[0], "todo")
+        self.assertIn("manual check for the lead", out)
+        self.assertIn("open the dashboard", out)
+        self.assertNotIn("done_when failed", out)
+
     def test_planning_problems_block_without_running_the_stage(self):
         rc, out = self.run_feature(plan_problems=["task-1: bad"])
         self.assertEqual(rc, 4)

@@ -10,6 +10,7 @@ import subprocess
 from . import gitx
 from .configuration import (
     ACCEPTANCE_CMD_TAG,
+    ACCEPTANCE_MANUAL,
     ACCEPTANCE_PROSE_OPENERS,
     ACCEPTANCE_PROSE_WORDS,
     AFFECTED_CODE_EXTS,
@@ -450,13 +451,19 @@ ACCEPT_ENV_RE = re.compile(r"^[A-Za-z_]\w*=")
 ACCEPT_CD_RE = re.compile(r"(?:^|[;&|]\s*)cd(?:\s|$)")
 
 
-def _reads_as_prose(text):
+def reads_as_prose(text):
     """True when TEXT is a sentence, not a command, judged from the words alone (never from this host's PATH, so a plan checks the same everywhere): two or more sentence words, a sentence word or opener as the first word, or a full stop at the end. A word that is an option, a path, an assignment or holds a quote or shell character means a command."""
     words = text.split()
     if len(words) < 2 or any(w.startswith("-") or any(c in w for c in "/=$`|<>;&('\"") for w in words):
         return False
     low = [w.lower() for w in words]
     return text.endswith(".") or low[0] in ACCEPTANCE_PROSE_OPENERS or sum(w in ACCEPTANCE_PROSE_WORDS for w in low) >= 2
+
+
+def manual_tag(text):
+    """-> the text after `MANUAL:` when `done_when` TEXT starts with that tag (a check a person runs, not a shell command), else None. An empty rest is a tag with no check."""
+    head, sep, rest = text.partition(":")
+    return rest.strip() if sep and head.strip() == ACCEPTANCE_MANUAL else None
 
 
 PATH_TEST_FLAGS = ("-f", "-e", "-s", "-d")
@@ -515,7 +522,7 @@ def _accept_cmd_problems(text, repo):
         probs.append("chains with `&&`")
     if main_checkout_problems(text, repo):
         probs.append("names an absolute main-checkout path")
-    if _reads_as_prose(text):
+    if reads_as_prose(text):
         probs.append("reads as a sentence, not a command (write the command that proves it, or use `eyes:`)")
     if _only_tests_path(text):
         probs.append("only tests that a path exists (write the command that runs the behaviour, or use `eyes:`)")

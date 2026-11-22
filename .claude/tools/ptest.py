@@ -166,16 +166,32 @@ def main_branch_state():
     return branch, sorted(names)
 
 
-def warn_branch_changes(before, after):
-    """Warn about a main-checkout branch switch or new branch during the run (a test left the checkout on another branch). -> True when the state changed."""
-    if before == after:
+def warn_branch_changes(before, after, files=()):
+    """Warn about a main-checkout branch switch or new branch during the run (a test left the checkout on another branch). `files`: the test files whose own run saw the change. -> True when the state changed or a file saw it."""
+    if before == after and not files:
         return False
     (old_branch, old_names), (new_branch, new_names) = before, after
     new = sorted(set(new_names) - set(old_names))
     print(f"ptest: ERROR: main checkout branch changed during this run: {old_branch or '(none)'} -> {new_branch or '(none)'}")
+    if files:
+        print(f"  seen during test files: {', '.join(files)}")
     if new:
         print(f"  new branches: {', '.join(new)}")
     return True
+
+
+def run_guarded(tests_dir, name, cov_dir=None):
+    """run_file plus the main checkout branch state before and after it -> (run_file result, name when the branch state moved during it, else None)."""
+    before = main_branch_state()
+    res = run_file(tests_dir, name, cov_dir)
+    return res, (name if before != main_branch_state() else None)
+
+
+def run_all(tests_dir, names, cov_dir, jobs):
+    """-> (results sorted, names whose run window saw a main checkout branch switch: parallel runs make every overlapping file one)."""
+    with ThreadPoolExecutor(jobs) as pool:
+        guarded = list(pool.map(lambda n: run_guarded(tests_dir, n, cov_dir), names))
+    return sorted((r for r, _ in guarded), reverse=True), [n for _, n in guarded if n]
 
 
 def summary_line(names, bad, skipped, elapsed):
@@ -201,15 +217,14 @@ def main(argv=None):
     cov_dir = tempfile.mkdtemp(prefix="ptest-cov-") if a.cov else None
     if cov_dir:
         cov_rc(cov_dir)
-    with ThreadPoolExecutor(a.jobs) as pool:
-        res = sorted(pool.map(lambda n: run_file(a.dir, n, cov_dir), names), reverse=True)
+    res, switched = run_all(a.dir, names, cov_dir, a.jobs)
     print_slowest(res)
     bad = [r for r in res if r[1]]
     print_failures(bad)
     skipped = count_skipped(res)
     print(summary_line(names, bad, skipped, time.time() - start))
     warn_new_claude_changes(claude_before, main_claude_status())  # warning only: never changes the exit code
-    branch_moved = warn_branch_changes(branch_before, main_branch_state())  # a switched branch fails the run: it blocks merge-w3
+    branch_moved = warn_branch_changes(branch_before, main_branch_state(), switched)  # a switched branch fails the run: it blocks merge-w3
     if skipped and os.environ.get(ENV_FAIL_ON_SKIP) == "1":
         print(f"ptest: {skipped} skipped tests fail the run ({ENV_FAIL_ON_SKIP}=1)")
         bad = bad or [None]

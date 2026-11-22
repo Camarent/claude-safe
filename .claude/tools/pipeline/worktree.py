@@ -13,6 +13,7 @@ import time
 from . import commit_subject, gitx, util
 from .configuration import (
     EV_FORCED_REMOVE,
+    EV_MAIN_RESTORED,
     FORCED_WHY_MAX,
     GIT_LONG_TIMEOUT_S,
     JOB_BRANCH_PREFIX,
@@ -129,8 +130,18 @@ def _job_worktrees(info):
     return {rel: path for rel, path in info["repos"].items() if not os.path.islink(path)}
 
 
+class RefreshConflict(RuntimeError):
+    """A rebase that failed and was aborted. `files`: the unmerged paths (may be empty on a timeout), `path`: the job worktree, `base`: the branch the rebase targeted."""
+
+    def __init__(self, msg, files, path, base):
+        super().__init__(msg)
+        self.files = files
+        self.path = path
+        self.base = base
+
+
 def refresh(a_dir, stage, task, discard=False):
-    """Before a retry: rebase the job branch of every repo in the manifest onto its recorded base (the stage branch), so the retry sees merges that landed after the first dispatch. `discard`: first drop uncommitted files (a retry after BLOCKED starts clean). -> {"rebased": [...], "discarded": [...]}; RuntimeError (rebase aborted, nothing resolved) on a conflict."""
+    """Before a retry: rebase the job branch of every repo in the manifest onto its recorded base (the stage branch), so the retry sees merges that landed after the first dispatch. `discard`: first drop uncommitted files (a retry after BLOCKED starts clean). -> {"rebased": [...], "discarded": [...]}; RefreshConflict (a RuntimeError; rebase aborted, nothing resolved) on a conflict."""
     info = live_job(a_dir, stage, task)
     res: dict[str, list] = {"rebased": [], "discarded": []}
     if not info:
@@ -159,9 +170,10 @@ def refresh(a_dir, stage, task, discard=False):
         except subprocess.TimeoutExpired:  # git may still hold the rebase state: abort it below, then report
             failed, why = True, f"timed out after {GIT_LONG_TIMEOUT_S} s"
         if failed:
+            files = git(path, "diff", "--name-only", "--diff-filter=U", check=False).split()  # the unmerged paths, read before the abort clears them
             with contextlib.suppress(subprocess.SubprocessError):
                 gitx.run(path, "rebase", "--abort", timeout=GIT_LONG_TIMEOUT_S)
-            raise RuntimeError(f"rebase of {info['branch']} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}")
+            raise RefreshConflict(f"rebase of {info['branch']} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}", files, path, base)
         res["rebased"].append(rel)
     return res
 
@@ -752,7 +764,7 @@ def merge(a_dir, stage, task):
     want = work_branch(cfg, stage)
     if marked_merged(a_dir, stage, task):
         return {"skipped": "marked merged"}
-    _check_merge_preconditions(parts, want)  # everything first so a refusal leaves every repo as it was
+    _check_merge_preconditions(a_dir, stage, parts, want)  # everything first so a refusal leaves every repo as it was
     out = {}
     for rel, r, _w in parts:
         if not _unmerged(r, branch, want):
@@ -767,18 +779,26 @@ def merge(a_dir, stage, task):
     return out
 
 
-def _check_merge_preconditions(parts, want):
-    for _rel, r, w in parts:
+def _check_merge_preconditions(a_dir, stage, parts, want):
+    """Refuse on uncommitted work (job worktree or main checkout). A main checkout on another branch is switched back to `want` and logged once (`main_restored`)."""
+    switch = []
+    for rel, r, w in parts:
         if _dirty(w, r):
             raise Blocked(f"uncommitted changes in job worktree {w}: the dev must run wt.py commit")
-        if git(r, "branch", "--show-current", check=False) != want:
-            raise Blocked(f"{r} is not on `{want}`")
         dirty = _dirty(r, r)
         if dirty:
             shown = ", ".join(ln.strip() for ln in dirty[:8]) + (f", +{len(dirty) - 8} more" if len(dirty) > 8 else "")
             raise Blocked(
                 f"main checkout {r} has uncommitted changes: {shown}. Commit them, or park them with `git -C {r} stash -u` and `git -C {r} stash pop` after the merge"
             )
+        cur = git(r, "branch", "--show-current", check=False)
+        if cur != want:
+            switch.append((rel, r, cur))
+    for rel, r, cur in switch:
+        co = gitx.run(r, "checkout", "-q", want, timeout=GIT_LONG_TIMEOUT_S)
+        if co.returncode:
+            raise Blocked(f"{r} is on `{cur}` and cannot switch to `{want}`: {(co.stdout + co.stderr).strip()[-300:]}")
+        util.append_event(os.path.join(a_dir, WORK_DIR, stage, ORCH_LOG), {"ev": EV_MAIN_RESTORED, "repo": rel or ".", "from": cur, "to": want})
 
 
 def _commit_squash(r, branch):

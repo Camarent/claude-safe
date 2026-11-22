@@ -5,6 +5,17 @@ A package: each submodule holds one topic and this file re-exports every name, s
 
 import subprocess  # noqa: F401  (tests patch configuration.subprocess)
 
+from .ci_poll import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    CHECKS_TIMEOUT_S,
+    CI_POLL_S,
+    GH_CHECKS_PENDING_RC,
+)
+from .cleanup import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    ACCEPTANCE_TMP_PREFIX,
+    CLEANUP_DRY_RUN_FLAG,
+    CLEANUP_TMP_MIN_AGE_S,
+    CLEANUP_WT_DIR,
+)
 from .defaults import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     AUDITOR_ESCALATE_MAX_TURNS,
     AUDITOR_MAX_TURNS,
@@ -181,6 +192,8 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     ACCEPTANCE_MANUAL,
     ACCEPTANCE_PROSE_OPENERS,
     ACCEPTANCE_PROSE_WORDS,
+    ACCEPTANCE_REVIEW_AGENT,
+    ACCEPTANCE_REVIEW_FILE,
     ACCEPTANCE_STEP,
     ACCEPTANCE_TAIL_LINES,
     ADD_REPO_CMD,
@@ -191,10 +204,8 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     BASE_WHY_BRANCH,
     BASE_WHY_DIRTY,
     CHECKOUT_LOCK,
-    CHECKS_TIMEOUT_S,
     CI_DENIED_MSG,
     CI_EMPTY_POLLS,
-    CI_POLL_S,
     CI_RUNS_LIMIT,
     CLAUDE_FILE,
     CLEAR_WHY_BAD_RC,
@@ -212,6 +223,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     EV_DISPATCH,
     EV_FORCED_REMOVE,
     EV_GATE_CMD,
+    EV_MAIN_RESTORED,
     EV_REPORT,
     EV_RETRY,
     EV_SESSION,

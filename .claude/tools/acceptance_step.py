@@ -10,7 +10,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
-from pipeline.acceptance import run
+from pipeline.acceptance import claude_reviewer, run
 from pipeline.util import add_common_args
 
 
@@ -19,7 +19,8 @@ def main(argv=None):
     add_common_args(ap, stage=True)
     ap.add_argument("--name", required=True)
     a = ap.parse_args(argv)
-    v, text = run(os.path.abspath(a.dir), a.stage, a.name)
+    d = os.path.abspath(a.dir)
+    v, text = run(d, a.stage, a.name, reviewer=claude_reviewer(d, a.stage))
     print(f"VERDICT: {v}\n{text}")
     return 0
 

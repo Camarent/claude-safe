@@ -27,9 +27,20 @@ SYMBOL = "helper"
 SOCK_PATH_MAX = 100  # AF_UNIX sun_path is 108 bytes; keep a margin below it
 
 
+def skip_reason(tool):
+    """The reason a class skips when `tool` is missing: it names the server or binary."""
+    return f"container only: {tool} not installed or not runnable"
+
+
 def need(tool):
     """Skip a test on a host without the language server or runtime the container image carries."""
-    return unittest.skipUnless(_usable(tool), f"container only: {tool} not installed or not runnable")
+    skip = unittest.skipUnless(_usable(tool), skip_reason(tool))
+
+    def mark(cls):
+        cls.SERVER = tool  # recorded so a test can check the decorator names the right server
+        return skip(cls)
+
+    return mark
 
 
 def _usable(tool):
@@ -214,7 +225,8 @@ class Base(_Mixin):
     def test_recovers_after_server_kills(self):
         want = self.nav("def")
         for pid in self.srv.lang_pids():
-            os.kill(pid, signal.SIGKILL)
+            with contextlib.suppress(ProcessLookupError):  # a short-lived helper may exit before the kill
+                os.kill(pid, signal.SIGKILL)
         self.assertEqual(self.nav("def"), want)
         os.kill(self.srv.p.pid, signal.SIGKILL)
         self.srv.p.wait(10)
@@ -296,6 +308,32 @@ class RustE2E(Base, unittest.TestCase):
             "Cargo.toml": '[package]\nname = "t"\nversion = "0.1.0"\nedition = "2021"\n',
             "src/main.rs": f"fn {SYMBOL}() -> i32 {{ 1 }}\nfn main() {{ {SYMBOL}(); }}\n",
         }
+
+
+class SkipReasonTest(unittest.TestCase):
+    """Every skip of the language classes carries a non-empty reason naming its server or binary."""
+
+    def test_every_language_class_skip_reason_names_its_server(self):
+        expected = {PyE2E: "pyright-langserver", TsE2E: "tsc", CppE2E: "clangd", RustE2E: "rust-analyzer"}
+        for cls, tool in expected.items():
+            server = vars(cls)["SERVER"]  # set by need(); Base declares no SERVER
+            self.assertEqual(server, tool, cls.__name__)
+            if not getattr(cls, "__unittest_skip__", False):
+                continue  # server present on this host: the class runs, no skip reason to check
+            reason = getattr(cls, "__unittest_skip_why__", "")  # the reason unittest prints for this class
+            self.assertTrue(reason.strip(), cls.__name__)
+            self.assertIn(tool, reason)
+
+    def test_need_marks_missing_server_with_its_reason(self):
+        class Probe:
+            pass
+
+        missing = "no-such-language-server-xyz"
+        need(missing)(Probe)
+        self.assertTrue(getattr(Probe, "__unittest_skip__", False))
+        why = getattr(Probe, "__unittest_skip_why__", "")
+        self.assertEqual(why, skip_reason(missing))
+        self.assertIn(missing, why)
 
 
 if __name__ == "__main__":

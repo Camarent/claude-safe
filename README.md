@@ -158,6 +158,14 @@ Deferred (decided, not done):
 - Devs using `lp nav` more: the audit finds file rereads in 2 of 303 sessions, too little value; revisit after phases 1 to 3.
 - Removing the local-model gate judge step when the model is down: it costs 0 s and only adds log noise; not worth a code path.
 
+## Pipeline hardening notes
+
+Decisions of the pipeline-hardening stage, one section per problem: `docs/decisions.md`.
+
+- Sync `~/.claude` from one ref: `scripts/sync-claude-config.sh [REF]` (REF defaults to HEAD). It refuses while a wave driver runs, works in a detached worktree, and never passes `host_agents.py --apply`.
+- Retry without a new dev run: `orch.py retry --verify` runs the task's Test lines and Done checks on the existing job commit and writes the report. Red records nothing.
+- Cleanup step (finish phase): removes merged or gone job worktrees and run temp dirs. Preview with `python3 -I .claude/tools/pipeline/cleanup.py --dry-run`; it changes nothing.
+
 ## Setting up a new machine
 
 1. Clone the repo, then `scripts/dev.sh sync` (needs `uv` and a system Python 3.11+).

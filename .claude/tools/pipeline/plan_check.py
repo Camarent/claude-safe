@@ -88,9 +88,11 @@ from .plan_rules import (
     done_when_problems,
     dryrun_missing_problems,
     git_state,
+    manual_tag,
     nested_repo,
     per_file_problems,
     protected_gates,
+    reads_as_prose,
     release_flag_problems,
 )
 from .plan_testcmd import check_bare_test_runner
@@ -645,7 +647,7 @@ MIN_PHASE, MAX_COMBINED = 10, 25
 
 
 def errors_of(probs):
-    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `ci-drift:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check)."""
+    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check). `ci-drift:` is an error."""
     return [
         p
         for p in probs
@@ -656,7 +658,6 @@ def errors_of(probs):
                 "shared:",
                 "gate:",
                 "release:",
-                "ci-drift:",
                 "done:",
                 "cmd:",
                 "open-edit:",
@@ -675,7 +676,7 @@ def errors_of(probs):
 
 
 def ci_drift_warnings(d):
-    """-> [`ci-drift:` warning] for the project that owns .work folder D (see ci_drift.drift; a bad config yields none)."""
+    """-> [`ci-drift:` problem, an error in cs-plan check] for the project that owns .work folder D (see ci_drift.drift; a bad config yields none)."""
     ws = _workspace(d)
     try:
         cfg = project(ws)
@@ -755,12 +756,17 @@ def _bump_phase_problems(a, phases):
 
 
 def _done_when_shape_problems(a, p):
-    """Problems for the done_when cell of phase P: empty, not a shell command, or a leading cd into the repo."""
+    """Problems for the done_when cell of phase P: empty, not a shell command, a sentence, or a leading cd into the repo. `MANUAL: <check>` is accepted as a manual check."""
     if not p["done_when"]:
         return [f"{p['dir']}: no done_when"]
+    rest = manual_tag(p["done_when"])
+    if rest is not None:
+        return [] if rest else [f"{p['dir']}: done_when `MANUAL:` needs the check text after the colon"]
     probs = []
     if not is_shell(p["done_when"]):
         probs.append(f"{p['dir']}: done_when is not a shell command (`sh -n` fails): write one command, not a sentence")
+    elif reads_as_prose(p["done_when"]):
+        probs.append(f"{p['dir']}: done_when reads as a sentence, not a command: write the command that proves it, or `MANUAL: <what to check>`")
     repo = project(a.dir).get("repo") or ""
     if repo and re.match(rf"\s*cd\s+{re.escape(repo)}\b", p["done_when"]):
         probs.append(f"{p['dir']}: done_when starts with `cd {repo}` but the driver already runs it in {repo}: drop the cd")
@@ -782,7 +788,9 @@ def _phase_link_problems(p, earlier):
 
 def _phase_problems(a, p, d, earlier):
     """-> (task count, problems) for phase P in folder D."""
-    probs = _done_when_shape_problems(a, p) + _done_when_files(a, p, d) + _done_when_commands(a, p, d)
+    probs = _done_when_shape_problems(a, p)
+    if manual_tag(p["done_when"]) is None:
+        probs += _done_when_files(a, p, d) + _done_when_commands(a, p, d)
     if not os.path.isdir(d):
         probs.append(f"{p['dir']}: folder {d} missing")
     probs += _phase_link_problems(p, earlier)

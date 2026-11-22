@@ -124,8 +124,6 @@ CODESRV_REQUEST_LIMIT_S = float(
 )  # server watchdog: a request running longer ends the server (the next call starts a fresh one)
 CHECKOUT_LOCK = "checkout.lock"  # per main checkout (all stages on it): in its git dir, or in WORK_DIR when not a git checkout
 INDEX_TIMEOUT_S = 900.0  # one `local.py index` run of index_step (ORCH_SCRIPT_TIMEOUT overrides)
-CHECKS_TIMEOUT_S = 1800  # pr_checks_timeout default: seconds a PR step waits for pending CI
-CI_POLL_S = 20  # fallback CI wait (token without checks:read): seconds between two reads of the workflow runs of a PR head
 CI_EMPTY_POLLS = 3  # fallback CI wait: reads that may return no run (not registered yet) before "no checks" is believed, when the repo has workflows
 CI_RUNS_LIMIT = 50  # fallback CI wait: workflow runs read per commit
 CI_DENIED_MSG = "Resource not accessible by personal access token"  # gh stderr when the token cannot read check runs (fine-grained tokens have no checks:read)
@@ -144,6 +142,8 @@ GIT_QUICK_TIMEOUT_S = 30  # one cheap git read (configuration.gitbranch._git_out
 LIZARD_TIMEOUT_S = 120  # one `lizard --csv` run of pipeline/ccn.py
 LOCAL_FIND_TIMEOUT_S = 120  # one `local.py find` call of the brief builder
 ACCEPTANCE_STEP = "acceptance"  # driver step id: runs the Plan.md `- cmd:` lines in a fresh worktree of the stage branch (pipeline/acceptance.py)
+ACCEPTANCE_REVIEW_FILE = "manual-review.md"  # written by the acceptance reviewer agent to .work/<stage>/: one `MANUAL n: ...` line per item
+ACCEPTANCE_REVIEW_AGENT = "reviewer"  # agent that checks the MANUAL items
 ACCEPTANCE_FILE = "acceptance.md"  # written to .work/<stage>/: one line per checklist item
 ACCEPTANCE_CMD_TIMEOUT_S = 900  # one acceptance command (qrun kills its process group at this limit)
 ACCEPTANCE_TAIL_LINES = 3  # last output lines kept per command in acceptance.md
@@ -247,6 +247,7 @@ EV_FORCED_REMOVE = (
     "forced_remove"  # a worktree removed with --force although its refusal check fired; carries no `task` key (the retry ladder reads every event with one)
 )
 FORCED_WHY_MAX = 300  # chars of the refusal text kept in a `forced_remove` event
+EV_MAIN_RESTORED = "main_restored"  # the main checkout was on another branch at merge time and wt.py switched it back to the stage branch; carries no `task` key (as forced_remove)
 PLAN_MAX_PHASES = 99  # highest NN- phase folder number
 PLAN_REVIEW_ROUNDS = 1  # plan-reviewer rounds per plan before the plan goes on (one review, one fix pass)
 PLAN_REVIEW_SMALL_MAX_TASKS = 7  # a one-phase plan with at most this many tasks gets the light review only

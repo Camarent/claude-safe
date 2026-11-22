@@ -38,6 +38,7 @@ from .configuration import (
     work_branch,
 )
 from .ctx import Ctx
+from .plan_rules import manual_tag
 from .run import Run
 from .util import TOOLS, default_dir, read_text, swallowed, write_text
 
@@ -275,6 +276,9 @@ def _run_phase(a, phase):
     rc = cli_wave.cmd_run(Run.of(a).at(stage=S))
     if rc:
         return rc  # 3 limit, 4 asks the lead (also the last phase's master-merge pause)
+    manual = manual_tag(phase["done_when"])
+    if manual is not None:
+        return block(a, f"phase {phase['dir']}: manual check for the lead (not run by the driver): {manual}\nWhen it holds, mark the phase done and rerun.")
     ok, out = run_done_when(a, phase)
     if not ok:
         return block(a, f"phase {phase['dir']}: done_when failed: `{phase['done_when']}`\n{out}")

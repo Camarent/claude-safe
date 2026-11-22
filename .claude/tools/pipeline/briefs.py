@@ -1,5 +1,6 @@
 """Task briefs: the dev and reviewer prompts, code leads and the script-driven switches they read."""
 
+import ast
 import hashlib
 import os
 import re
@@ -331,6 +332,46 @@ DEV_SCOPE_NOTE = (
 )
 
 
+# dev brief: the job worktree root is the cwd; every path the dev writes stays relative to it
+WORKTREE_NOTE = (
+    " Your job worktree root is your current directory: use paths relative to it, relative paths only; never an absolute path into the main checkout."
+)
+
+PATTERN_RE = re.compile(r"(?m)^Pattern:[ \t]*([^\s,:]+)")
+
+
+def pattern_header_note(root, task_file):
+    """Dev brief lines with the import and sys.path header of the task's Pattern file when that file is a test file, else ''."""
+    m = PATTERN_RE.search(read_text(task_file))
+    rel = m[1] if m else ""
+    name = os.path.basename(rel)
+    if not (name.startswith("test_") and name.endswith(".py")):
+        return ""
+    base = os.path.realpath(root)
+    try:
+        full = os.path.realpath(os.path.join(base, rel))
+        if os.path.commonpath([base, full]) != base:  # an absolute or `../` Pattern path never reads outside the repo
+            return ""
+        src = read_text(full)
+        tree = ast.parse(src)
+    except (ValueError, OSError, SyntaxError):  # bad path text (NUL byte), unreadable or broken pattern file: no header, the dev still reads the file itself
+        return ""
+    lines = src.splitlines()
+    stmts = [
+        "\n".join(lines[node.lineno - 1 : node.end_lineno])
+        for node in tree.body
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        or (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and ast.unparse(node.value.func).startswith("sys.path"))
+    ]
+    if not stmts:
+        return ""
+    return (
+        f" The Pattern test file {rel} starts with these import and sys.path lines (copy them into any new test file of the same kind):\n"
+        + "\n".join(stmts)
+        + "\n"
+    )
+
+
 TASK_GATES_NOTE = (
     " Run your task's own `Test:` lines and the tests of the code you touch while you work; if you know of tests elsewhere that your change could affect, run those too."
     " Do not run the full suite: the driver runs the full gate set after you finish and sends any failure back to you with its output."
@@ -382,6 +423,8 @@ def prompt_for(a, task, role, rework_file, rid):
             (f" Rework: fix the findings in {rework_file} first." if rework_file else "")
             + NO_CHECKOUT_NOTE
             + DEV_SCOPE_NOTE
+            + WORKTREE_NOTE
+            + pattern_header_note(os.path.abspath(getattr(a, "dir", ".")), t)
             + gates_note(a)
             + affected_note(t, AFFECTED_DEV)
             + lead_note(t)
