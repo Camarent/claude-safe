@@ -28,6 +28,9 @@ def session_line(c, id, agent, model, u, verdict="", task="", reason=""):
         "verdict": verdict,
         "error": u["error"],
     }
+    if u.get("seconds_api"):
+        # `seconds` is claude wall time and includes backgrounded waits; `seconds_api` is only API time. Absent in old lines.
+        rec["seconds_api"] = u["seconds_api"]
     if u.get("tools"):
         rec["tools"] = u["tools"]  # optional {tool name: calls}; absent in old lines
     if u.get("denials"):
@@ -57,6 +60,8 @@ def wave_line(c, wall):
         **{k: sum(s[k] for s in c.sess) for k in SUMS},
         "seconds_wall": round(wall, 1),
     }
+    if any("seconds_api" in s for s in c.sess):
+        rec["seconds_api"] = round(sum(s.get("seconds_api", 0) for s in c.sess), 1)  # only when a session carries it
     append_jsonl(c.metrics, rec)
     c.sess = []
 
