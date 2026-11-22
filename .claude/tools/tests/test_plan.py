@@ -361,6 +361,8 @@ class PlanTest(unittest.TestCase):
         def h(args):
             if "--agent" not in args:
                 return res("unexpected non-architect call")
+            if args[args.index("--agent") + 1] == "plan-reviewer":  # plan review: no report written, so no verdict and no fix
+                return res("")
             seq["n"] += 1
             return res(big_agent(seq["n"], args))
 

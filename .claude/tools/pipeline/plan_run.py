@@ -5,8 +5,18 @@ import re
 import shlex
 import sys
 
-from . import claude, metrics
-from .configuration import ENV_NO_CONTEXT, MODEL_OPUS, MODEL_SONNET, PLAN_FILE, REQUEST_FILE, project, repo_dir, tool_cmd
+from . import claude, metrics, plan_review
+from .configuration import (
+    ENV_NO_CONTEXT,
+    MODEL_OPUS,
+    MODEL_SONNET,
+    PLAN_FILE,
+    PLAN_REVIEW_REPORT_FILE,
+    REQUEST_FILE,
+    project,
+    repo_dir,
+    tool_cmd,
+)
 from .ctx import Ctx
 from .plan_check import check_feature, check_stage, errors_of, publish_problems_in, publish_urls, repo_of, tasks_files
 from .plan_files import feature_dir, read_phases
@@ -187,6 +197,33 @@ def testrun_check(a, c, model, goal, n, probs):
     return testrun_fix(a, c, model, goal, tr)
 
 
+def review_fix(a, c, model, goal, report_path):
+    """Plan-fix session for the GAP lines the plan review wrote to report_path."""
+    extra = f"The plan review wrote {report_path}: fix every GAP line in it through plan.py commands.\n"
+    session(a, c, model, build_prompt(a, model, goal, extra), "plan-fix")
+
+
+def review_plan(a, c, model, goal, n, probs):
+    """Plan review of a valid plan: phase review when Plan.md exists, else the one-phase review. One fix round on FAIL, then check again.
+    -> (tasks, problems, gap lines); gaps never fail the plan. A reviewer error keeps the plan as it is."""
+    d = feature_dir(a)
+    kind = plan_review.KIND_PHASE if os.path.exists(os.path.join(d, PLAN_FILE)) else plan_review.KIND_SINGLE
+    report_path = os.path.join(d, PLAN_REVIEW_REPORT_FILE)
+
+    def dispatch(review_model, k):
+        claude.session(claude.claude_args("plan-reviewer", review_model, None, plan_review.build_prompt(k, a.feature, report_path)), a.dir, None)
+        return read_text(report_path)
+
+    def fix(_report):
+        review_fix(a, c, model, goal, report_path)
+
+    res = plan_review.run_review(kind, dispatch, fix, n_tasks=n)
+    step(c, "plan-review", "done", kind=kind, verdict=res.verdict, gaps=len(res.gaps), rounds=res.rounds, model=res.model)
+    if res.rounds:
+        n, probs = check_now(a, goal)
+    return n, probs, [f"plan-review: gap {g.removeprefix('GAP:').strip()}" for g in res.gaps]
+
+
 def run(a):
     """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
     goal = read_text(a.prompt_file)
@@ -222,5 +259,9 @@ def run(a):
     if errors_of(probs):
         print("\n".join(probs))
         return 2
-    print("\n".join([*probs, f"OK {n} tasks"]))
+    n, probs, gaps = review_plan(a, c, model, goal, n, probs)
+    if errors_of(probs):
+        print("\n".join(probs))
+        return 2
+    print("\n".join([*probs, *gaps, f"OK {n} tasks"]))
     return 0
