@@ -19,6 +19,7 @@ from .configuration import (
     CI_POLL_S,
     CI_RUNS_LIMIT,
     DONE,
+    GH_CHECKS_PENDING_RC,
     GIT_LONG_TIMEOUT_S,
     GIT_NETWORK_TIMEOUT_S,
     GIT_SAFE_ENV,
@@ -203,7 +204,7 @@ def _pr_checks(repo, br, limit=None):
     runs = _ci_wait(repo, br, limit) if limit else _ci_runs(repo, _view(repo, br, "headRefOid"))
     pending = any(x["status"] != "COMPLETED" for x in runs)
     bad = _ci_failed(runs)
-    rc, out = (8, "pending") if pending else (1, ", ".join(bad)) if bad else (0, "") if runs else (1, "no checks reported")
+    rc, out = (GH_CHECKS_PENDING_RC, "pending") if pending else (1, ", ".join(bad)) if bad else (0, "") if runs else (1, "no checks reported")
     return subprocess.CompletedProcess(c.args, rc, out, "")
 
 
@@ -321,13 +322,47 @@ def _squash_forbidden(repo):
         return False
 
 
-def _checks_gate(repo, cfg, br):
-    """Waits for pending checks, then raises Blocked unless they are green and squash merges are allowed."""
-    try:
-        _pr_checks(repo, br, checks_timeout(cfg))
-    except Blocked:
-        raise Blocked(f"checks of {br} still pending after the wait: merge by hand when green, then skip master-merged") from None
+class SystemClock:
+    """The real clock of the merge wait; a test passes a fake with the same two methods, monotonic() and sleep(seconds)."""
+
+    @staticmethod
+    def monotonic():
+        return time.monotonic()
+
+    @staticmethod
+    def sleep(seconds):
+        time.sleep(seconds)
+
+
+def _poll(read, limit, clock=SystemClock):
+    """-> the first value of read() that is not None, reading every CI_POLL_S; None once `limit` seconds have passed."""
+    deadline = clock.monotonic() + limit
+    while True:
+        got = read()
+        if got is not None:
+            return got
+        if clock.monotonic() >= deadline:
+            return None
+        clock.sleep(CI_POLL_S)
+
+
+def _checks_read(repo, br):
+    """-> the `gh pr checks` answer once no check is pending, else None (a pending check is polled again)."""
     c = _pr_checks(repo, br)
+    return None if c.returncode == GH_CHECKS_PENDING_RC else c
+
+
+def _mergeable_read(repo, br):
+    """-> (mergeable,) once GitHub has computed it, else None: UNKNOWN is polled like a pending check."""
+    m = _view(repo, br, "mergeable")
+    return None if m == "UNKNOWN" else (m,)
+
+
+def _checks_gate(repo, cfg, br, clock=SystemClock):
+    """Polls the checks of `br` until none is pending (pr_checks_timeout), then raises Blocked unless they are green and squash merges are allowed."""
+    c = _poll(lambda: _checks_read(repo, br), checks_timeout(cfg), clock)
+    if c is None:
+        raise Blocked(f"checks of {br} still pending after the wait: merge by hand when green, then skip master-merged")
     if c.returncode and "no checks reported" not in (c.stdout + c.stderr):
         names = _failing(repo, br)
         raise Blocked(f"checks of {br} are not green ({', '.join(names) or 'pending'}): merge by hand when they are, then skip master-merged")
@@ -335,8 +370,8 @@ def _checks_gate(repo, cfg, br):
         raise Blocked(f"the repo allows no squash merge (rebase-only or merge-commit-only): merge the PR of {br} by hand, then skip master-merged")
 
 
-def _merge(a_dir, repo, cfg, stage, br):
-    """-> note. Waits for pending checks (pr_checks_timeout), then squash-merges the stage PR once it is open, ready, mergeable and its checks are green; anything else is BLOCKED (the lead merges by hand)."""
+def _merge(a_dir, repo, cfg, stage, br, clock=SystemClock):
+    """-> note. Polls an UNKNOWN mergeability and pending checks (pr_checks_timeout), then squash-merges the stage PR once it is open, ready, mergeable and its checks are green; anything else is BLOCKED (the lead merges by hand)."""
     state = _view(repo, br, "state")
     if state == "MERGED":
         return "PR already merged"
@@ -346,10 +381,11 @@ def _merge(a_dir, repo, cfg, stage, br):
         raise Blocked(f"no open PR for {br} (state: {state}): merge by hand, then skip master-merged")
     if _view(repo, br, "isDraft") is not False:
         raise Blocked(f"the PR of {br} is still a draft")
-    mergeable = _view(repo, br, "mergeable")
+    got = _poll(lambda: _mergeable_read(repo, br), checks_timeout(cfg), clock)
+    mergeable = got[0] if got else None
     if mergeable != "MERGEABLE":
         raise Blocked(f"the PR of {br} is {mergeable or 'of unknown mergeability'}: resolve it by hand, then skip master-merged")
-    _checks_gate(repo, cfg, br)
+    _checks_gate(repo, cfg, br, clock)
     title = _merge_title(a_dir, stage, br)
     r = _run(
         ["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", f"Stage {stage}. Squash-merged by the pipeline after green CI."],

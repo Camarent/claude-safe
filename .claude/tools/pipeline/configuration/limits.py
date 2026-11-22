@@ -124,8 +124,6 @@ CODESRV_REQUEST_LIMIT_S = float(
 )  # server watchdog: a request running longer ends the server (the next call starts a fresh one)
 CHECKOUT_LOCK = "checkout.lock"  # per main checkout (all stages on it): in its git dir, or in WORK_DIR when not a git checkout
 INDEX_TIMEOUT_S = 900.0  # one `local.py index` run of index_step (ORCH_SCRIPT_TIMEOUT overrides)
-CHECKS_TIMEOUT_S = 1800  # pr_checks_timeout default: seconds a PR step waits for pending CI
-CI_POLL_S = 20  # fallback CI wait (token without checks:read): seconds between two reads of the workflow runs of a PR head
 CI_EMPTY_POLLS = 3  # fallback CI wait: reads that may return no run (not registered yet) before "no checks" is believed, when the repo has workflows
 CI_RUNS_LIMIT = 50  # fallback CI wait: workflow runs read per commit
 CI_DENIED_MSG = "Resource not accessible by personal access token"  # gh stderr when the token cannot read check runs (fine-grained tokens have no checks:read)
