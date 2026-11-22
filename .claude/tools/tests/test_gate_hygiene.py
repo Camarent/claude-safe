@@ -10,7 +10,8 @@ import unittest.mock
 
 TOOLS = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, TOOLS)
-from pipeline import gate_secrets as G  # noqa: E402
+from pipeline import gate_paths as P  # noqa: E402 - sys.path.insert above sets TOOLS
+from pipeline import gate_secrets as G  # noqa: E402 - sys.path.insert above sets TOOLS
 
 IDENT = ("-c", "user.name=t", "-c", "user.email=t@t")
 # fake AWS access key id, assembled from parts so the file holds no literal key
@@ -75,6 +76,41 @@ class TestScanDiff(unittest.TestCase):
             G.scan_diff(self.root, "HEAD")
         self.assertEqual(len(made), 1)
         self.assertFalse(os.path.exists(made[0]))
+
+
+class TestPathDependentTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+        git(self.root, "init", "-q")
+        self.write("base.txt", "base\n")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "base")
+
+    def write(self, name, text):
+        with open(os.path.join(self.root, name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def commit_then_scan(self, name, text):
+        # base first, then the changed file: the scan sees it in `git diff base`
+        self.write(name, text)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "change")
+        return P.path_dependent_tests(self.root, "HEAD~1")
+
+    def test_assert_on_task_id_literal_is_flagged(self):
+        found = self.commit_then_scan("test_paths.py", 'def test_x(self):\n    self.assertIn("task-3", out)\n')
+        self.assertEqual(len(found), 1, found)
+        self.assertTrue(found[0].startswith("test_paths.py:2:"), found)
+
+    def test_plain_assignment_of_job_path_is_not_flagged(self):
+        found = self.commit_then_scan("test_paths.py", 'PATH = "/job/task-3/claude-safe"\n')
+        self.assertEqual(found, [])
+
+    def test_non_test_file_is_not_scanned(self):
+        found = self.commit_then_scan("helper.py", 'def f(self):\n    self.assertIn("task-3", out)\n')
+        self.assertEqual(found, [])
 
 
 if __name__ == "__main__":
