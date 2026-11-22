@@ -6,7 +6,7 @@ import re
 
 from .briefs import ENV_DRY_NO_CCN, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
 from .ccn import review_ccn_hit
-from .classify import STOP, classify_test_run
+from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
     ARCHITECT,
     BLOCKED,
@@ -51,6 +51,7 @@ from .configuration import (
 )
 from .plan_files import paths_in, task_type
 from .stagedir import resolve_stage
+from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
 from .util import append_jsonl, now, paths, read_text, work_path, write_text
 from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
@@ -283,18 +284,22 @@ def _gates_rework(a, task, mine, rid):
     return _disp(a, task, rid, "dev", task["owner_sonnet"] or _tries(mine, "dev", MODEL_HAIKU) >= HAIKU_DEV_TRIES, rework=f)
 
 
+def _taskgates_script(a, task, rid):
+    return _script(
+        task,
+        rid,
+        "task gates: full gate set in the job worktree; FAIL goes back to the dev",
+        f"{tool_cmd('audit/taskgates.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}",
+    )
+
+
 def _quality_or_review(a, task, mine, rid, s):
     """Advisory quality run (lints/analysis of the touched files and repos), once per task, after the tests are green: findings go to the dev as one
     recommended extra round, never to the lead; later rounds and clean runs go on to the review. A missing `Gates:` line comes first."""
     if (
         task_gates_on(a) and len(s.gate_ids) < s.dev_done and not is_report(a, task)
     ):  # the driver runs the full gate set once per dev DONE (the script skips unchanged content)
-        return _script(
-            task,
-            rid,
-            "task gates: full gate set in the job worktree; FAIL goes back to the dev",
-            f"{tool_cmd('audit/taskgates.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}",
-        )
+        return _taskgates_script(a, task, rid)
     back = _gates_rework(a, task, mine, rid)
     if back:
         return back
@@ -458,6 +463,10 @@ def _after_script(a, task, mine, rid, s, last):
         mine, "escalation gate"
     ):  # the gate only guards the step before it: plan that step again without the gate events (`_gate` then reads the verdict)
         return _next_step(a, task, [e for e in mine if e.get("id") != last["id"]], rid)
+    if last["id"] in script_ids(mine, ENV_REPAIR_WHY):  # the environment repair ran: the red step (test run or task gates) runs again
+        if env_repair_kind(mine, last["id"]) == TEST_KIND:
+            return _test_run_script(a, task, rid)
+        return _taskgates_script(a, task, rid)
     if last["id"] in s.test_ids:  # the test run: BLOCKED -> lead; FAIL -> dev ladder like an ESCALATE; DONE -> pre-review / reviewer
         return _after_test(a, task, mine, rid, s, last)
     if last["id"] in s.gate_ids:  # the task gates: BLOCKED -> lead; FAIL -> free dev rounds, one Sonnet dev, then the lead; DONE -> quality run / review
@@ -478,10 +487,22 @@ def _after_script(a, task, mine, rid, s, last):
     return _disp_reviewer(a, task, rid, s, mine)
 
 
+def _env_red(a, task, mine, rid, last, kind):
+    """A red step whose output names a missing environment piece: the repair once (not a dev try), then the lead. None when the output is no env red."""
+    if not env_failure(read_text(last["file"])):
+        return None
+    rep = env_repair(a, task["id"], rid, kind, getattr(a, "orch_events", None) or mine)
+    if rep is not None:
+        return rep
+    return {"action": "ask_main", "message": f"{task['id']}: environment still red after the repair ({kind}); output {last['file']}" + hint(a, task["id"])}
+
+
 def _after_test(a, task, mine, rid, s, last):
     if last["verdict"] == BLOCKED:
         return {"action": "ask_main", "message": f"{task['id']}: Test lines cannot run (infrastructure); output {last['file']}" + hint(a, task["id"])}
     if last["verdict"] == FAIL:
+        if (env := _env_red(a, task, mine, rid, last, TEST_KIND)) is not None:
+            return env
         repo = getattr(a, "dir", ".")
         cls, why = classify_test_run(read_text(last["file"]), os.path.join(repo, WORK_DIR, a.stage), task["id"], repo)
         if cls in STOP:  # no dev retry and no Sonnet can fix a wrong Test line or a broken environment
@@ -512,6 +533,8 @@ def _after_taskgates(a, task, mine, rid, s, last):
         return {"action": "ask_main", "message": f"{task['id']}: task gates cannot run; output {last['file']}" + hint(a, task["id"])}
     if last["verdict"] != FAIL:
         return _quality_or_review(a, task, mine, rid, s)
+    if (env := _env_red(a, task, mine, rid, last, GATES_KIND)) is not None:
+        return env
     fails = _taskgate_fails(a, task, mine)
     sonnet = task["owner_sonnet"] or s.sonnet_dev
     if len(fails) <= GATE_FREE_ROUNDS:  # free rounds: no dev try, the dev keeps its model

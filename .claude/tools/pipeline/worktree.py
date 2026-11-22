@@ -284,8 +284,8 @@ def _copy_mtimes(src, dst):
             pass
 
 
-def _run_setup(a_dir, stage, task, root, cfg, clock=time.monotonic):
-    """Run the project's `worktree_setup` commands (pipeline.json; sh -c, cwd = the new worktree) in order. The first failure removes the fresh worktree and raises with its output tail, so no dev starts in a half-ready one. Each command logs an `EV_SETUP` metrics line with its exit code and seconds (CLOCK = the time source)."""
+def _run_setup(a_dir, stage, task, root, cfg, clock=time.monotonic, keep=False):
+    """Run the project's `worktree_setup` commands (pipeline.json; sh -c, cwd = the new worktree) in order. The first failure removes the fresh worktree and raises with its output tail, so no dev starts in a half-ready one (KEEP: a repair of an existing worktree, never removed). Each command logs an `EV_SETUP` metrics line with its exit code and seconds (CLOCK = the time source)."""
     commands = cfg.get("worktree_setup") or []
     limit = float(cfg.get("worktree_setup_timeout") or PROJECT_DEFAULTS["worktree_setup_timeout"])  # a cfg without the key (older callers) gets the default
     metrics = os.path.join(os.path.abspath(a_dir), WORK_DIR, stage, METRICS_LOG)
@@ -302,8 +302,16 @@ def _run_setup(a_dir, stage, task, root, cfg, clock=time.monotonic):
         except OSError as ex:
             util.swallowed("worktree._run_setup", ex)
         if why:
+            if keep:
+                raise RuntimeError(f"worktree_setup `{cmd}` failed in the worktree of {task} ({why}); the worktree was kept")
             remove(a_dir, stage, task, force=True)
             raise RuntimeError(f"worktree_setup `{cmd}` failed in the new worktree of {task} ({why}); the worktree was removed")
+
+
+def repair_env(a_dir, stage, task):
+    """Rerun the `worktree_setup` commands in the existing job worktree of TASK (one environment repair; the worktree is kept on failure)."""
+    cfg, _repo, root, _branch = layout(a_dir, stage, task)
+    _run_setup(a_dir, stage, task, root, cfg, keep=True)
 
 
 def link_private(repo, root, prefix, skip=(), nested=None):
