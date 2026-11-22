@@ -16,8 +16,8 @@ from pathlib import Path
 
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402
-from pipeline import gate_record, gitx, linkguard, maincheck  # noqa: E402
-from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GATE_TIMEOUT_S, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd  # noqa: E402
+from pipeline import gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck  # noqa: E402
+from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GATE_TIMEOUT_S, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd, work_branch  # noqa: E402
 from pipeline.plan_check import LEAD_MARK, is_lead_verified  # noqa: E402
 from pipeline.plan_files import task_type  # noqa: E402
 from pipeline.util import read_text, work_path  # noqa: E402
@@ -25,6 +25,7 @@ from pipeline.util import read_text, work_path  # noqa: E402
 TIMEOUT_S = GATE_TIMEOUT_S
 TAIL_LINES = 40
 BLOCKED_EXIT = (126, 127)  # not executable / command not found
+SCAN_NOTE_PREFIXES = ("secret scan error:", "gitleaks exit ")  # gate_secrets.scan_diff reports its own failures as lines of these forms: notes, never findings
 
 
 def _test_cmds(text, lead):
@@ -117,8 +118,24 @@ def _run_lead(cwd, cmds, runner):
     return notes
 
 
-def run(stage, task, d, runner=subprocess.run):
-    """-> (verdict word, note). `runner` is injectable for tests. A Test line already green on the identical tree is skipped, noted with its run id."""
+def gate_findings(cwd, d, stage):
+    """Secret scan and path-dependent asserts of the task diff in cwd, against the job base (merge-base of HEAD and the stage work branch, else HEAD~1) -> finding lines and scanner note lines."""
+    base = (gitx.try_out(cwd, "merge-base", "HEAD", work_branch(project(d), stage)) or "").strip() or "HEAD~1"
+    return gate_secrets.scan_diff(cwd, base, project(d)) + gate_paths.path_dependent_tests(cwd, base)
+
+
+def _gate(cwd, d, stage, scan):
+    """-> (finding lines, note lines) of the secret and path gates. A scanner that cannot run is a note: it never blocks the run."""
+    try:
+        lines = scan(cwd, d, stage)
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        return [], [f"gate scan could not run: {e}"]
+    notes = [x for x in lines if x.startswith(SCAN_NOTE_PREFIXES)]
+    return [x for x in lines if not x.startswith(SCAN_NOTE_PREFIXES)], notes
+
+
+def run(stage, task, d, runner=subprocess.run, scan=gate_findings):
+    """-> (verdict word, note). `runner` and `scan` are injectable for tests. A Test line already green on the identical tree is skipped, noted with its run id. A finding of the secret or path gate is FAIL before any Test line runs."""
     try:
         text = Path(d, WORK_DIR, stage, f"{task}.md").read_text(encoding="utf-8", errors="replace")
     except OSError as e:
@@ -132,6 +149,9 @@ def run(stage, task, d, runner=subprocess.run):
     cwd = workdir(d, stage, task)
     if cwd is None:
         return BLOCKED, "no job worktree for this task: the Test lines would run on the main checkout, so they were not run"
+    findings, gate_notes = _gate(cwd, d, stage, scan)
+    if findings:
+        return FAIL, "\n".join(["secret or path gate: findings in the task diff", *findings])
     tree = _tree(cwd)  # taken once, before any line runs: each line is keyed on the tree the dev left
     skipped = []
     for c in cmds:
@@ -155,7 +175,7 @@ def run(stage, task, d, runner=subprocess.run):
                 return BLOCKED, f"`{c}` cannot run (exit {p.returncode}; missing command):\n{out}"
             return FAIL, f"`{c}` exited {p.returncode}:\n{out}"
     lead_notes = _run_lead(cwd, leads, runner)  # a red lead-verified line is a note, never a BLOCKED or FAIL of the dev
-    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *skipped, *lead_notes])
+    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes])
 
 
 def main(argv=None):

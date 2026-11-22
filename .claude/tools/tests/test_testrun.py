@@ -68,6 +68,46 @@ class TestRun(unittest.TestCase):
         self.assertIn("boom", note)
         self.assertIn("no Test line", testrun.run("s", "task-1", box("nothing\n"))[1])
 
+    def test_gate_finding_fails_before_any_test_line_runs(self):
+        calls = []
+        v, note = testrun.run("s", "task-1", box("Test: true\n"), runner=lambda *a, **k: calls.append(a), scan=lambda cwd, d, stage: ["a.py:aws-key"])
+        self.assertEqual(v, "FAIL")
+        self.assertEqual(calls, [])
+        self.assertIn("a.py:aws-key", note)
+
+    def test_no_gate_finding_runs_the_test_lines(self):
+        calls = []
+        v, _note = testrun.run(
+            "s",
+            "task-1",
+            box("Test: true\n"),
+            runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""),
+            scan=lambda cwd, d, stage: [],
+        )
+        self.assertEqual((v, len(calls)), ("DONE", 1))
+
+    def test_scanner_error_is_a_note_and_never_blocks(self):
+        def failed_scan(cwd, d, stage):
+            return ["secret scan error: OSError"]
+
+        calls = []
+        v, note = testrun.run(
+            "s", "task-1", box("Test: true\n"), runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""), scan=failed_scan
+        )
+        self.assertEqual((v, len(calls)), ("DONE", 1))
+        self.assertIn("secret scan error: OSError", note)
+
+    def test_scan_raising_is_a_note_and_never_blocks(self):
+        def broken(cwd, d, stage):
+            raise OSError("no git")
+
+        calls = []
+        v, note = testrun.run(
+            "s", "task-1", box("Test: true\n"), runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""), scan=broken
+        )
+        self.assertEqual((v, len(calls)), ("DONE", 1))
+        self.assertIn("gate scan could not run: no git", note)
+
     def test_never_runs_on_main_checkout_when_worktrees_are_on(self):
         calls = []
         v, _note = testrun.run("s", "task-1", box("Test: true\n", worktrees=True), runner=lambda *a, **k: calls.append(a))
