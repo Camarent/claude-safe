@@ -785,6 +785,16 @@ def _record_scope(a_dir, stage, task, rel, edited):
         fh.write(json.dumps(rec) + "\n")
 
 
+CONFLICT_HUNK_CHARS = 2000  # the conflicted hunks kept in a Conflict message: the merger reads them from the merge report
+
+
+def _conflict_hunks(r):
+    """Conflicted files and their hunks (`git diff --diff-filter=U`) of the failed squash merge in REPO -> text, the last CONFLICT_HUNK_CHARS characters."""
+    out = gitx.run(r, "diff", "--diff-filter=U")
+    hunks = (out.stdout or "")[-CONFLICT_HUNK_CHARS:]
+    return "conflicted hunks:\n" + (hunks or "no conflicted hunks")
+
+
 def merge(a_dir, stage, task):
     """Squash-merge the task's job branch into `branch_work` of every repo it has a worktree in (nested first), one commit per repo with the branch's own subject.
     -> {rel: "merged" | "nothing"}. Conflict: the main checkout is reset, raises Conflict. Cannot start: raises Blocked. A `.merged` marker (mark_merged) skips the task."""
@@ -801,8 +811,9 @@ def merge(a_dir, stage, task):
         _save_patch(a_dir, stage, task, rel, r, branch, want)
         sq = gitx.run(r, "merge", "--squash", branch, timeout=GIT_LONG_TIMEOUT_S)
         if sq.returncode:
+            hunks = _conflict_hunks(r)  # read before the reset: the reset removes the conflict markers
             git(r, "reset", "--hard", "HEAD", check=False)
-            raise Conflict(f"conflict merging {branch} into {want} in {r}: {(sq.stdout + sq.stderr).strip()[-300:]}")
+            raise Conflict(f"conflict merging {branch} into {want} in {r}: {(sq.stdout + sq.stderr).strip()[-300:]}\n{hunks}")
         out[rel or "."] = _commit_squash(r, branch)
     return out
 
