@@ -8,8 +8,12 @@ GATE_SKIP_PATHS = DOC_PATHS  # changed-file globs that never trigger a task gate
 DOC_CITE_RE = (
     r"`(?P<path>[^`\s]+\.[A-Za-z0-9]+):(?P<line>\d+)`\s*\"(?P<text>[^\"]+)\""  # regex per line: a `path:line` cite followed by the quoted line text it names
 )
+LEAD_SLICE_CHARS = 6000  # chars of code slices a brief carries under the code leads (no Pattern file named)
 LEAD_SLICE_CHARS_WITH_PATTERN = 3000  # chars of a brief the lead reads when a pattern file is named
+ESCALATE_DRAFT_CHARS = 4000  # chars of each Sonnet draft file (Plan.md, TASKS.md) the Opus plan rerun is handed
 HAIKU_REWORK_TRIES = 1  # rework rounds a Haiku dev gets before the task escalates
+LEAD_NOTE_CHARS = 300  # chars of a lead retry note kept in the brief when the report path is passed
+GATE_OUTPUT_CHARS = 1500  # chars of the driver test-run output (the tail) the reviewer brief carries
 REVIEW_DOCS_MAX_TURNS = 12  # `--max-turns` of a docs review session
 DENIAL_LOG_NAME = "denials.log"  # file in the stage folder that collects permission denials of headless sessions
 PGID_FILE_NAME = "wave.pgid"  # file in the stage folder that holds the process group id of a running wave driver

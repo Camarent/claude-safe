@@ -8,12 +8,14 @@ import sys
 from . import claude, metrics, plan_review
 from .configuration import (
     ENV_NO_CONTEXT,
+    ESCALATE_DRAFT_CHARS,
     MODEL_OPUS,
     MODEL_SONNET,
     PLAN_CONTEXT_FILE,
     PLAN_FILE,
     PLAN_REVIEW_REPORT_FILE,
     REQUEST_FILE,
+    TASKS_FILE,
     project,
     repo_dir,
     tool_cmd,
@@ -231,6 +233,18 @@ def review_plan(a, c, model, goal, n, probs):
     return n, probs, [f"plan-review: gap {g.removeprefix('GAP:').strip()}" for g in res.gaps]
 
 
+def escalation_note(a):
+    """Opus brief lines after a Sonnet ESCALATE: its reason (the end of its reply, plan-last.md) and its draft (Plan.md, TASKS.md, cut), with the rule to amend, not replan."""
+    fd = feature_dir(a)
+    reason = read_text(os.path.join(fd, "plan-last.md")).strip()
+    draft = "".join(f"--- {name}\n{read_text(os.path.join(fd, name))[:ESCALATE_DRAFT_CHARS]}\n" for name in (PLAN_FILE, TASKS_FILE))
+    return (
+        f"Sonnet escalated this request to you. Its reason (the end of its reply): {reason}\n"
+        f"Its draft, cut at {ESCALATE_DRAFT_CHARS} chars per file:\n{draft}"
+        "Amend that draft to fix the reason above; do not replan from scratch.\n"
+    )
+
+
 def run(a):
     """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
     goal = read_text(a.prompt_file)
@@ -250,6 +264,7 @@ def run(a):
         hand = os.path.join(feature_dir(a), "ESCALATE.md")
         if os.path.exists(hand):
             extra += f"Sonnet escalated this request to you and left a handoff: read .work/{a.feature}/ESCALATE.md first, trust its facts, and do not repeat its exploration.\n"
+        extra += escalation_note(a)
         prompt = build_prompt(a, model, goal, extra)
         v = session(a, c, model, prompt, "plan-opus")
     if v == "BLOCKED":

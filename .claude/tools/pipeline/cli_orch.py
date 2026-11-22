@@ -37,7 +37,7 @@ import subprocess
 import sys
 
 from . import gitx, lead_context, verify_retry, worktree
-from .briefs import leads_for
+from .briefs import last_report_file, lead_note_line, leads_for
 from .configuration import (
     ADDENDUM_HEADING,
     ADDENDUM_TIME_FORMAT,
@@ -134,7 +134,7 @@ def _record_dispatch(a, log, evs, d):
     """Log one dispatch (and its trigger); the lead's note from `retry --note` goes in front of the re-run agent's prompt."""
     note = next((e.get("note") for e in reversed([e for e in evs if e.get("task") == d["task"] and e["ev"] == EV_RETRY])), "")
     if note and d["agent"] != "script":
-        d["prompt"] = f"Lead note (read first): {note}\n{d['prompt']}"
+        d["prompt"] = f"{lead_note_line(note, last_report_file(evs, d['task']))}\n{d['prompt']}"
     trig = is_trigger(d)
     append_event(
         log,
