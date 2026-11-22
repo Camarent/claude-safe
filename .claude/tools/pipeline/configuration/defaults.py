@@ -104,7 +104,7 @@ GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
 GATE_COLLISION_RERUNS_KEY = "gate_collision_reruns"  # the PROJECT_DEFAULTS key above
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above
 SECRET_SCAN_CONFIG_KEY = (
-    "secret_scan_config"  # pipeline.json key, not a PROJECT_DEFAULTS key: a gitleaks config path (relative to the repo); unset = gitleaks' own rules
+    "secret_scan_config"  # nosec B105 - a JSON key name, not a secret; pipeline.json key, not a PROJECT_DEFAULTS key: a gitleaks config path (relative to the repo); unset = gitleaks' own rules
 )
 GITLEAKS_TOOL = "gitleaks"  # the secret scanner binary (gate_secrets.scan_diff)
 GITLEAKS_CLEAN_RC = 0  # gitleaks exit code: no leak found

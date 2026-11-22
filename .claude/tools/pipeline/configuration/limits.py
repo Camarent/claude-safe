@@ -295,7 +295,7 @@ QRUN_ENV = {
 }  # env every qrun command gets before the project's `test_env` (which may override it): a Python test run leaves no untracked `__pycache__` that the dirty-tree preflight would stop on
 QRUN_TMP_PREFIX = "qrun-tmp-"  # each qrun command gets its own TMPDIR with this prefix, removed when the command ends (parallel tasks share /tmp; a project temp-leak guard would blame one task for the other's dirs)
 # dir the qrun TMPDIR is created in when it exists and is writable; a long parent TMPDIR would break AF_UNIX socket paths (sockets need short paths)
-QRUN_TMP_BASE = os.environ.get("QRUN_TMP_BASE", "/tmp")
+QRUN_TMP_BASE = os.environ.get("QRUN_TMP_BASE", "/tmp")  # nosec B108 - only the parent of a private mkdtemp dir
 QRUN_TMP_MAX_PATH = int(os.environ.get("QRUN_TMP_MAX_PATH", 60))  # bytes: a qrun TMPDIR path longer than this is not used; the tempfile default is used instead
 GITHUB_HOSTS = ("github.com",)  # PR-flow hosts (pr_mode.py); `github_hosts` in pipeline.json overrides, [] = check off
 GIT_MIN_VERSION = (2, 38)  # `git merge-tree --write-tree` (pipeline/pr_ops.py `_landed`) needs it
