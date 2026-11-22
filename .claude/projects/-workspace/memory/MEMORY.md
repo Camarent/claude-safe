@@ -4,3 +4,4 @@
 - [Orchestration](orchestration.md) — lead never edits code, model choice, waves stop at lead, scouts/ops, prepare repo
 - [Pipeline notes](pipeline-notes.md) — where pipeline lessons live; English compact files
 - [Tools](tools.md) — web search before browser
+- [Map routing departure time](map-routing-departure-time.md) — always set planned date/time of departure on map routes, not "leave now"
