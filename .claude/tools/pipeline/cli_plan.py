@@ -3,6 +3,7 @@
     cs-plan plan-init --feature F --goal TEXT             Plan.md skeleton + phases/
     cs-plan phase --feature F --name N --goal G --done-when CMD [--depends A,B] --paths p1,p2 [--tasks N] [--after P | --before P]   append phase (or insert after phase P, or ahead of phase P, and renumber the later, unstarted ones), create phases/NN-name (paths must not overlap other phases)
     cs-plan phase-done --feature F --name N               mark a phase done
+    cs-plan amend --feature F --phase P --note TEXT [--goal G] [--done-when CMD] [--paths p1,p2] [--depends A,B]   append the note to the phase goal ("Amended: "), replace the given fields of a not-done phase, then run the feature check (exit 2 on problems)
     cs-plan next-phase --feature F                        JSON of the first open phase whose depends are done
     cs-plan stage-init --stage S --goal G [--flags "ui docs"] [--pr-title "<type>(<area>): <what>"]   TASKS.md skeleton
     cs-plan task --stage S --id N --title T --paths p1,p2 --test CMD --done TEXT [--wave W] [--depends N,M]
@@ -25,6 +26,7 @@ from . import plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
 from . import plan_files as pf
 from .branches import dirty_block, red_base_block
 from .configuration import BLOCKED_FILE, EXIT_BLOCKED, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+from .plan_amend import amend_phase
 from .plan_run import run
 from .util import default_dir, jprint, read_text, write_text
 
@@ -246,14 +248,28 @@ def cmd_edit_task(a):
     return 0
 
 
+def _report_check(d, n, probs):
+    """Print the check of folder D (n tasks, problems) and -> exit code 2 on an error."""
+    probs = [*probs, *plan_check.request_problems(d), *plan_check.ci_drift_warnings(d)]
+    print("\n".join(probs) if probs else f"OK {n} tasks")
+    return 2 if plan_check.errors_of(probs) else 0
+
+
 def cmd_check(a):
     if bool(a.stage) == bool(a.feature):
         raise pf.PlanError("check needs exactly one of --stage / --feature")
     d = pf.stage_dir(a) if a.stage else pf.feature_dir(a)
     n, probs = plan_check.check_stage(d) if a.stage else plan_check.check_feature(a, d)
-    probs = [*probs, *plan_check.request_problems(d), *plan_check.ci_drift_warnings(d)]
-    print("\n".join(probs) if probs else f"OK {n} tasks")
-    return 2 if plan_check.errors_of(probs) else 0
+    return _report_check(d, n, probs)
+
+
+def cmd_amend(a):
+    if not os.path.exists(pf.plan_path(a)):
+        raise pf.PlanError("Plan.md missing: run plan-init first")
+    amend_phase(a, pf.read_phases(a))
+    d = pf.feature_dir(a)
+    n, probs = plan_check.check_feature(a, d)
+    return _report_check(d, n, probs)
 
 
 def cmd_dryrun(a):
@@ -343,6 +359,7 @@ def build():
         default=None,  # None: not given; "": clear the dependencies
         help="add these tasks (N,M) to the task's dependencies (the task moves to the wave after them when needed): it is held until they are merged; an empty value clears them",
     )
+    add("amend", cmd_amend, feature=True, phase=True, note=True, goal="", done_when="", paths="", depends="")
     add("check", cmd_check, stage="", feature="")
     add("dryrun", cmd_dryrun, stage=True)
     add("testrun", cmd_testrun, stage=True)
