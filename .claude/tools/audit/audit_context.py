@@ -65,6 +65,27 @@ def _file_section(repo, f, added, nsym, syms=None):
     return lines, nsym
 
 
+def block_rows(pvc_text, block_paths):
+    """The title line of plan-vs-changes.md plus only its rows that name one of BLOCK_PATHS (a whole path token, so `a/b.py` never matches `xa/b.py`); other paths drop out."""
+    lines = pvc_text.splitlines()
+    if not lines or not block_paths:
+        return lines[:1]
+    wanted = set(block_paths)
+    keep = [lines[0]]
+    for x in lines[1:]:
+        if any(tok.strip(":-,`*()") in wanted for tok in x.split()):
+            keep.append(x)
+    return keep
+
+
+def _block_section(pvc_path, block_paths):
+    """Inlined rows for the block's changed paths, or [] when the plan-vs-changes file is missing."""
+    if not pvc_path or not os.path.isfile(pvc_path):
+        return []
+    text = Path(pvc_path).read_text(encoding="utf-8", errors="replace")
+    return ["", f"## Plan vs changes, rows of this block's changed paths (full file: {pvc_path})", *block_rows(text, block_paths)[1:]]
+
+
 def _footer(code, noout, cut):
     lines = []
     if noout:
@@ -130,6 +151,8 @@ def main(argv=None):
     ap.add_argument("--verdict", action="store_true")
     ap.add_argument("--workspace", default=None, help="folder of pipeline.json: refresh its `context.index` repos before the lookups (best effort)")
     ap.add_argument("--no-model", action="store_true", help="skip the local-model 'Related, unchanged' section")
+    ap.add_argument("--plan-vs-changes", default=None, help="plan-vs-changes.md: its path is named, and only its rows for the --block paths are inlined")
+    ap.add_argument("--block", default="", help="comma-separated changed paths of the audited block (with --plan-vs-changes)")
     a = ap.parse_args(argv)
     _refresh_index(a.workspace)
     ch = added_ranges(a.repo, a.base, a.head)
@@ -150,6 +173,7 @@ def main(argv=None):
             continue
         lines += section
     lines += _footer(code, noout, cut)
+    lines += _block_section(a.plan_vs_changes, [p for p in a.block.split(",") if p])
     if not a.no_model:
         rel, status = _related(a.repo, sorted(ch), syms, a.workspace)
         lines += rel

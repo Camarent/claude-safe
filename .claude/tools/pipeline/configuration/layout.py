@@ -3,6 +3,7 @@
 WORK_DIR = ".work"  # per-feature / per-stage state folder under the workspace
 SCRATCH_DIR = "tmp"  # the stage's scratchpad under WORK_DIR/<stage>: briefs name it; agents write temp files and logs only there
 TASKS_FILE = "TASKS.md"  # a stage's task list inside WORK_DIR
+PLAN_CONTEXT_FILE = "plan-context.md"  # the code leads a phase architect was given (written by cli_feature / plan_context)
 PLAN_FILE = "Plan.md"  # a feature's plan inside WORK_DIR
 PUBLISH_RE = r"^\s*PUBLISH\s*:\s*\S"  # the line naming artifact URLs to republish: in the request and in TASKS.md (driver republish step, plan check)
 PUBLISH_LINE_RE = r"^\s*PUBLISH\s*:(.*)$"  # group 1 = the text after `PUBLISH:` (the URLs), matched per line

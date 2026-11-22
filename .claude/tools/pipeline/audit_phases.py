@@ -24,9 +24,11 @@ from .configuration import (
     MODEL_HAIKU,
     MODEL_OPUS,
     MODEL_SONNET,
+    PLAN_CONTEXT_FILE,
     PLAN_FILE,
     PRACTICES_DIR,
     REMIT_MATCH_CHARS,
+    REQUEST_FILE,
     SEC_AUDIT_CONTENT,
     SEC_AUDIT_PATHS,
     SEC_AUDIT_WORDS,
@@ -40,6 +42,7 @@ from .configuration import (
     tool_cmd,
     work_branch,
 )
+from .phase_context import brief_digest
 from .steps import history, last_verdict, step
 from .util import read_text, work_path, write_text
 
@@ -54,6 +57,15 @@ def audit_base(a, cfg):
     f = os.path.join(a.dir, WORK_DIR, a.stage, "base.txt")
     ref = read_text(f).strip() if os.path.isfile(f) else ""
     return ref or cfg["branch_release"]
+
+
+def block_args(a, cfg, audit_dir):
+    """CLI args for audit_context.py: the plan-vs-changes file and the changed paths of the block (base..work branch), so only their rows are inlined; "" when git gives no paths."""
+    names = gitx.try_text(audit_dir, "-c", "core.quotepath=off", "diff", "-M", "--name-only", f"{audit_base(a, cfg)}...{_wb(a, cfg)}").splitlines()
+    names = [n for n in names if n and "," not in n]
+    if not names:
+        return ""
+    return f" --plan-vs-changes .work/{a.stage}/audits/plan-vs-changes.md --block {shlex.quote(','.join(names))}"
 
 
 def _is_test_path(f):
@@ -133,6 +145,9 @@ def fix_step(a, tasks, sid, reports, what, key, why):
     """Architect step that turns a failed check into fix tasks: appended to TASKS.md with a later `wave K:` line, then run by the normal waves (dev -> reviewer -> merger)."""
     S = a.stage
     last_wave = max(t["wave"] for t in tasks)
+    stage_dir = os.path.join(a.dir, WORK_DIR, S)
+    req = read_text(os.path.join(stage_dir, REQUEST_FILE))
+    digest = f" Digest of the request and the plan context (1 KB): {brief_digest(req, read_text(os.path.join(stage_dir, PLAN_CONTEXT_FILE)))}" if req else ""
     return step(
         sid,
         "architect",
@@ -141,6 +156,7 @@ def fix_step(a, tasks, sid, reports, what, key, why):
         f"to .work/{S}/TASKS.md in the format it already uses (task numbers after the last existing one, the driver chooses models, every task starts on Haiku), write the task-N.md files, and add ONE line "
         f"`wave {last_wave + 1}: task-a, task-b` (parallel only when they share no paths). Do not touch existing rows. Skip nits. "
         f"If the report shows the tool or environment failed (browser did not start, server unreachable, toolchain missing) and not a defect in the change, plan nothing and reply BLOCKED."
+        + digest
         + STALE_REPORT_NOTE.format(retry=f"{tool_cmd('orch.py')} retry --stage {S} --step {STALE_RETRY_STEP}")
         + NAV
         + leads_for(a, key, " ".join(read_head(a, os.path.basename(r), 500) for r in reports))
@@ -382,7 +398,7 @@ def _audit_tool_phases(a, cfg, flags, audit_dir, has_audit_md):
                 "audit-context",
                 "script",
                 None,
-                f"{tool_cmd('audit/audit_context.py')} {shlex.quote(audit_dir)} --base {audit_base(a, cfg)} --head {_wb(a, cfg)} --out .work/{S}/audits/audit-context.md --workspace {shlex.quote(os.path.abspath(a.dir))} --verdict",
+                f"{tool_cmd('audit/audit_context.py')} {shlex.quote(audit_dir)} --base {audit_base(a, cfg)} --head {_wb(a, cfg)} --out .work/{S}/audits/audit-context.md --workspace {shlex.quote(os.path.abspath(a.dir))}{block_args(a, cfg, audit_dir)} --verdict",
                 {DONE},
                 None,
                 "before the audits: what changed and who uses it, by script (best effort)",
@@ -410,9 +426,7 @@ def reaudit_context_steps(a, cfg, audit_dir, has_audit_md, suffix):
     ws = shlex.quote(os.path.abspath(a.dir))
     sts = []
     if has_audit_md:
-        cmd = (
-            f"{tool_cmd('audit/audit_context.py')} {shlex.quote(audit_dir)} --base {base} --head {head} --out {out}/audit-context.md --workspace {ws} --verdict"
-        )
+        cmd = f"{tool_cmd('audit/audit_context.py')} {shlex.quote(audit_dir)} --base {base} --head {head} --out {out}/audit-context.md --workspace {ws}{block_args(a, cfg, audit_dir)} --verdict"
         sts.append(
             step("audit-context" + suffix, "script", None, cmd, {DONE}, None, "before the re-audit: context of the stage incl. the fix commits (best effort)")
         )

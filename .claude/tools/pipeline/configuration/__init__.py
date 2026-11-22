@@ -171,6 +171,7 @@ from .layout import (  # noqa: F401  (re-export: the facade keeps every name imp
     MISSING_BINARY_MARK,
     ORCH_LOG,
     PHASES_DIR,
+    PLAN_CONTEXT_FILE,
     PLAN_FILE,
     PREFLIGHT_DETAIL_LINES,
     PREFLIGHT_MARKER,

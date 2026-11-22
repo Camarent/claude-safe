@@ -10,6 +10,7 @@ from .configuration import (
     ENV_NO_CONTEXT,
     MODEL_OPUS,
     MODEL_SONNET,
+    PLAN_CONTEXT_FILE,
     PLAN_FILE,
     PLAN_REVIEW_REPORT_FILE,
     REQUEST_FILE,
@@ -18,6 +19,7 @@ from .configuration import (
     tool_cmd,
 )
 from .ctx import Ctx
+from .phase_context import brief_digest
 from .plan_check import check_feature, check_stage, errors_of, publish_problems_in, publish_urls, repo_of, tasks_files
 from .plan_files import feature_dir, read_phases
 from .plan_testrun import testrun_stage
@@ -172,6 +174,11 @@ def blocked_report(a):
     return f"plan: BLOCKED\n{read_text(os.path.join(feature_dir(a), 'OWNER.md')) or read_text(os.path.join(feature_dir(a), 'plan-last.md'))}".rstrip()
 
 
+def fix_goal(a, goal):
+    """The request as a plan-fix architect gets it: a 1024-byte digest of request.md and the feature's plan-context.md (absent: request only)."""
+    return brief_digest(goal, read_text(os.path.join(feature_dir(a), PLAN_CONTEXT_FILE)))
+
+
 def testrun_fix(a, c, model, goal, tr):
     """Plan-fix session for the Test lines `testrun` rejects (`tr`), then -> (tasks, problems): check_now plus the testrun problems that remain."""
     session(
@@ -181,7 +188,7 @@ def testrun_fix(a, c, model, goal, tr):
         build_prompt(
             a,
             model,
-            goal,
+            fix_goal(a, goal),
             "The plan you wrote passed `check`, but `testrun` rejects these Test lines; fix them through plan.py commands:\n" + "\n".join(tr),
         ),
         "plan-fix",
@@ -200,7 +207,7 @@ def testrun_check(a, c, model, goal, n, probs):
 def review_fix(a, c, model, goal, report_path):
     """Plan-fix session for the GAP lines the plan review wrote to report_path."""
     extra = f"The plan review wrote {report_path}: fix every GAP line in it through plan.py commands.\n"
-    session(a, c, model, build_prompt(a, model, goal, extra), "plan-fix")
+    session(a, c, model, build_prompt(a, model, fix_goal(a, goal), extra), "plan-fix")
 
 
 def review_plan(a, c, model, goal, n, probs):
@@ -252,7 +259,11 @@ def run(a):
     step(c, "check", "done", tasks=n, errors=len(errors_of(probs)))
     if errors_of(probs):
         session(
-            a, c, model, build_prompt(a, model, goal, "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)), "plan-fix"
+            a,
+            c,
+            model,
+            build_prompt(a, model, fix_goal(a, goal), "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)),
+            "plan-fix",
         )
         n, probs = check_now(a, goal)
     n, probs = testrun_check(a, c, model, goal, n, probs)
