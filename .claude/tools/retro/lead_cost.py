@@ -286,6 +286,22 @@ def lead_agent_rows(paths, lo, hi):
     return rows, unmatched
 
 
+def whole_session(paths):
+    """-> {lead_usd, agent_usd, agents, unmatched} over the lead transcripts PATHS with no window: every turn of each lead plus every subagents log under it.
+    `agents` counts the logs with a turn, `unmatched` the logs with no turn at all (nothing to price). Message ids count once, as in analyse_lead."""
+    res = {"lead_usd": 0.0, "agent_usd": 0.0, "agents": 0, "unmatched": 0}
+    for p in paths:
+        res["lead_usd"] += sum(analyse_lead(p)["usd"].values())
+        for log in _agent_logs(p):
+            r = analyse_lead(log)
+            if r["turns"]:
+                res["agents"] += 1
+                res["agent_usd"] += sum(r["usd"].values())
+            else:
+                res["unmatched"] += 1
+    return res
+
+
 def _tot(paths, lo, hi):
     rs = [analyse_lead(p, lo, hi) for p in paths]
     rs = [r for r in rs if r["turns"]]
@@ -304,13 +320,19 @@ def _total_lines(feature_dir, paths, rs, tot, lo, hi):
     """-> the feature's total LEAD-COST lines (header, split, outside-window and gap lines) over the sessions RS in the window LO..HI."""
     gaps, rew = sum(r["gaps"] for r in rs), sum(r["rewrite"] for r in rs)
     wall, act = sum(r["wall"] for r in rs), sum(r["active"] for r in rs)
+    whole = whole_session([p for p in paths if analyse_lead(p, lo, hi)["turns"]])
+    _rows, unmatched = lead_agent_rows(paths, lo, hi)
+    tail = f"; unmatched {unmatched}" if unmatched else ""
     return [
         (
             f"LEAD-COST feature {os.path.basename(os.path.normpath(feature_dir))}: ${sum(tot['usd'].values()):.2f} in {len(rs)} lead session(s), "
             f"{sum(r['turns'] for r in rs)} turns, wall {_hours(wall)}, active {100 * act / wall if wall else 0:.0f}%, peak ctx {max(r['peak'] for r in rs) // 1000}k"
         ),
         f"   {_split(tot)}",
-        f"   whole transcript(s) of these leads, outside the window too: ${sum(sum(analyse_lead(p)['usd'].values()) for p in paths if analyse_lead(p, lo, hi)['turns']):.2f}",
+        (
+            f"   whole session incl. {whole['agents']} subagent log(s): ${whole['lead_usd'] + whole['agent_usd']:.2f} "
+            f"(leads ${whole['lead_usd']:.2f} + subagents ${whole['agent_usd']:.2f}){tail}"
+        ),
         f"   gaps > {CACHE_TTL_S // 60} min: {gaps}; cache rewrites after them extra ${rew:.2f} over reading them (window includes time between phases)",
     ]
 
@@ -332,6 +354,9 @@ def _phase_line(d, o, paths):
     prs, ptot = _tot(paths, plo, phi) if phi else ([], {"usd": {}})
     cost = sum(ptot["usd"].values())
     line = f"   phase {d}: ${cost:.2f}, {sum(r['turns'] for r in prs)} turns"
+    sub = sum(sum(r["usd"].values()) for r in lead_agent_rows(paths, plo, phi)[0]) if phi else 0.0
+    if sub > 0:
+        line += f", subagents ${sub:.2f}"
     if round(cost, 2) == 0:
         reason = _zero_reason(phi, paths, prs) or REASON_TINY_OR_UNPRICED
         line += f", reason: {reason}"
