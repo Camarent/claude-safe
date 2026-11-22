@@ -15,6 +15,7 @@ from .audit_phases import (
     audit_base,
     audit_dir_of,
     audit_rounds,
+    docs_beside_audits,
     fix_step,
     last_report,
 )
@@ -595,8 +596,13 @@ def audit_phases(a, flags, tasks, evs):
     """Lazy: a later phase is built only after the earlier one is satisfied, so it can read the earlier verdicts from evs."""
     if flags["test"]:
         yield from _test_phases(a, cfg, flags, tasks, evs)
+    audits_follow = flags["audit"] and audit_due(paths(a)[0], len(tasks), int(cfg.get("audit_every_tasks") or DEFAULT_EVERY), a.dir)
+    beside = []
     if flags["docs"]:
-        yield [_docs_step(a, cfg)]
+        if audits_follow and docs_beside_audits(a, cfg, audit_dir_of(a, cfg)):
+            beside = [_docs_step(a, cfg)]  # no file the docs writer edits is in the stage diff: starts with the audits
+        else:
+            yield [_docs_step(a, cfg)]
     if flags["test"]:  # recall is logged for every tested stage and phase, not only audited ones
         yield [
             step(
@@ -609,6 +615,6 @@ def audit_phases(a, flags, tasks, evs):
                 "after the tests: planned tasks vs changed files and the context recall, by script (best effort; logs context-recall for every stage)",
             )
         ]
-    if not flags["audit"] or not audit_due(paths(a)[0], len(tasks), int(cfg.get("audit_every_tasks") or DEFAULT_EVERY), a.dir):
+    if not audits_follow:
         return
-    yield from audit_rounds(a, cfg, flags, tasks, evs)
+    yield from audit_rounds(a, cfg, flags, tasks, evs, beside)

@@ -17,6 +17,7 @@ from .configuration import (
     AUDITOR_START_MODEL,
     BLOCKED,
     CLEAN,
+    DOCS_WRITES,
     DONE,
     ESCALATE,
     EV_REPORT,
@@ -270,13 +271,9 @@ def checklist_clause(a, cfg, ag):
 
 
 def _arch_clause(a, flags, ag, suffix):
-    S = a.stage
-    return "" + (
-        f" Also read .work/{S}/audits/audit-sec.md"
-        + (f" and .work/{S}/audits/audit-ux.md" if flags["ui"] else "")
-        + " (written before you) and judge the stage as a whole."
-        if ag == "arch-auditor" and not suffix
-        else ""
+    # arch starts together with sec and ux on the first pass: it judges the stage alone and does not read their reports
+    return (
+        " Judge the stage as a whole; the sec and ux audits run at the same time, do not wait for their reports." if ag == "arch-auditor" and not suffix else ""
     )
 
 
@@ -480,7 +477,7 @@ def _fix_phases(a, cfg, flags, tasks, audit_dir, has_audit_md, small, bad, rnd=1
 
 
 def _first_audits(a, cfg, audit_dir, has_ux):
-    """The audits that run in parallel before arch (arch always runs after them and sees their reports): sec unless `sec_audit_paths` rules it out, ux when it applies."""
+    """The audits that run in parallel with arch on the first pass: sec unless `sec_audit_paths` rules it out, ux when it applies."""
     return ([("audit-sec", "sec-auditor")] if sec_audit_needed(a, cfg, audit_dir) else []) + ([("audit-ux", "ux-reviewer")] if has_ux else [])
 
 
@@ -513,20 +510,32 @@ def _scans_phase(a, cfg):
         ]
 
 
-def _audit_passes(a, cfg, flags, has_audit_md, small, evs, first):
-    """The first audits, then the arch audit, each followed by its Opus rerun when it said ESCALATE."""
-    yield [_audit_step(a, cfg, flags, has_audit_md, small, k, ag, {CLEAN, FIXES, ESCALATE} if ag in AUDITOR_ESCALATE else {CLEAN, FIXES}) for k, ag in first]
-    esc = _escalated_steps(a, cfg, flags, has_audit_md, small, evs, first)
-    if esc:
-        yield esc
-    yield [_audit_step(a, cfg, flags, has_audit_md, small, "audit-arch", "arch-auditor", {CLEAN, FIXES, ESCALATE})]
-    esc = _escalated_steps(a, cfg, flags, has_audit_md, small, evs, [("audit-arch", "arch-auditor")])
+def _audit_passes(a, cfg, flags, has_audit_md, small, evs, first, beside=()):
+    """The first audits and the arch audit in one parallel batch (BESIDE: extra steps that start with them), then the Opus rerun of each that said ESCALATE."""
+    arch = ("audit-arch", "arch-auditor")
+    batch = [
+        _audit_step(a, cfg, flags, has_audit_md, small, k, ag, {CLEAN, FIXES, ESCALATE} if ag in AUDITOR_ESCALATE else {CLEAN, FIXES})
+        for k, ag in [*first, arch]
+    ]
+    yield [*beside, *batch]
+    esc = _escalated_steps(a, cfg, flags, has_audit_md, small, evs, [*first, arch])
     if esc:
         yield esc
 
 
-def audit_rounds(a, cfg, flags, tasks, evs):
-    """Tool scripts, the audits (sec, ux, then arch) and, when some said FIXES, the fix round and the re-audits."""
+def docs_overlap(writes, reads):
+    """True when a path the docs writer edits (a file, or a folder written `dir/`) is among the paths READS that an auditor reads."""
+    return any(r == w or (w.endswith("/") and r.startswith(w)) for w in writes for r in reads)
+
+
+def docs_beside_audits(a, cfg, audit_dir, writes=DOCS_WRITES):
+    """True when final-docs may start together with the audits: the stage diff (base..work branch) holds no file the docs writer edits. An unreadable or empty diff keeps them serial."""
+    names = gitx.try_text(audit_dir, "-c", "core.quotepath=off", "diff", "-M", "--name-only", f"{audit_base(a, cfg)}...{_wb(a, cfg)}").splitlines()
+    return bool(names) and not docs_overlap(writes, names)
+
+
+def audit_rounds(a, cfg, flags, tasks, evs, beside=()):
+    """Tool scripts, the audits (sec, ux and arch in one batch) and, when some said FIXES, the fix round and the re-audits."""
     audit_dir = audit_dir_of(a, cfg)
     audit_md = read_text(os.path.join(audit_dir, cfg["audit_file"]))
     has_ux = flags["ui"] and re.search(r"^```ux\s*$", audit_md, re.M)  # UX review is project specific: no `ux` block in AUDIT.md, no UX review
@@ -542,7 +551,7 @@ def audit_rounds(a, cfg, flags, tasks, evs):
     yield from _scans_phase(a, cfg)
     if has_ux:
         yield [_ux_shots_step(a, audit_dir, "ux-shots", "before ux-reviewer: screenshots and layout numbers by script")]
-    yield from _audit_passes(a, cfg, flags, has_audit_md, small, evs, first)
+    yield from _audit_passes(a, cfg, flags, has_audit_md, small, evs, first, beside)
     bad = [(k, ag) for k, ag in kinds if audit_verdict(evs, k) == "FIXES"]
     if bad:
         yield from _fix_phases(a, cfg, flags, tasks, audit_dir, has_audit_md, small, bad)

@@ -18,6 +18,10 @@ SEC_AUDIT_WORDS = (
     "cmd",
     "exec",
 )  # default list only: a word of the file's basename (split at non-alphanumerics), so `network.py` and `pathlib_x.py` do not hit but `exec_cmd.py` does
+DOCS_WRITES = (
+    "docs/",
+    "CLAUDE.md",
+)  # paths the final-docs writer edits (a trailing `/` = a folder): when the stage diff touches one, final-docs does not start beside the audits
 SEC_CODE_EXTS = (
     ".py",
     ".js",

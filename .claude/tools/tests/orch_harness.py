@@ -171,8 +171,7 @@ class PhaseHarness(_Mixin):
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        self.run_batch(["sec-auditor", "ux-reviewer"], "FIXES", "CLEAN")
-        self.run_batch(["arch-auditor"], "CLEAN")  # sec asks for fixes
+        self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "FIXES", "CLEAN")  # one first pass
 
     def plan_fix_tasks(self):
         p = self.batch()
@@ -208,8 +207,7 @@ class PhaseHarness(_Mixin):
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        self.run_batch(["sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN")
-        self.run_batch(["arch-auditor"], "CLEAN")
+        self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")  # one first pass
 
     def plan_fix_tasks_for(self, name):
         p = self.batch()

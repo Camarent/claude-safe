@@ -26,6 +26,7 @@ from .defaults import (  # noqa: F401  (re-export: the facade keeps every name i
     AUDITOR_ESCALATE_MAX_TURNS,
     AUDITOR_MAX_TURNS,
     AUDITOR_REMIT,
+    DOCS_WRITES,
     GATE_BASE_CHECK_KEY,
     GATE_COLLISION_RERUNS_KEY,
     GATE_FLAKE_RERUN_KEY,

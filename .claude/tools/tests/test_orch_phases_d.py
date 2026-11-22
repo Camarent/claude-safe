@@ -77,8 +77,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        self.run_batch(["sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN")
-        self.run_batch(["arch-auditor"], "CLEAN")
+        self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")  # one first pass
         self.tailpost()
         r = self.go("next")
         self.assertEqual(r["action"], "done")
@@ -115,8 +114,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        self.run_batch(["sec-auditor", "ux-reviewer"], "CLEAN", "FIXES")
-        self.run_batch(["arch-auditor"], "CLEAN")
+        self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "FIXES")  # one first pass
         self.plan_fix_tasks_for("audit-ux.md")
         self.run_batch(["dev"], "DONE")
         self.run_batch(["reviewer"], "PASS")
@@ -138,8 +136,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        self.run_batch(["sec-auditor", "ux-reviewer"], "CLEAN", "FIXES")
-        self.run_batch(["arch-auditor"], "CLEAN")
+        self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "FIXES")  # one first pass
         self.plan_fix_tasks_for("audit-ux.md")
         self.run_batch(["dev"], "DONE")
         self.run_batch(["reviewer"], "PASS")

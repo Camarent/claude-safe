@@ -71,7 +71,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["script"], "DONE")
         self.run_batch(["script"], "DONE")
         ds = self.batch()
-        self.assertEqual({x["agent"]: x.get("effort") for x in ds}, {"sec-auditor": "high", "ux-reviewer": None})
+        self.assertEqual({x["agent"]: x.get("effort") for x in ds}, {"sec-auditor": "high", "ux-reviewer": None, "arch-auditor": "high"})
         self.assertIn("migration rewrites user data", [x for x in ds if x["agent"] == "sec-auditor"][0]["prompt"])
 
     def test_tools_check_precedes_audits(self):
@@ -83,8 +83,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         ds = self.run_batch(["script"], "DONE")
         self.assertIn("tools-check", ds[0]["prompt"])
         self.assertIn("xtools.py check --install", ds[0]["prompt"])
-        self.run_batch(["sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN")
-        self.run_batch(["arch-auditor"], "CLEAN")
+        self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")  # one first pass
 
     def test_post_publish_steps_off_by_default(self):
         self.post("")

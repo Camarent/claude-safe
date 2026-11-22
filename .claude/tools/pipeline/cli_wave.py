@@ -61,6 +61,14 @@ def is_heavy(d):
     return limits.is_heavy(d["agent"], d.get("model"))
 
 
+def order_by_model(ds):
+    """-> the ready dispatches grouped by model, in first-seen model order and in their own order within a model: one model's run reuses its warm cache."""
+    rank: dict = {}
+    for d in ds:
+        rank.setdefault(d.get("model"), len(rank))
+    return sorted(ds, key=lambda d: rank[d.get("model")])
+
+
 STUB_VERDICT = {"reviewer": PASS, "tester": PASS, "web-tester": PASS, "sec-auditor": CLEAN, "arch-auditor": CLEAN, "ux-reviewer": CLEAN}
 
 
@@ -455,7 +463,7 @@ def run_loop(a, c):
             if hit:
                 print(hit)
                 return 3
-            _run_wave(c, r["dispatches"])
+            _run_wave(c, order_by_model(r["dispatches"]))
         elif act == "ask_main":
             return _blocked(a, c, r)
         else:
