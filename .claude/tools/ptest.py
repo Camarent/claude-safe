@@ -16,6 +16,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
+from pipeline.configuration import JOB_BRANCH_PREFIX
+
 ENV_FAIL_ON_SKIP = "CI"  # set to 1: a skipped test fails the run (skips hide gaps; the container image has every tool)
 TAIL_LINES = 30  # output lines shown under a FAIL line
 ENV_LOG_DIR = "PTEST_LOG_DIR"  # env: folder for the last failing output of each failing file (point it at the session scratchpad)
@@ -149,7 +152,7 @@ def warn_new_claude_changes(before, after):
 
 
 def main_branch_state():
-    """(current branch, sorted local branch names) of the main checkout (the one owning the shared .git, also when run from a worktree); ("", []) when git is unavailable."""
+    """(current branch, sorted local branch names) of the main checkout (the one owning the shared .git, also when run from a worktree); job branches (JOB_BRANCH_PREFIX) are left out: a job worktree creates them mid-run by design. ("", []) when git is unavailable."""
     try:
         common = subprocess.run(
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=HERE, capture_output=True, text=True, check=True, timeout=30
@@ -163,7 +166,7 @@ def main_branch_state():
         ).stdout.split()
     except (OSError, subprocess.SubprocessError):  # no git (release container): nothing to compare, never fail the run
         return "", []
-    return branch, sorted(names)
+    return branch, sorted(n for n in names if not n.startswith(JOB_BRANCH_PREFIX))
 
 
 def warn_branch_changes(before, after, files=()):

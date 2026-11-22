@@ -12,6 +12,8 @@ import wt  # noqa: E402
 from pipeline import gate_record  # noqa: E402
 from tests.support.tmpdirs import tracked_mkdtemp  # noqa: E402
 
+T1, T2 = "task-1", "task-2"  # task ids; asserts use these names, not literals (path-dependent check)
+
 
 def sh(*cmd):
     subprocess.run(["git", *cmd], check=True, capture_output=True)
@@ -90,7 +92,7 @@ class MergeWaveTest(unittest.TestCase):
 
     def test_refresh_stale_reports_nothing_when_current(self):
         self._job("task-1", "a")
-        self.assertEqual(wt.refresh_stale(self.t, "s", ["task-1"]), ([], {}))
+        self.assertEqual(wt.refresh_stale(self.t, "s", [T1]), ([], {}))
 
     def test_the_merge_gates_are_logged_per_command(self):
         self._job("task-1", "a")
@@ -101,7 +103,7 @@ class MergeWaveTest(unittest.TestCase):
         recs = [r for r in map(json.loads, open(f"{self.t}/.work/s/metrics.jsonl", encoding="utf-8")) if r["ev"] == "gate_cmd"]
         self.assertEqual(
             [(r["ev"], r["kind"], r["task"], r["gate"], r["rc"]) for r in recs],
-            [("gate_cmd", "merge", "task-1,task-2", "t", 0), ("gate_cmd", "merge", "task-1,task-2", "u", 1)],
+            [("gate_cmd", "merge", f"{T1},{T2}", "t", 0), ("gate_cmd", "merge", f"{T1},{T2}", "u", 1)],
         )
 
     def test_red_tests_remove_merged_branches_and_rerun_is_idempotent(self):
@@ -110,12 +112,12 @@ class MergeWaveTest(unittest.TestCase):
         self._cfg()
         v, text = merge_wave.run(self.t, "s", ["task-1"])
         self.assertEqual(v, "FAIL", text)
-        self.assertIn("task-1: removed (its content is in the stage branch)", text)
+        self.assertIn(f"{T1}: removed (its content is in the stage branch)", text)
         self.assertFalse(os.path.isdir(f"{self.t}/.wt/s/task-1"))  # the work is on the stage branch: nothing left to block the driver
         self.assertTrue(os.path.isfile(f"{self.m}/a"))
         self.cfg["gates"] = [{"name": "t", "cmd": "true"}]
         self._cfg()
-        self.assertEqual(merge_wave.run(self.t, "s", ["task-1"])[0], "DONE")
+        self.assertEqual(merge_wave.run(self.t, "s", [T1])[0], "DONE")
 
     def _gate_runner(self, calls, record):
         """Fake gate runner: logs each argv; with RECORD it also writes a green qrun record (as qrun would) for `true`."""
@@ -131,7 +133,7 @@ class MergeWaveTest(unittest.TestCase):
     def _merge_then_rerun(self, after=None):
         """Merge task-1 with a recording runner, then rerun the gates (no task left) after AFTER(); -> (calls of the rerun, text)."""
         self._job("task-1", "a")
-        self.assertEqual(merge_wave.run(self.t, "s", ["task-1"], runner=self._gate_runner([], True))[0], "DONE")
+        self.assertEqual(merge_wave.run(self.t, "s", [T1], runner=self._gate_runner([], True))[0], "DONE")
         if after:
             after()
         calls: list[list[str]] = []
@@ -155,10 +157,11 @@ class MergeWaveTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertNotIn("skipped, identical passed tree", text)
 
-    def test_a_different_base_runs_the_gate_again(self):
+    def test_a_different_base_with_the_same_tree_skips_the_gate(self):
+        # the base is not compared: a new HEAD on an identical tree was already tested
         calls, text = self._merge_then_rerun(lambda: sh("-C", self.m, "commit", "--allow-empty", "-qm", "empty"))
-        self.assertEqual(len(calls), 1)
-        self.assertNotIn("skipped, identical passed tree", text)
+        self.assertEqual(len(calls), 0)
+        self.assertIn("skipped, identical passed tree", text)
 
     def _warn_run(self, cmd, ok):
         self._job("task-1", "a")
@@ -188,7 +191,7 @@ class MergeWaveTest(unittest.TestCase):
         self.cfg["gates"] = [{"name": "val", "cmd": "echo warning; exit 127"}]
         self.cfg["gate_warn_ok"] = {"s": ["val"]}
         self._cfg()
-        self.assertEqual(merge_wave.run(self.t, "s", ["task-1"])[0], "FAIL")
+        self.assertEqual(merge_wave.run(self.t, "s", [T1])[0], "FAIL")
 
     def test_gate_warn_ok_explicit_exit_code_and_same_cmd_gates(self):
         self._job("task-1", "a")
@@ -214,10 +217,10 @@ class MergeWaveTest(unittest.TestCase):
         with open(f"{self.m}/f", "w") as f:
             f.write("main")
         sh("-C", self.m, "commit", "-qam", "main side")
-        self.assertEqual(merge_wave.run(self.t, "s", ["task-1"])[0], "FAIL")
+        self.assertEqual(merge_wave.run(self.t, "s", [T1])[0], "FAIL")
         with open(f"{self.m}/f", "w") as f:
             f.write("dirty")
-        self.assertEqual(merge_wave.run(self.t, "s", ["task-1"])[0], "BLOCKED")
+        self.assertEqual(merge_wave.run(self.t, "s", [T1])[0], "BLOCKED")
 
 
 if __name__ == "__main__":

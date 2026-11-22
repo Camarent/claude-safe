@@ -8,16 +8,20 @@ import sys
 from . import claude, metrics, plan_review
 from .configuration import (
     ENV_NO_CONTEXT,
+    ESCALATE_DRAFT_CHARS,
     MODEL_OPUS,
     MODEL_SONNET,
+    PLAN_CONTEXT_FILE,
     PLAN_FILE,
     PLAN_REVIEW_REPORT_FILE,
     REQUEST_FILE,
+    TASKS_FILE,
     project,
     repo_dir,
     tool_cmd,
 )
 from .ctx import Ctx
+from .phase_context import brief_digest
 from .plan_check import check_feature, check_stage, errors_of, publish_problems_in, publish_urls, repo_of, tasks_files
 from .plan_files import feature_dir, read_phases
 from .plan_testrun import testrun_stage
@@ -172,6 +176,11 @@ def blocked_report(a):
     return f"plan: BLOCKED\n{read_text(os.path.join(feature_dir(a), 'OWNER.md')) or read_text(os.path.join(feature_dir(a), 'plan-last.md'))}".rstrip()
 
 
+def fix_goal(a, goal):
+    """The request as a plan-fix architect gets it: a 1024-byte digest of request.md and the feature's plan-context.md (absent: request only)."""
+    return brief_digest(goal, read_text(os.path.join(feature_dir(a), PLAN_CONTEXT_FILE)))
+
+
 def testrun_fix(a, c, model, goal, tr):
     """Plan-fix session for the Test lines `testrun` rejects (`tr`), then -> (tasks, problems): check_now plus the testrun problems that remain."""
     session(
@@ -181,7 +190,7 @@ def testrun_fix(a, c, model, goal, tr):
         build_prompt(
             a,
             model,
-            goal,
+            fix_goal(a, goal),
             "The plan you wrote passed `check`, but `testrun` rejects these Test lines; fix them through plan.py commands:\n" + "\n".join(tr),
         ),
         "plan-fix",
@@ -200,7 +209,7 @@ def testrun_check(a, c, model, goal, n, probs):
 def review_fix(a, c, model, goal, report_path):
     """Plan-fix session for the GAP lines the plan review wrote to report_path."""
     extra = f"The plan review wrote {report_path}: fix every GAP line in it through plan.py commands.\n"
-    session(a, c, model, build_prompt(a, model, goal, extra), "plan-fix")
+    session(a, c, model, build_prompt(a, model, fix_goal(a, goal), extra), "plan-fix")
 
 
 def review_plan(a, c, model, goal, n, probs):
@@ -224,6 +233,18 @@ def review_plan(a, c, model, goal, n, probs):
     return n, probs, [f"plan-review: gap {g.removeprefix('GAP:').strip()}" for g in res.gaps]
 
 
+def escalation_note(a):
+    """Opus brief lines after a Sonnet ESCALATE: its reason (the end of its reply, plan-last.md) and its draft (Plan.md, TASKS.md, cut), with the rule to amend, not replan."""
+    fd = feature_dir(a)
+    reason = read_text(os.path.join(fd, "plan-last.md")).strip()
+    draft = "".join(f"--- {name}\n{read_text(os.path.join(fd, name))[:ESCALATE_DRAFT_CHARS]}\n" for name in (PLAN_FILE, TASKS_FILE))
+    return (
+        f"Sonnet escalated this request to you. Its reason (the end of its reply): {reason}\n"
+        f"Its draft, cut at {ESCALATE_DRAFT_CHARS} chars per file:\n{draft}"
+        "Amend that draft to fix the reason above; do not replan from scratch.\n"
+    )
+
+
 def run(a):
     """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
     goal = read_text(a.prompt_file)
@@ -243,6 +264,7 @@ def run(a):
         hand = os.path.join(feature_dir(a), "ESCALATE.md")
         if os.path.exists(hand):
             extra += f"Sonnet escalated this request to you and left a handoff: read .work/{a.feature}/ESCALATE.md first, trust its facts, and do not repeat its exploration.\n"
+        extra += escalation_note(a)
         prompt = build_prompt(a, model, goal, extra)
         v = session(a, c, model, prompt, "plan-opus")
     if v == "BLOCKED":
@@ -252,7 +274,11 @@ def run(a):
     step(c, "check", "done", tasks=n, errors=len(errors_of(probs)))
     if errors_of(probs):
         session(
-            a, c, model, build_prompt(a, model, goal, "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)), "plan-fix"
+            a,
+            c,
+            model,
+            build_prompt(a, model, fix_goal(a, goal), "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)),
+            "plan-fix",
         )
         n, probs = check_now(a, goal)
     n, probs = testrun_check(a, c, model, goal, n, probs)

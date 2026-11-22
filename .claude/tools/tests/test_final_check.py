@@ -107,6 +107,11 @@ class FinalFixRoute(OrchHarness):
             self.answer(d, "VERDICT: " + (verdicts or {}).get(d["agent"], "PASS" if d["agent"] in ("reviewer", "tester", "web-tester") else "DONE"))
         self.fail("step not reached")
 
+    def triage(self):
+        """The final-test triage step after a red suite: red on the stage head only, so the fix round follows."""
+        t = self.until(lambda d: d["agent"] == "script" and "steps_finaltest.py" in d["prompt"])
+        self.answer(t, "VERDICT: FAIL\nred on the stage head only")
+
     def fix_round(self, check, report_word):
         a = self.until(lambda d: d["agent"] == "architect")
         self.assertIn(report_word, a["prompt"])
@@ -118,6 +123,7 @@ class FinalFixRoute(OrchHarness):
     def test_red_suite_gets_one_fix_round_then_the_lead(self):
         f = self.until(lambda d: d["agent"] == "script" and "final_check.py" in d["prompt"])
         self.answer(f, "VERDICT: FAIL\nFAIL make test")
+        self.triage()
         self.fix_round("final-test", "report-" + f["id"])
         f2 = self.until(lambda d: d["agent"] == "script" and "final_check.py" in d["prompt"])
         self.answer(f2, "VERDICT: FAIL\nstill red")
@@ -126,6 +132,7 @@ class FinalFixRoute(OrchHarness):
     def test_fixed_suite_moves_on_and_a_red_browser_check_gets_its_own_round(self):
         f = self.until(lambda d: d["agent"] == "script" and "final_check.py" in d["prompt"])
         self.answer(f, "VERDICT: FAIL\nred")
+        self.triage()
         self.fix_round("final-test", f["id"])
         f2 = self.until(lambda d: d["agent"] == "script" and "final_check.py" in d["prompt"])
         self.answer(f2, "VERDICT: DONE")
@@ -148,6 +155,7 @@ class FinalFixRoute(OrchHarness):
     def test_architect_blocked_means_the_lead(self):
         f = self.until(lambda d: d["agent"] == "script" and "final_check.py" in d["prompt"])
         self.answer(f, "VERDICT: FAIL\ntoolchain missing")
+        self.triage()
         a = self.until(lambda d: d["agent"] == "architect")
         self.answer(a, "VERDICT: BLOCKED")
         self.assertEqual(self.go("next")["action"], "ask_main")

@@ -16,7 +16,8 @@ export UV_NO_PROGRESS=1
 run() { uv run --frozen --no-sync "$@"; }
 
 case "${1:-}" in
-  sync)  uv sync --frozen 2>/dev/null || { uv lock && uv sync --frozen; } ;;
+  sync)  [ ! -L "$uvdir" ] || { echo "shared venv: sync in the main checkout" >&2; exit 2; }   # a worktree's .uv is a symlink to the main checkout's venv: syncing there would rewrite it
+         uv sync --frozen 2>/dev/null || { uv lock && uv sync --frozen; } ;;
   check) run ruff check . && run ruff format --check . && run mypy ;;
   fix)   run ruff format . ; run ruff check --fix --unfixable F401 . ;;   # format first (check exits 1 while findings remain); F401 stays manual: some "unused" imports are re-exports
   test)  ORCH_AGENTS_DIR="$root/.claude/agents" run python .claude/tools/ptest.py "${@:2}" ;;   # parallel, one file per process (patterns optional)

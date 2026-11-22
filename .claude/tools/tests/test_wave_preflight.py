@@ -37,7 +37,7 @@ class WavePreflightTest(unittest.TestCase):
             return self.script.pop(0)
         return {"recorded": extra[1], "verdict": "DONE"}
 
-    def fake_claude(self, args, cwd, timeout, done_file=None, env_extra=None):
+    def fake_claude(self, args, cwd, timeout, done_file=None, env_extra=None, pgid_file=None):
         self.claude.append(args)
         return mock.Mock(text="VERDICT: DONE", cost=0.5)
 

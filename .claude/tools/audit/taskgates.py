@@ -8,6 +8,7 @@ Prints `VERDICT: DONE` (all green, or the worktree content is unchanged since th
 failing gates' output (the dev reworks it), or `VERDICT: BLOCKED` when the task has no job worktree (never run on the main checkout) or no gates exist."""
 
 import argparse
+import fnmatch
 import hashlib
 import os
 import re
@@ -30,6 +31,7 @@ from pipeline.configuration import (  # noqa: E402
     GATE_COLLISION_RERUNS_KEY,
     GATE_FLAKE_RERUN_KEY,
     GATE_KIND_TASK,
+    GATE_SKIP_PATHS,
     METRICS_LOG,
     WORK_DIR,
     project,
@@ -146,12 +148,33 @@ def _base_problem(cfg, root, stage, git=gitx.try_out):
     return ""
 
 
+def docs_only(d, stage, task, git=gitx.try_out):
+    """True when every file the task changed against its base (tracked or new, in every repo) matches GATE_SKIP_PATHS: a docs-only task. A git that cannot answer, or no change at all, is False: the gates run."""
+    try:
+        info = wt.live_job(d, stage, task)
+        _cfg, _branch, parts = wt._parts(d, stage, task)
+        if not info or not parts:
+            return False
+        names = []
+        for _rel, _repo, w in parts:
+            out = git(w, "diff", "--name-only", info["base"])
+            new = git(w, "ls-files", "--others", "--exclude-standard")
+            if out is None or new is None:
+                return False
+            names += out.splitlines() + new.splitlines()
+    except (RuntimeError, OSError):
+        return False
+    return bool(names) and all(any(fnmatch.fnmatch(n, g) for g in GATE_SKIP_PATHS) for n in names)
+
+
 def _skip_reason(cfg, d, stage, task, git):
-    """-> (why the gates need not run, "") or ("", content hash of the worktree): no change against the base, or the same content as the last green run."""
+    """-> (why the gates need not run, "") or ("", content hash of the worktree): no change against the base, a docs-only change (the merge gate and CI still run the gates), or the same content as the last green run."""
     if not cfg.get("worktrees"):
         return "", ""
     if no_change(d, stage, task, git):
         return "the job worktree has no change against its base: gates not run (they would repeat the base's result; the merge gate runs the real code)", ""
+    if docs_only(d, stage, task, git):
+        return "docs-only, task gate skipped; merge gate and CI still run it", ""
     sha = content_sha(d, stage, task, git)
     if sha == read_text(sha_file(d, stage, task)).strip():
         return f"worktree unchanged since the last green gate run ({sha}): not run again", sha

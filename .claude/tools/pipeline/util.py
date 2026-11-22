@@ -11,7 +11,19 @@ import sys
 import tempfile
 import time
 
-from pipeline.configuration import ENV_SCRIPT_TIMEOUT, EST_ASCII_CHARS_PER_TOKEN, HOME, ORCH_LOG, SCRIPT_TIMEOUT_S, TASKS_FILE, WORK_DIR
+from pipeline.configuration import (
+    ENV_SCRIPT_TIMEOUT,
+    EST_ASCII_CHARS_PER_TOKEN,
+    EV_DISPATCH,
+    EV_REPORT,
+    EV_RETRY,
+    EV_SKIP,
+    HOME,
+    ORCH_LOG,
+    SCRIPT_TIMEOUT_S,
+    TASKS_FILE,
+    WORK_DIR,
+)
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # tools dir of this checkout
 
@@ -240,6 +252,16 @@ def default_dir():
         if up == d:
             return "."
         d = up
+
+
+def unreported(evs):
+    """Ids of dispatches that got neither a report nor a later retry/skip/dispatch of the same task (a newer dispatch supersedes it)."""
+    reported = {e["id"] for e in evs if e["ev"] == EV_REPORT}
+
+    def cleared(i, e):  # a later retry/skip/dispatch of the same task settles the dispatch
+        return any(x["ev"] in (EV_RETRY, EV_SKIP, EV_DISPATCH) and x.get("task") == e.get("task") for x in evs[i + 1 :])
+
+    return [e["id"] for i, e in enumerate(evs) if e["ev"] == EV_DISPATCH and e["id"] not in reported and not cleared(i, e)]
 
 
 # re-exported: callers and tests import them from here

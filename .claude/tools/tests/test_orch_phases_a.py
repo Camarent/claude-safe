@@ -7,6 +7,10 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from orch_harness import PhaseHarness, start_index_patch, stop_index_patch
 
+# task ids the PhaseHarness writes into TASKS.md; asserts build from these names
+TASK_ONE = "task-1"
+TASK_TWO = "task-2"
+
 
 def setUpModule():
     start_index_patch()
@@ -36,7 +40,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         self.run_batch(["script"], "DONE")
-        self.assertEqual(len(self.batch()), 2)  # tools-check, ux-shots; then sec + ux; arch after them
+        self.assertEqual(len(self.batch()), 3)  # tools-check, ux-shots; then sec + ux + arch in one pass
 
     def test_stage_without_audits_has_no_tools_check(self):
         with open(f"{self.d}/.work/s/TASKS.md", "a", encoding="utf-8") as f:
@@ -53,13 +57,12 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.base()
         m = self.run_batch(["merger"], "DONE")
         self.assertIn("wave 1", m[0]["prompt"])
-        self.assertIn("task-1 (dev report", m[0]["prompt"])
+        self.assertIn(f"{TASK_ONE} (dev report", m[0]["prompt"])
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        ds = self.run_batch(["sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN")
-        ds += self.run_batch(["arch-auditor"], "CLEAN")
+        ds = self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")  # one first pass; arch is first in sorted order
         self.assertEqual(
             {x["agent"]: x["model"] for x in ds}, {"arch-auditor": "sonnet", "sec-auditor": "sonnet", "ux-reviewer": "sonnet"}
         )  # sec and arch: Sonnet, Opus only with audit-high or after ESCALATE
@@ -71,7 +74,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.plan_fix_tasks()
         d = self.run_batch(["dev"], "DONE")
         self.assertEqual(d[0]["model"], "haiku")  # plan text never picks Sonnet
-        self.assertIn("task-2.md", d[0]["prompt"])  # model from the planner's row
+        self.assertIn(f"{TASK_TWO}.md", d[0]["prompt"])  # model from the planner's row
         self.run_batch(["reviewer"], "PASS")
         m = self.run_batch(["merger"], "DONE")
         self.assertIn("wave 2", m[0]["prompt"])
@@ -89,20 +92,17 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        self.assertEqual([x["agent"] for x in self.batch()], ["sec-auditor"])
+        self.assertEqual(sorted(x["agent"] for x in self.batch()), ["arch-auditor", "sec-auditor"])
 
-    def test_arch_audit_runs_after_sec_and_ux_and_sees_their_reports(self):
+    def test_arch_audit_runs_in_the_first_pass_with_sec_and_ux(self):
         self.base()
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
-        self.assertEqual([x["agent"] for x in self.run_batch(["sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN")], ["sec-auditor", "ux-reviewer"])
-        a = self.batch()
-        self.assertEqual([x["agent"] for x in a], ["arch-auditor"])
-        self.assertIn("audit-sec.md", a[0]["prompt"])
-        self.assertIn("audit-ux.md", a[0]["prompt"])
+        ds = self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")
+        self.assertEqual(sorted(x["agent"] for x in ds), ["arch-auditor", "sec-auditor", "ux-reviewer"])  # one first pass
 
     def test_audit_context_script_runs_before_the_audits_and_is_named_in_the_prompt(self):
         with open(f"{self.d}/AUDIT.md", "a", encoding="utf-8") as f:

@@ -162,13 +162,34 @@ def render(s, examples):
     return "\n".join(out)
 
 
+def log_rows(path):
+    """Rows of a denials.jsonl (denial_log.py: one {ts, rule, command, cwd} object per line); a missing file has none."""
+    if not os.path.isfile(path):
+        return []
+    return [ev for ev in read_events(path) if "rule" in ev]
+
+
+def by_rule(rows):
+    """-> [{rule, count}] of the log rows, most denials first."""
+    counts = collections.Counter(str(r["rule"]) for r in rows)
+    return [{"rule": rule, "count": n} for rule, n in counts.most_common()]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--days", type=int, default=5)
     ap.add_argument("--projects", default=None)
     ap.add_argument("--examples", type=int, default=1, help="show one example command per family when > 0")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--log", default=None, help="count the rows of this denials.jsonl by rule instead of reading transcripts")
     a = ap.parse_args(argv)
+    if a.log:
+        rules = by_rule(log_rows(a.log))
+        if a.json:
+            print(json.dumps(rules, indent=1))
+        else:
+            print("\n".join(f"  {r['count']:5d}  {r['rule']}" for r in rules) or "no denials logged")
+        return 0
     calls, denials = collect(a.projects or default_projects(), a.days)
     s = summarize(calls, denials)
     print(json.dumps(s, indent=1) if a.json else render(s, a.examples))

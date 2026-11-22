@@ -10,6 +10,9 @@ from .configuration import LIZARD_TIMEOUT_S, work_branch
 from .util import swallowed
 
 DEFAULT_REVIEW_CCN = 10
+# dispatch reason of a Haiku reviewer started by a ccn hit; a FAIL of it moves the next reviewer to Sonnet
+CCN_REVIEW_WHY = "reviewer ccn hit (Haiku, ccn brief)"
+CCN_REVIEW_BRIEF = " Complexity hit: check the changed functions named in your reason for the logic a long branch chain can hide (missed cases, wrong fallthrough)."  # appended to the Haiku reviewer brief of a ccn hit
 HUNK = re.compile(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@")
 
 
@@ -71,7 +74,7 @@ def review_ccn_hit(a, task_id):
         for _rel, r, w in parts:
             hit = worst_changed(w, wt._base_branch(r, want), branch, th)
             if hit:
-                return f"reviewer on Sonnet: ccn {hit[0]} in {hit[1]} ({hit[2]}), above review_ccn {th}"
+                return f"{CCN_REVIEW_WHY}: ccn {hit[0]} in {hit[1]} ({hit[2]}), above review_ccn {th}"
     except Exception as ex:
         swallowed("ccn.review_ccn_hit", ex)
         return None

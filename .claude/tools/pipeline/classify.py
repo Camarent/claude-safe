@@ -6,6 +6,7 @@ Classes: CODE (a model can fix it: the bounded ladder), PLAN (the brief or Test 
 import os
 import re
 
+from .configuration import ENV_ERROR_PATTERN
 from .plan_check import check_test_globs
 
 CODE, PLAN, INFRA, UNKNOWN = "code", "plan", "infra", "unknown"
@@ -13,6 +14,12 @@ STOP = (PLAN, INFRA, UNKNOWN)  # classes that go to the lead on the first occurr
 
 # qrun's own infra lines only, anchored at line start: a test name or an app error must not look like infra.
 INFRA_MARKERS = re.compile(r"^(qrun: cannot run|FAIL exit 126\b|FAIL exit 127\b)", re.M)
+ENV_ERROR = re.compile(ENV_ERROR_PATTERN)
+
+
+def env_failure(text):
+    """True when the output names a missing environment piece (missing module, no config path, command not found): a repair can fix it, a dev cannot."""
+    return ENV_ERROR.search(text) is not None
 
 
 def classify_test_run(output, stage_dir, tid, repo):

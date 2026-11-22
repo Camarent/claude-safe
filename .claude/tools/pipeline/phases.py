@@ -1,6 +1,7 @@
 """Phases after the planned tasks: wave merge prompt, tests, docs, audits, fix cycle, post-publish steps."""
 
 import fnmatch
+import json
 import os
 import re
 import shlex
@@ -14,6 +15,7 @@ from .audit_phases import (
     audit_base,
     audit_dir_of,
     audit_rounds,
+    docs_beside_audits,
     fix_step,
     last_report,
 )
@@ -26,12 +28,14 @@ from .configuration import (
     FAIL,
     FINAL_GATES_KEY,
     FINAL_TEST_RERUN_STEP,
+    FINALTEST_TRIAGE_STEP,
     FIX_WEB_STEP,
     MERGE_GATES_KEY,
     MODEL_HAIKU,
     PASS,
     PLAN_FILE,
     PRACTICES_DIR,
+    PREFLIGHT_MARKER,
     PUBLISH_BUILD,
     PUBLISH_CWD,
     PUBLISH_FILES,
@@ -501,8 +505,34 @@ def _head_moved(a, cfg, evs, sid):
     return bool(rec) and bool(_stage_head(a, cfg)) and rec != _stage_head(a, cfg)
 
 
+def _preflight_head(a):
+    """-> the sha of the preflight marker of this stage's feature folder ('' when none): the base a red test is compared with.
+    Read here, not via branches/graph: importing them makes an import cycle (graph -> phases -> branches -> graph)."""
+    name = str(getattr(a, "feature", None) or getattr(a, "stage", ""))  # the name graph._name gives
+    try:
+        with open(os.path.join(a.dir, WORK_DIR, name.split("/phases/")[0], PREFLIGHT_MARKER), encoding="utf-8") as f:
+            return str(json.load(f).get("head", ""))
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def _triage_step(a, report, base_head):
+    """Script after a failed final-test: rerun the failing test files alone; then on the preflight head (steps_finaltest.py)."""
+    cmd = f"{tool_cmd('pipeline/steps_finaltest.py')} --dir {shlex.quote(a.dir)} --stage {a.stage} --report {shlex.quote(report)}"
+    cmd += f" --base-head {shlex.quote(base_head)}" if base_head else ""
+    return step(
+        FINALTEST_TRIAGE_STEP,
+        "script",
+        None,
+        cmd,
+        {DONE, FAIL, BLOCKED},
+        None,
+        "final-test FAILED: rerun its failing test files alone, then on the preflight head (by script)",
+    )
+
+
 def _test_phases(a, cfg, flags, tasks, evs):
-    """Final verification, each with one bounded fix round when it comes back FAIL."""
+    """Final verification, each with one bounded fix round when it comes back FAIL. A failed run is triaged first: flaky -> no fix; PRE_EXISTING_RED -> the lead."""
     ids = ", ".join(t["id"] for t in tasks)
     yield [
         _with_head(a, cfg, _final_test_step(a, cfg, ids, "final-test", {DONE, FAIL}, {PASS, FAIL}))
@@ -512,18 +542,25 @@ def _test_phases(a, cfg, flags, tasks, evs):
         latest = FINAL_TEST_RERUN_STEP
         yield [_with_head(a, cfg, _final_test_step(a, cfg, ids, latest, {DONE, FAIL}, {PASS, FAIL}))]
     if last_verdict(evs, latest) == "FAIL":
-        yield [
-            fix_step(
-                a,
-                tasks,
-                "fix-plan-test",
-                [last_report(evs, latest)],
-                "the final verification (full test suite and checks) failed.",
-                "fix-plan-test",
-                "final-test FAILED",
-            )
-        ]
-        yield [_final_test_step(a, cfg, ids, "final-test-2", {DONE}, {PASS})]  # after the fix tasks have run
+        yield [_triage_step(a, last_report(evs, latest), _preflight_head(a))]
+        triage = last_verdict(evs, FINALTEST_TRIAGE_STEP)
+        if triage is None:  # the triage has not run yet: the driver runs it, then asks again with its verdict
+            return
+        if triage == BLOCKED:  # red on the preflight head too: not the stage's doing; the triage report names it
+            return
+        if triage != DONE:  # FAIL (red on the stage head only): the fix plan; DONE is flaky, no fix
+            yield [
+                fix_step(
+                    a,
+                    tasks,
+                    "fix-plan-test",
+                    [last_report(evs, latest)],
+                    "the final verification (full test suite and checks) failed.",
+                    "fix-plan-test",
+                    "final-test FAILED",
+                )
+            ]
+            yield [_final_test_step(a, cfg, ids, "final-test-2", {DONE}, {PASS})]  # after the fix tasks have run
     if flags["ui"]:  # after final-test: the browser check needs the rebuilt WASM, and a failed suite makes it pointless
         yield from _web_test_phases(a, cfg, tasks, evs)
 
@@ -559,8 +596,13 @@ def audit_phases(a, flags, tasks, evs):
     """Lazy: a later phase is built only after the earlier one is satisfied, so it can read the earlier verdicts from evs."""
     if flags["test"]:
         yield from _test_phases(a, cfg, flags, tasks, evs)
+    audits_follow = flags["audit"] and audit_due(paths(a)[0], len(tasks), int(cfg.get("audit_every_tasks") or DEFAULT_EVERY), a.dir)
+    beside = []
     if flags["docs"]:
-        yield [_docs_step(a, cfg)]
+        if audits_follow and docs_beside_audits(a, cfg, audit_dir_of(a, cfg)):
+            beside = [_docs_step(a, cfg)]  # no file the docs writer edits is in the stage diff: starts with the audits
+        else:
+            yield [_docs_step(a, cfg)]
     if flags["test"]:  # recall is logged for every tested stage and phase, not only audited ones
         yield [
             step(
@@ -573,6 +615,6 @@ def audit_phases(a, flags, tasks, evs):
                 "after the tests: planned tasks vs changed files and the context recall, by script (best effort; logs context-recall for every stage)",
             )
         ]
-    if not flags["audit"] or not audit_due(paths(a)[0], len(tasks), int(cfg.get("audit_every_tasks") or DEFAULT_EVERY), a.dir):
+    if not audits_follow:
         return
-    yield from audit_rounds(a, cfg, flags, tasks, evs)
+    yield from audit_rounds(a, cfg, flags, tasks, evs, beside)

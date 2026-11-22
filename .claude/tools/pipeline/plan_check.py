@@ -4,6 +4,7 @@ import fnmatch
 import glob
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -212,6 +213,60 @@ def check_test_globs(d, tid, repo):
     return probs
 
 
+CREATE_RE = re.compile(r"\b(?:add|new|create)\s+(?:(?:a|an|the)\s+)?(`[^`]+`|[\w./-]+)", re.IGNORECASE)
+
+
+def _created_names(text):
+    """Names the Goal:/Done: lines ask to add: a backticked word, or a path-like word (with `/` or an extension)."""
+    names = set()
+    for line in text.splitlines():
+        if not line.startswith(("Goal:", "Done:")):
+            continue
+        for m in CREATE_RE.finditer(line):
+            raw = m.group(1)
+            name = raw.strip("`")
+            if raw.startswith("`") or "/" in name or re.search(r"\.\w+$", name):
+                names.add(name)
+    return names
+
+
+def _exists_hit(repo, predicted, name):
+    """`file:line` where NAME already exists: a file at that repo path, or a def/class of NAME in a Predicted path."""
+    if "/" in name or re.search(r"\.\w+$", name):
+        return f"{name}:1" if os.path.isfile(os.path.join(repo, name)) else None
+    rx = re.compile(rf"^\s*(?:def|class)\s+{re.escape(name)}\b", re.MULTILINE)
+    for p in predicted:
+        full = os.path.join(repo, p)
+        if not os.path.isfile(full):
+            continue
+        if shutil.which("lp"):  # the code index is the first choice when it is installed
+            r = subprocess.run(["lp", "nav", "def", p, name], cwd=repo, capture_output=True, text=True, check=False, timeout=30)
+            hit = re.search(r"^(\S+?):(\d+)", r.stdout, re.MULTILINE)
+            if r.returncode == 0 and hit:
+                return f"{hit[1]}:{hit[2]}"
+        try:
+            text = Path(full).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        m = rx.search(text)
+        if m:
+            line = text.count("\n", 0, m.start()) + 1
+            return f"{p}:{line}"
+    return None
+
+
+def check_exists(d, tid, repo):
+    """Problems for one task file: a name its Goal/Done asks to add (file, def or class) that already exists, so the dev would redo finished work."""
+    text = read_text(os.path.join(d, tid + ".md"))
+    predicted = [p.rstrip("/") for p in paths_in(text)]
+    probs = []
+    for name in sorted(_created_names(text)):
+        hit = _exists_hit(repo, predicted, name)
+        if hit:
+            probs.append(f"{tid}: `{name}` already exists at {hit} (the Goal asks to add it; change the task or name a new one)")
+    return probs
+
+
 def check_test_commands(d, tid, repo, produced):
     """Problems and `cmd:` warnings for one task file's `Test:` command: its executable and path arguments must exist (in the repo or the nested repo the task edits) or be made by the plan. See plan_commands.command_findings."""
     text = read_text(os.path.join(d, tid + ".md"))
@@ -403,6 +458,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + depends_line_problems(d, [e])
         + check_test_refs(d, e["id"], repo)
         + check_test_globs(d, e["id"], repo)
+        + check_exists(d, e["id"], repo)
         + ptest_selector_problems(d, e["id"], repo)
         + check_test_quoting(d, e["id"])
         + check_lead_verified(d, e["id"])

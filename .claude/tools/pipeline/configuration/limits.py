@@ -69,6 +69,17 @@ LANG_MARKERS = (
     ("python", ("pyproject.toml", "setup.py", "requirements.txt"), ("",)),
     ("csharp", ("*.csproj", "*.sln"), ("",)),
 )  # guidelines.py: language slug -> (file name patterns, repo subfolders searched, top level only); "" = the repo root
+LANG_EXTENSIONS = (
+    ("cpp", (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp")),
+    ("rust", (".rs",)),
+    ("typescript", (".ts", ".tsx")),
+    ("js", (".js", ".jsx", ".mjs", ".cjs")),
+    ("python", (".py",)),
+    ("csharp", (".cs",)),
+)  # guidelines.py digest: language slug -> changed file extensions that select its <lang>.md
+GUIDELINES_EXT = ".md"  # guidelines.py digest: one file per language and base.md, all in GUIDELINES_DIR
+BASE_GUIDELINE = "base.md"  # guidelines.py digest: the guideline file that applies to every change
+GUIDELINES_DIGEST_MAX_LINES = 60  # guidelines.py digest: most lines digest() returns, pointers included
 TOOL_PROBE_TIMEOUT_S = 30  # prepare_repo.py: one `<python> -c "import pytest"` probe
 SHELL_KEYWORDS = frozenset(
     {"if", "then", "elif", "else", "fi", "for", "while", "until", "do", "done", "case", "esac", "in", "function", "select", "time", "!", "{", "}", "(", ")"}
@@ -123,6 +134,7 @@ CODESRV_REQUEST_LIMIT_S = float(
     os.environ.get("CODESRV_REQUEST_LIMIT", "600")
 )  # server watchdog: a request running longer ends the server (the next call starts a fresh one)
 CHECKOUT_LOCK = "checkout.lock"  # per main checkout (all stages on it): in its git dir, or in WORK_DIR when not a git checkout
+STAGE_LOCK = "wave.lock"  # per stage, in its WORK_DIR folder: the driver holds it (flock) and writes its pid; wt.py merge reads the pid
 INDEX_TIMEOUT_S = 900.0  # one `local.py index` run of index_step (ORCH_SCRIPT_TIMEOUT overrides)
 CI_EMPTY_POLLS = 3  # fallback CI wait: reads that may return no run (not registered yet) before "no checks" is believed, when the repo has workflows
 CI_RUNS_LIMIT = 50  # fallback CI wait: workflow runs read per commit
@@ -233,6 +245,7 @@ LINK_COMMIT_NOTE = (
     "FAIL: path outside this task's worktree: a commit was made in the main copy of a nested repo this task does not list ({repos}). It was left in place for the lead to revert. "
     "Do not run git commands in a linked repo. " + LINK_FIX
 )
+LINK_CITE_NOTE = 'FAIL: docs cite out of date: {doc} cites {path}:{line} as "{text}", but that line of {path} no longer has the quoted text. Fix the cite (the line number or the quote) in {doc}.'
 LINK_UNSAVED_NOTE = (
     "FAIL: path outside this task's worktree: you changed tracked files of a nested repo this task does not list ({files}, +{more} more). "
     "They were left in place because a patch of them could not be saved. Do not edit files outside your worktree. " + LINK_FIX
@@ -246,6 +259,7 @@ GATE_LABELS = {"gates": "gate", "gates_merge": "gates_merge", "gates_final": "ga
 EV_FORCED_REMOVE = (
     "forced_remove"  # a worktree removed with --force although its refusal check fired; carries no `task` key (the retry ladder reads every event with one)
 )
+EV_SETUP = "setup"  # metrics.jsonl: one worktree_setup command of a new job worktree (for = task, cmd, rc, seconds); no `task` key (the retry ladder reads every event with one)
 FORCED_WHY_MAX = 300  # chars of the refusal text kept in a `forced_remove` event
 EV_MAIN_RESTORED = "main_restored"  # the main checkout was on another branch at merge time and wt.py switched it back to the stage branch; carries no `task` key (as forced_remove)
 PLAN_MAX_PHASES = 99  # highest NN- phase folder number
@@ -289,7 +303,7 @@ LIMIT_FALLBACK_S = 900  # no parsable reset time: wait this long, then try again
 LIMIT_WAIT_MAX_S = 8 * 3600  # total waiting per session; beyond this the limit notice stays the result (the run then stops as before)
 QRUN_LOG_MAX_AGE_S = int(os.environ.get("QRUN_LOG_MAX_AGE_S", 7 * 24 * 3600))  # qrun-*.log older than this may be pruned by the next qrun run ...
 QRUN_LOG_MIN_KEEP = int(os.environ.get("QRUN_LOG_MIN_KEEP", 20))  # ... but only while at least this many newer logs remain (a minimum, no cap)
-QRUN_LOG_MAX_COUNT = 500  # at most this many qrun-*.log files stay in the temp dir, fresh or not (a cap, not a floor)
+QRUN_LOG_MAX_COUNT = 100  # at most this many qrun-*.log files stay in the temp dir, fresh or not (a cap, not a floor)
 RETRO_ASK_CAUSE_CHARS = 60  # feature_retro: chars of an ask_main message (task id and file paths removed) that name its cause when stops are counted
 QRUN_ENV = {
     "PYTHONDONTWRITEBYTECODE": "1"

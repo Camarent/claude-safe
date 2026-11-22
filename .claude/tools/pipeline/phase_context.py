@@ -32,6 +32,7 @@ from pipeline.configuration import (
 from pipeline.util import swallowed
 
 NOTES_CAP = 8000  # chars of plan-notes.md kept in a phase context (the real notes are about 5000)
+BRIEF_DIGEST_BYTES = 1024  # bytes of request.md + plan-context.md a fix architect gets (brief_digest)
 STAT_CAP = DIGEST_STAT_CAP  # lines of `git diff --stat` kept per repo in a phase context (kept name for callers)
 VERDICT_RE = re.compile(r"VERDICT:\s*(\w+)")  # first line of a report or audit file
 AUDIT_VERSION_RE = re.compile(r"(-\d+|-opus)?\.md$")  # `audit-sec-2.md`, `audit-sec-opus.md` are rounds of `audit-sec.md`
@@ -51,6 +52,12 @@ def _notes_lines(text, phase):
         if in_decisions or any(k in x for k in keys):
             hit.append(x)
     return ("\n".join(hit) or text)[:NOTES_CAP]
+
+
+def brief_digest(request, context, cap=BRIEF_DIGEST_BYTES):
+    """-> at most CAP UTF-8 bytes for a fix architect's brief: the head of request.md, then the head of plan-context.md with what room is left."""
+    head = "## request (head)\n" + request.strip() + "\n\n## plan context (head)\n"
+    return (head + context.strip()).encode("utf-8")[:cap].decode("utf-8", errors="ignore")
 
 
 def _read(path):

@@ -48,7 +48,7 @@ class WaveTest(unittest.TestCase):
         self.reports.append(extra)
         return {"recorded": extra[1], "verdict": "DONE"}
 
-    def fake_claude(self, args, cwd, timeout, done_file=None, env_extra=None):
+    def fake_claude(self, args, cwd, timeout, done_file=None, env_extra=None, pgid_file=None):
         self.claude.append(args)
         return self.handler(args)
 
@@ -141,7 +141,8 @@ class WaveTest(unittest.TestCase):
         msg = f"task-1: review failed 2 rounds; findings {rep}; fix the cause, then `orch.py retry --stage s --step task-1` (or `skip`)"
         text = cli_wave._ask_text(type("A", (), {"stage": "s"})(), msg)
         self.assertIn("W1: fix text 1", text)  # beyond the 5-line tail
-        self.assertIn('--step task-1 --note "<quote the reviewer\'s exact fix text>"', text)
+        note_cmd = '--step task-1 --note "<quote the reviewer\'s exact fix text>"'
+        self.assertIn(note_cmd, text)
 
     def test_start_clears_stale_blocked_file(self):
         Path(f"{self.w}/BLOCKED.md").write_text("old block\n", encoding="utf-8")
@@ -313,7 +314,8 @@ class WaveTest(unittest.TestCase):
         out = io.StringIO()
         with redirect_stdout(out):
             cli_wave.main(["status", "--stage", "s", "--dir", self.d])
-        self.assertEqual(out.getvalue().split("\n")[:4], ["task-1 done", "task-2 failed", "task-3 open", "task-4 open"])
+        expected = ["task-1 done", "task-2 failed", "task-3 open", "task-4 open"]
+        self.assertEqual(out.getvalue().split("\n")[:4], expected)
 
     def test_project_allow_from_pipeline_json(self):
         with mock.patch.object(claude, "project", return_value={"allow": ["Bash(x validate *)"]}):

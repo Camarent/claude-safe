@@ -64,7 +64,7 @@ class CcnUnits(unittest.TestCase):
 
     def test_review_hit_reason_and_threshold(self):
         r, w = self._hit((14, "f", "m.py"), th=7)
-        self.assertEqual(r, "reviewer on Sonnet: ccn 14 in f (m.py), above review_ccn 7")
+        self.assertEqual(r, "reviewer ccn hit (Haiku, ccn brief): ccn 14 in f (m.py), above review_ccn 7")
         self.assertEqual(w.call_args[0][3], 7)
 
     def test_review_no_hit_uses_default_threshold(self):

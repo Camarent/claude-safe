@@ -495,7 +495,7 @@ def _retro_phases(a, evs, n):
                     f"Write .work/{a.stage}/retro/retro-digest.md (max 25 lines, facts only, no advice): cost per agent and model; the 5 costliest sessions with task and verdict; retries, ladder (blocked) sessions and their cost; steps that ran without producing work (BLOCKED, skipped); "
                     f"any agent that ran on a different model than its frontmatter default; the LEAD-COST lines of retro-numbers.md copied as they are (lead cost by token kind, gaps, cache rewrites)."
                     + tail(a, "{rid}", allowed(DONE, BLOCKED), "the 3 costliest lines"),
-                    {DONE, BLOCKED},
+                    {DONE, BLOCKED, FAIL},  # a failed digest never blocks the stage: the retro reads what it can
                     None,
                     "stage end: cost digest for the retro",
                 ),

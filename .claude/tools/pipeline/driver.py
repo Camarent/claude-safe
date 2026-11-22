@@ -17,6 +17,7 @@ from .configuration import (
     ENV_REVIEW_DIR,
     ENV_SCRATCH_DIR,
     EV_DISPATCH,
+    PGID_FILE_NAME,
     REVIEWER,
     SCRATCH_DIR,
     SCRATCH_ENV,
@@ -155,7 +156,7 @@ def run_one(c, d):
         turns = _auditor_turns(c, d) if d["agent"] in AUDITORS else None
         args = claude.claude_args(d["agent"], d["model"], d.get("effort"), d["prompt"], dir=c.dir, max_turns=turns, scratch=scratch_env(c)[ENV_SCRATCH_DIR])
         if d["agent"] != REVIEWER:
-            u = claude.session(args, c.dir, done_file=f, env_extra=scratch_env(c))
+            u = claude.session(args, c.dir, done_file=f, env_extra=scratch_env(c), pgid_file=os.path.join(c.w, PGID_FILE_NAME))
         else:  # mutation checks run in the job worktree; the script puts it back whatever the session does
             task = dispatch_task(c, d)
             why = review_begin(c, task)
@@ -163,12 +164,20 @@ def run_one(c, d):
                 u = dict(claude.usage({}), error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview not started: {why}")
             else:
                 try:
-                    u = claude.session(args, c.dir, done_file=f, env_extra={**scratch_env(c), ENV_REVIEW_DIR: review_root(c, task)})
+                    u = claude.session(
+                        args,
+                        c.dir,
+                        done_file=f,
+                        env_extra={**scratch_env(c), ENV_REVIEW_DIR: review_root(c, task)},
+                        pgid_file=os.path.join(c.w, PGID_FILE_NAME),
+                    )
                 finally:
                     bad = review_reset(c, task)
                 if bad:
                     reset_failed = True
                     u = dict(u, error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview reset failed: {bad}")
+    if u.get("stopped"):  # the driver is stopping: the session has no answer, so the report is not written
+        return d, u, {}
     if not read_text(f).strip():
         write_text(f, u["result"])
     elif reset_failed:  # the reviewer already wrote a report: the failed reset still decides the verdict, its text stays below

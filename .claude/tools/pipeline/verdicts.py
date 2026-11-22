@@ -17,7 +17,11 @@ from .configuration import (  # noqa: F401  # AUDITORS and ROLES are re-exported
     WEB_TESTER,
 )
 
-NO_FINDINGS_RE = re.compile(r"^\W*wrong\W*0\W+risky\W*0\W+nit\W*0\W*$", re.I | re.M)  # the reviewer rubric counts line
+WRONG_ZERO_RE = re.compile(r"^\W*wrong\W*0\b", re.I | re.M)  # the reviewer rubric counts line, `wrong 0` first on its line
+WRONG_NONZERO_RE = re.compile(
+    r"^\W*wrong\W*[1-9]|^\W*wrong\W*0\W+risky\W*[1-9]", re.I | re.M
+)  # a wrong or risky finding anywhere in the report keeps the ESCALATE
+ZERO_TAIL_LINES = 8  # the wrong-0 counts line sits among the last lines of a reviewer report
 ESCALATE_LINE_RE = re.compile(r"^\s*ESCALATE:\s*\S", re.M)  # reviewer.md: the line that names a security class
 NEED_LINE_RE = re.compile(
     rf"^\s*\W*{re.escape(NEED)}\W*:\s*(\S.*)$", re.M
@@ -35,6 +39,15 @@ def _final_word(text):
     lines = [ln for ln in text.splitlines() if ln.strip()]
     m = FINAL_WORD_RE.match(lines[-1]) if lines else None
     return m.group(1) if m else None
+
+
+UNCLEAR_REASONS = ("no clear verdict", "no report file written")  # the dev reasons the auto retry (cli_orch _auto_retry) has already run for
+KILLED_RC = "rc=-"  # a claude run ended by a signal (`wave: claude rc=-9`): as unclear as a missing verdict, retried the same way
+
+
+def is_unclear(reason):
+    """True when the report reason is one the auto retry runs for: no verdict line, no report file, or a run killed by a signal."""
+    return reason in UNCLEAR_REASONS or KILLED_RC in (reason or "")
 
 
 def missing_note(role, reason):
@@ -68,6 +81,15 @@ def _unverified_clean(role, m, text):
     return bool(m) and m.group(1) == CLEAN and role == UX_REVIEWER and bool(UX_UNVERIFIED_RE.search(text))
 
 
+def _zero_wrong_downgrade(role, m, text):
+    """True for a reviewer ESCALATE with `wrong 0` among the last lines, no finding `wrong N` (N>0) and no `ESCALATE:` line: nothing to fix, PASS with notes."""
+    if not (bool(m) and m.group(1) == ESCALATE and role == "reviewer"):
+        return False
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    tail = "\n".join(lines[-ZERO_TAIL_LINES:])
+    return bool(WRONG_ZERO_RE.search(tail)) and not WRONG_NONZERO_RE.search(text) and not ESCALATE_LINE_RE.search(text)
+
+
 def verdict(role, text):
     """-> (verdict, reason). `VERDICT: X` on its own line wins; else ESCALATE:/dev heuristics; unclear = the role's safe verdict."""
     allowed, safe = ROLES[role]
@@ -81,8 +103,11 @@ def verdict(role, text):
     if _partial_ui_pass(role, m, text):
         return BLOCKED, "UI check partial or not run: a PASS needs every checklist item verified"
     if m:  # an explicit line decides, even a wrong one (then the safe verdict)
-        if m.group(1) == ESCALATE and role == "reviewer" and NO_FINDINGS_RE.search(text) and not ESCALATE_LINE_RE.search(text):
-            return "PASS", "ESCALATE with no findings (wrong 0, risky 0, nit 0)"  # nothing to fix: a second paid review would only repeat it
+        if _zero_wrong_downgrade(role, m, text):
+            return (
+                "PASS",
+                "escalate_downgraded: ESCALATE with wrong 0 and no security line: PASS with notes",
+            )  # nothing to fix: a second paid review would only repeat it
         if m.group(1) in allowed:
             return m.group(1), "report line"
         return safe, f"verdict {m.group(1)} not valid for {role}"

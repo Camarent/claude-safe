@@ -14,6 +14,7 @@ import fcntl
 import os
 import re
 import shutil
+import signal
 import tempfile
 import unicodedata
 from pathlib import Path
@@ -33,7 +34,11 @@ from .configuration import (
     EV_SKIP,
     FAIL,
     PASS,
+    PGID_FILE_NAME,
     RERUN_FROM,
+    SQUASH_MSG_FILE,
+    STAGE_LOCK,
+    STALE_RERUN_MAX,
     STEP_OK,
     TASKS_FILE,
     TOOLS_DIR,
@@ -47,12 +52,21 @@ from .configuration import (
 from .ctx import Ctx
 from .run import Run
 from .tasks import parse_tasks
-from .util import add_subcommand, append_event, read_jsonl, read_text, swallowed, work_path, write_text
+from .util import add_subcommand, append_event, read_jsonl, read_text, swallowed, unreported, work_path, write_text
+from .worktree import _unmerged, read_manifest
 from .worktrees import review_recover
 
 
 def is_heavy(d):
     return limits.is_heavy(d["agent"], d.get("model"))
+
+
+def order_by_model(ds):
+    """-> the ready dispatches grouped by model, in first-seen model order and in their own order within a model: one model's run reuses its warm cache."""
+    rank: dict = {}
+    for d in ds:
+        rank.setdefault(d.get("model"), len(rank))
+    return sorted(ds, key=lambda d: rank[d.get("model")])
 
 
 STUB_VERDICT = {"reviewer": PASS, "tester": PASS, "web-tester": PASS, "sec-auditor": CLEAN, "arch-auditor": CLEAN, "ux-reviewer": CLEAN}
@@ -141,16 +155,43 @@ def _dry_loop(a, tmp, c):
     return 3
 
 
-def recover_unreported(c):
-    """A dispatch with no report and no later retry/skip/dispatch of its task means the driver died while it ran: give it ONE automatic re-run (per task and role) instead of asking the lead. -> number re-run."""
-    evs = read_jsonl(c.log)
-    reported = {e["id"] for e in evs if e["ev"] == EV_REPORT}
-    n = 0
-    for i, e in enumerate(evs):
-        if e["ev"] != EV_DISPATCH or e["id"] in reported or any(x.get("task") == e["task"] and x["ev"] in ("retry", "skip", "dispatch") for x in evs[i + 1 :]):
+def _stale_reruns(evs, task, role):
+    """-> how many automatic re-runs (stale retries) this task and role already got."""
+    return sum(1 for x in evs if x["ev"] == EV_RETRY and x.get("stale") and x.get("task") == task and x.get("role") == role)
+
+
+def _kill_stale_sessions(w):
+    """Kill the process groups listed in the stage's pgid file (sessions a dead driver left running), then remove the file. -> number killed."""
+    path = os.path.join(w, PGID_FILE_NAME)
+    try:
+        with open(path, encoding="utf-8") as f:
+            pids = [int(ln) for ln in f if ln.strip().isdigit()]
+    except FileNotFoundError:
+        return 0
+    killed = 0
+    for pid in pids:
+        try:
+            os.killpg(pid, signal.SIGKILL)  # each session leads its own group (start_new_session)
+            killed += 1
+        except ProcessLookupError:  # already gone
             continue
-        if any(x["ev"] == EV_RETRY and x.get("stale") and x.get("task") == e["task"] and x.get("role") == e.get("role") for x in evs):
-            continue  # already re-run once: now it is the lead's call
+    Path(path).unlink(missing_ok=True)
+    return killed
+
+
+def recover_unreported(c):
+    """A dispatch with no report and no later retry/skip/dispatch of its task means the driver died while it ran: give it an automatic re-run (per task and role, up to STALE_RERUN_MAX) instead of asking the lead. Live sessions of the dead driver are killed first. -> number re-run."""
+    evs = read_jsonl(c.log)
+    open_ids = set(unreported(evs))
+    if not open_ids:
+        return 0
+    _kill_stale_sessions(c.w)
+    n = 0
+    for e in evs:
+        if e["ev"] != EV_DISPATCH or e["id"] not in open_ids:
+            continue
+        if _stale_reruns(evs, e["task"], e.get("role")) >= STALE_RERUN_MAX:
+            continue  # re-run as often as the setting says: then it is the lead's call
         append_event(
             c.log,
             {
@@ -209,7 +250,7 @@ def cmd_run(a):
         return dry_walk(a)
     c = Ctx(a)
     os.makedirs(c.w, exist_ok=True)
-    lock = os.path.join(c.w, "wave.lock")  # one driver per stage: an unreported dispatch at `next` means its session died
+    lock = os.path.join(c.w, STAGE_LOCK)  # one driver per stage: an unreported dispatch at `next` means its session died
     if not _take_lock(lock):
         print(f"blocked: wave.py already runs this stage ({lock})")
         return 4
@@ -234,8 +275,42 @@ def _checkout_lock(a):
     return os.path.join(a.dir, WORK_DIR, CHECKOUT_LOCK)
 
 
+def _staged_paths(repo):
+    """-> the paths with any change (staged or not) in the checkout REPO."""
+    return {gitx.unquote_path(ln[3:]) for ln in gitx.out(repo, "status", "--porcelain").splitlines() if ln.strip()}
+
+
+def _squash_job(repo, job, dirty):
+    """-> True when JOB (a manifest entry) changes exactly the files DIRTY and is not merged into its base yet."""
+    branch, base = job.get("branch"), job.get("base")
+    if not branch or not base:
+        return False
+    changed = gitx.try_out(repo, "diff", "--name-only", f"{base}...{branch}")
+    if changed is None or set(changed.split()) != dirty:
+        return False
+    return bool(_unmerged(repo, branch, base))
+
+
+def reset_squash_residue(a, c):
+    """An interrupted `git merge --squash` leaves staged changes and SQUASH_MSG in the checkout's git dir. When the dirty files are exactly the diff of a manifest job not yet merged, reset the checkout (git reset --hard HEAD) and log it. Any other dirty file: the checkout is left alone. -> the reset files, [] when nothing was reset."""
+    repo = repo_path(a.dir)
+    if not os.path.exists(os.path.join(repo, ".git")):
+        return []
+    if not os.path.exists(os.path.join(gitx.out(repo, "rev-parse", "--absolute-git-dir"), SQUASH_MSG_FILE)):
+        return []
+    dirty = _staged_paths(repo)
+    if not dirty or not any(_squash_job(repo, job, dirty) for job in read_manifest(a.dir, a.stage).values()):
+        return []
+    gitx.out(repo, "reset", "--hard", "HEAD")
+    files = sorted(dirty)
+    append_event(c.log, {"ev": "merge_residue_reset", "files": files})
+    return files
+
+
 def _run_locked(a, c):
     """The stage run under the stage lock taken by cmd_run: guards, recovery, then the loop."""
+    if files := reset_squash_residue(a, c):
+        print(f"reset {len(files)} file(s) left by an interrupted squash merge: {', '.join(files)}")
     if msg := dirty_block(a):
         print(msg)
         return 4
@@ -388,7 +463,7 @@ def run_loop(a, c):
             if hit:
                 print(hit)
                 return 3
-            _run_wave(c, r["dispatches"])
+            _run_wave(c, order_by_model(r["dispatches"]))
         elif act == "ask_main":
             return _blocked(a, c, r)
         else:

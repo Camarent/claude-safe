@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
 import wt
 from audit import final_check
-from pipeline import gate_record, gitx
+from pipeline import gate_record
 from pipeline.configuration import (
     BLOCKED,
     DONE,
@@ -49,19 +49,17 @@ def _drop_merged(a_dir, stage, tasks):
 
 
 def _passed_gates(repo, cmds):
-    """CMDS whose green run (a qrun record) is on the merged tree of REPO and on its stage-branch HEAD -> {cmd: record}. No tree or no HEAD (not a repo): no skip. A command that does not parse has no record."""
+    """CMDS whose green run (a qrun record) is on the merged tree of REPO -> {cmd: record}. The base (stage-branch HEAD) is not compared: a squash merge makes a new HEAD, the tree is what was tested. No tree (not a repo): no skip. A command that does not parse has no record."""
     tree = gate_record.tree_hash(repo)
-    base = gitx.try_out(repo, "rev-parse", "HEAD")
     hits: dict[str, dict] = {}
-    if not (tree and base):
+    if not tree:
         return hits
-    base = base.strip()
     for c in cmds:
         try:
             argv = shlex.split(c)
         except ValueError:
             continue
-        rec = gate_record.find_passed(repo, argv, tree=tree, base=base) if tree else None
+        rec = gate_record.find_passed(repo, argv, tree=tree)
         if rec:
             hits[c] = rec
     return hits

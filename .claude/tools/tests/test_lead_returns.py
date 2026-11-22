@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import cli_wave
+from pipeline.configuration import STALE_RERUN_MAX
 from pipeline.ctx import Ctx
 from tests.support.orch_harness import OrchHarness
 
@@ -52,7 +53,7 @@ class LeadReturns(OrchHarness):
         self.answer(cl, "VERDICT: FAIL\nlocked file")
         self.assertEqual(self.go("next")["action"], "done")
 
-    def test_a_dead_driver_gets_one_automatic_rerun_per_step(self):
+    def test_a_dead_driver_gets_automatic_reruns_up_to_the_setting_per_step(self):
         self.flags("no-test no-audit no-retro no-index no-clean no-push no-live no-release")
         first = self.next()
         self.assertEqual(self.go("next")["action"], "ask_main")  # dispatched, never reported
@@ -61,7 +62,11 @@ class LeadReturns(OrchHarness):
         again = self.next()
         self.assertEqual(again["agent"], first["agent"])
         self.assertNotEqual(again["id"], first["id"])
-        self.assertEqual(self.go("next")["action"], "ask_main")  # dies again: now the lead decides, no endless loop
+        for _ in range(STALE_RERUN_MAX - 1):  # each re-run may die once more, up to STALE_RERUN_MAX
+            self.assertEqual(self.go("next")["action"], "ask_main")
+            self.assertEqual(cli_wave.recover_unreported(ctx), 1)
+            self.next()
+        self.assertEqual(self.go("next")["action"], "ask_main")  # dies past the setting: now the lead decides, no endless loop
         self.assertEqual(cli_wave.recover_unreported(ctx), 0)
 
     def test_a_dead_reviewer_rerun_does_not_restart_the_dev(self):

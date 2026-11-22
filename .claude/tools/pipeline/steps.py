@@ -3,10 +3,11 @@
 import hashlib
 import os
 import re
+import shlex
 
 from .briefs import ENV_DRY_NO_CCN, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
-from .ccn import review_ccn_hit
-from .classify import STOP, classify_test_run
+from .ccn import CCN_REVIEW_BRIEF, CCN_REVIEW_WHY, review_ccn_hit
+from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
     ARCHITECT,
     BLOCKED,
@@ -23,6 +24,7 @@ from .configuration import (
     GATE_FREE_ROUNDS,
     GATE_PLAN_ERROR,
     HAIKU_DEV_TRIES,
+    HAIKU_REWORK_TRIES,
     MAX_ROUNDS,
     MAX_TRIES,
     METRICS_LOG,
@@ -51,7 +53,12 @@ from .configuration import (
 )
 from .plan_files import paths_in, task_type
 from .stagedir import resolve_stage
+from .steps_docfix import DOCFIX_WHY, repeated_pair
+from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
+from .steps_verify import VERIFY_WHY, blocked_for_checks
+from .steps_verify import command as verify_command
 from .util import append_jsonl, now, paths, read_text, work_path, write_text
+from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
 
@@ -164,9 +171,11 @@ class _TaskState:
         self.test_fails = _reports(mine, None, FAIL, self.test_ids)
         self.dev_done = _reports(mine, "dev", DONE)
         self.sonnet_dev = sonnet_dev_dispatched(mine)
+        ccn_ids = {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "reviewer" and str(e.get("why") or "").startswith(CCN_REVIEW_WHY)}
+        self.ccn_fail = _reports(mine, "reviewer", FAIL, ccn_ids) > 0
         self.reviewer_sonnet = (
-            task["review_sonnet"] or self.rev_esc or sonnet_review_dispatched(mine)
-        )  # the reviewer goes to Sonnet only by itself (gate or its own ESCALATE) and then stays; a Sonnet dev does not move it
+            task["review_sonnet"] or self.rev_esc or self.ccn_fail or sonnet_review_dispatched(mine)
+        )  # the reviewer goes to Sonnet only by itself (gate, its own ESCALATE, or a FAIL of a ccn-hit Haiku reviewer) and then stays; a Sonnet dev does not move it
 
 
 REPORT_WHY = "report task: content review on Sonnet"
@@ -225,9 +234,10 @@ def _disp_reviewer_model(a, task, rid, s):
     if os.environ.get(ENV_DRY_NO_CCN):  # dry run: no job worktree, the gate cannot fire
         return _disp(a, task, rid, "reviewer", False)
     why = review_ccn_hit(a, task["id"])
-    d = _disp(a, task, rid, "reviewer", bool(why))
+    d = _disp(a, task, rid, "reviewer", False)  # a ccn hit starts Haiku with the ccn brief; its FAIL or ESCALATE goes on to Sonnet
     if why:
         d["why"] = why
+        d["prompt"] += CCN_REVIEW_BRIEF
     return d
 
 
@@ -282,18 +292,22 @@ def _gates_rework(a, task, mine, rid):
     return _disp(a, task, rid, "dev", task["owner_sonnet"] or _tries(mine, "dev", MODEL_HAIKU) >= HAIKU_DEV_TRIES, rework=f)
 
 
+def _taskgates_script(a, task, rid):
+    return _script(
+        task,
+        rid,
+        "task gates: full gate set in the job worktree; FAIL goes back to the dev",
+        f"{tool_cmd('audit/taskgates.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}",
+    )
+
+
 def _quality_or_review(a, task, mine, rid, s):
     """Advisory quality run (lints/analysis of the touched files and repos), once per task, after the tests are green: findings go to the dev as one
     recommended extra round, never to the lead; later rounds and clean runs go on to the review. A missing `Gates:` line comes first."""
     if (
         task_gates_on(a) and len(s.gate_ids) < s.dev_done and not is_report(a, task)
     ):  # the driver runs the full gate set once per dev DONE (the script skips unchanged content)
-        return _script(
-            task,
-            rid,
-            "task gates: full gate set in the job worktree; FAIL goes back to the dev",
-            f"{tool_cmd('audit/taskgates.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}",
-        )
+        return _taskgates_script(a, task, rid)
     back = _gates_rework(a, task, mine, rid)
     if back:
         return back
@@ -387,9 +401,6 @@ def straight_to_sonnet(a, task, mine):
     return None
 
 
-UNCLEAR_REASONS = ("no clear verdict", "no report file written")  # the dev reasons the auto retry (cli_orch _auto_retry) has already run for
-
-
 def _test_run(a, tid):
     """The task's Test lines run in its job worktree -> (verdict, note). Lazy import: testrun imports wt, which imports this package."""
     import testrun
@@ -399,7 +410,7 @@ def _test_run(a, tid):
 
 def _evidence_green(a, task, last):
     """True when the dev's unclear BLOCKED left a commit and its Test lines run green: the reviewer judges the commit, no synthetic DONE is written."""
-    if last["verdict"] != BLOCKED or last.get("reason") not in UNCLEAR_REASONS or not job_diff(a, task["id"]):
+    if last["verdict"] != BLOCKED or not is_unclear(last.get("reason")) or not job_diff(a, task["id"]):
         return False
     v, note = _test_run(a, task["id"])
     return v == DONE and "skipped" not in note
@@ -437,10 +448,26 @@ def _after_dev_other(a, task, mine, rid, s, last):
             {"ev": "note", "ts": now(), "stage": a.stage, "task": task["id"], "text": "verdict from evidence: commit + green Test lines"},
         )
         return _to_review(a, task, mine, rid, s)
+    if _checks_blocked(a, task, last):  # the checks decide, not the lead: the Test lines and gates run once, green -> review, red -> dev
+        return _script(task, rid, VERIFY_WHY, verify_command(a, task["id"]))
     return {
         "action": "ask_main",
         "message": f"{task['id']}: dev verdict {last['verdict']} ({last.get('reason', '')}); report {last['file']}" + hint(a, task["id"]),
     }
+
+
+def _checks_blocked(a, task, last):
+    """True when the dev BLOCKED for a tests or environment reason and left a commit (a BLOCKED with no commit still asks the lead)."""
+    return last["verdict"] == BLOCKED and blocked_for_checks(last) and bool(job_diff(a, task["id"]))
+
+
+def _after_verify(a, task, mine, rid, s, last):
+    """The verify step after a BLOCKED dev: green -> the review (no ask); red -> the dev reworks with the output; anything else -> the lead."""
+    if last["verdict"] == DONE:
+        return _to_review(a, task, mine, rid, s)
+    if last["verdict"] == FAIL:
+        return _disp(a, task, rid, "dev", task["owner_sonnet"] or sonnet_dev_dispatched(mine), rework=last["file"])
+    return {"action": "ask_main", "message": f"{task['id']}: checks cannot run after the dev BLOCKED; output {last['file']}" + hint(a, task["id"])}
 
 
 def _gap_text(last):
@@ -455,11 +482,54 @@ def _reviewer_before(mine, dev_report):
     return rep if rep and rep["verdict"] in (FAIL, ESCALATE) else None
 
 
-def _after_script(a, task, mine, rid, s, last):
+def _script_followup(a, task, mine, rid, s, last):
+    """The script steps that name a follow-up (escalation gate, checks after a BLOCKED dev, environment repair). None for the others."""
     if last["id"] in script_ids(
         mine, "escalation gate"
     ):  # the gate only guards the step before it: plan that step again without the gate events (`_gate` then reads the verdict)
         return _next_step(a, task, [e for e in mine if e.get("id") != last["id"]], rid)
+    if last["id"] in script_ids(mine, VERIFY_WHY):  # the checks after a BLOCKED dev: green -> review, red -> the dev with the output
+        return _after_verify(a, task, mine, rid, s, last)
+    if last["id"] in script_ids(mine, ENV_REPAIR_WHY):  # the environment repair ran: the red step (test run or task gates) runs again
+        if env_repair_kind(mine, last["id"]) == TEST_KIND:
+            return _test_run_script(a, task, rid)
+        return _taskgates_script(a, task, rid)
+    if last["id"] in script_ids(mine, DOCFIX_WHY):
+        return _docfix_done(a, task, mine, rid, s, last)
+    return None
+
+
+def _docfix_dispatch(a, task, mine, rid, last):
+    """A reviewer FAIL that repeats one docs-only one-line finding (the same `old -> new` line in the last two FAIL reports): a script applies it, then the reviewer runs again. None otherwise; once per task."""
+    if script_ids(mine, DOCFIX_WHY):
+        return None
+    fails = _failed_review_reports(mine)
+    if len(fails) < 2 or fails[-1]["id"] != last["id"]:
+        return None
+    pair = repeated_pair(read_text(fails[-2]["file"]), read_text(fails[-1]["file"]))
+    if pair is None:
+        return None
+    path, old, new = pair
+    return _script(
+        task, rid, DOCFIX_WHY, f"{tool_cmd('pipeline/steps_docfix.py')} --file {shlex.quote(path)} --old {shlex.quote(old)} --new {shlex.quote(new)}"
+    )
+
+
+def _docfix_done(a, task, mine, rid, s, last):
+    """The docfix script ran: applied -> the reviewer judges the new commit (not a reviewer try); not applied -> the normal review round."""
+    if last["verdict"] == DONE:
+        d = _disp_reviewer(a, task, rid, s, mine)
+        if d["agent"] == "reviewer":
+            d["free"] = True
+        return d
+    rev = next(e for e in reversed(mine) if e["ev"] == EV_REPORT and e["role"] == "reviewer")
+    return _after_reviewer(a, task, mine, rid, s, rev)
+
+
+def _after_script(a, task, mine, rid, s, last):
+    followup = _script_followup(a, task, mine, rid, s, last)
+    if followup is not None:
+        return followup
     if last["id"] in s.test_ids:  # the test run: BLOCKED -> lead; FAIL -> dev ladder like an ESCALATE; DONE -> pre-review / reviewer
         return _after_test(a, task, mine, rid, s, last)
     if last["id"] in s.gate_ids:  # the task gates: BLOCKED -> lead; FAIL -> free dev rounds, one Sonnet dev, then the lead; DONE -> quality run / review
@@ -480,10 +550,22 @@ def _after_script(a, task, mine, rid, s, last):
     return _disp_reviewer(a, task, rid, s, mine)
 
 
+def _env_red(a, task, mine, rid, last, kind):
+    """A red step whose output names a missing environment piece: the repair once (not a dev try), then the lead. None when the output is no env red."""
+    if not env_failure(read_text(last["file"])):
+        return None
+    rep = env_repair(a, task["id"], rid, kind, getattr(a, "orch_events", None) or mine)
+    if rep is not None:
+        return rep
+    return {"action": "ask_main", "message": f"{task['id']}: environment still red after the repair ({kind}); output {last['file']}" + hint(a, task["id"])}
+
+
 def _after_test(a, task, mine, rid, s, last):
     if last["verdict"] == BLOCKED:
         return {"action": "ask_main", "message": f"{task['id']}: Test lines cannot run (infrastructure); output {last['file']}" + hint(a, task["id"])}
     if last["verdict"] == FAIL:
+        if (env := _env_red(a, task, mine, rid, last, TEST_KIND)) is not None:
+            return env
         repo = getattr(a, "dir", ".")
         cls, why = classify_test_run(read_text(last["file"]), os.path.join(repo, WORK_DIR, a.stage), task["id"], repo)
         if cls in STOP:  # no dev retry and no Sonnet can fix a wrong Test line or a broken environment
@@ -514,6 +596,8 @@ def _after_taskgates(a, task, mine, rid, s, last):
         return {"action": "ask_main", "message": f"{task['id']}: task gates cannot run; output {last['file']}" + hint(a, task["id"])}
     if last["verdict"] != FAIL:
         return _quality_or_review(a, task, mine, rid, s)
+    if (env := _env_red(a, task, mine, rid, last, GATES_KIND)) is not None:
+        return env
     fails = _taskgate_fails(a, task, mine)
     sonnet = task["owner_sonnet"] or s.sonnet_dev
     if len(fails) <= GATE_FREE_ROUNDS:  # free rounds: no dev try, the dev keeps its model
@@ -540,11 +624,14 @@ def _after_reviewer(a, task, mine, rid, s, last):
     if (why := _plan_error(last)) is not None:
         return _plan_fix(a, task, mine, rid, last, why)
     if last["verdict"] in (FAIL, ESCALATE):
+        if last["verdict"] == FAIL and (d := _docfix_dispatch(a, task, mine, rid, last)) is not None:
+            return d
         if s.rounds > MAX_ROUNDS - 1:
             if _extra_rounds_ran(mine) < REVIEW_EXTRA_ROUNDS:
                 return _extra_round(a, task, mine, rid)
             return {"action": "ask_main", "message": f"{task['id']}: review failed {s.rounds} rounds; findings {last['file']}" + hint(a, task["id"])}
-        return _disp(a, task, rid, "dev", True, rework=last["file"])  # owner 2026-10-29: Haiku dev+review, one FAIL -> Sonnet dev+review, a second FAIL -> lead
+        # first FAIL: Haiku rework (HAIKU_REWORK_TRIES); Sonnet only when that rework also failed review
+        return _disp(a, task, rid, "dev", task["owner_sonnet"] or s.sonnet_dev or s.rounds > HAIKU_REWORK_TRIES, rework=last["file"])
     return None
 
 

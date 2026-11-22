@@ -2,7 +2,9 @@
 
 Live work is never touched: a worktree is removed only when its job branch is merged into the work branch, or its branch is gone and
 its worktree has no uncommitted changes and every commit in it is already on the work branch. An acceptance temp dir touched
-recently is kept (a live run may use it). `dry_run` lists the same decisions and changes nothing."""
+recently is kept (a live run may use it). Local `job/*` branches merged into the release or a work branch and checked out nowhere go
+too. Temp leftovers: acceptance dirs, qrun TMPDIRs of a dead pid, and the ptest scratch dirs of `.work/<stage>/tmp/`, each past its age.
+`dry_run` lists the same decisions and changes nothing."""
 
 import argparse
 import contextlib
@@ -12,13 +14,33 @@ import sys
 import tempfile
 import time
 
-from . import gitx, worktree
-from .configuration import ACCEPTANCE_TMP_PREFIX, CLEANUP_DRY_RUN_FLAG, CLEANUP_TMP_MIN_AGE_S, CLEANUP_WT_DIR
+from . import gitx, scratch, worktree
+from .configuration import (
+    ACCEPTANCE_TMP_PREFIX,
+    CLEANUP_DRY_RUN_FLAG,
+    CLEANUP_HEADS_REF,
+    CLEANUP_PTEST_MIN_AGE_S,
+    CLEANUP_PTEST_PREFIX,
+    CLEANUP_QRUN_TMP_MIN_AGE_S,
+    CLEANUP_SCRATCH_SUB,
+    CLEANUP_TMP_MIN_AGE_S,
+    CLEANUP_WORK_DIR,
+    CLEANUP_WT_DIR,
+    JOB_BRANCH_PREFIX,
+    QRUN_TMP_PREFIX,
+    project,
+    release_branch,
+    repo_dir,
+    work_branch,
+)
+
+
+def _subdirs(base):
+    return sorted(s for s in os.listdir(base) if os.path.isdir(os.path.join(base, s))) if os.path.isdir(base) else []
 
 
 def _stages(a_dir):
-    base = os.path.join(os.path.abspath(a_dir), CLEANUP_WT_DIR)
-    return sorted(s for s in os.listdir(base) if os.path.isdir(os.path.join(base, s))) if os.path.isdir(base) else []
+    return _subdirs(os.path.join(os.path.abspath(a_dir), CLEANUP_WT_DIR))
 
 
 def _verdict(a_dir, stage, task):
@@ -56,8 +78,55 @@ def _acceptance_dirs(tmp_root, now):
     return out
 
 
+def _qrun_tmp_dirs(tmp_root, now):
+    """qrun TMPDIRs whose pid is dead and that were last touched CLEANUP_QRUN_TMP_MIN_AGE_S ago or more."""
+    return [p for p in scratch.dead_owner_dirs(tmp_root, QRUN_TMP_PREFIX) if now - _newest_mtime(p) >= CLEANUP_QRUN_TMP_MIN_AGE_S]
+
+
+def _ptest_dirs(a_dir, now):
+    """ptest scratch dirs under <dir>/.work/<stage>/tmp/ untouched CLEANUP_PTEST_MIN_AGE_S or longer (real dirs only, no symlinks)."""
+    work = os.path.join(os.path.abspath(a_dir), CLEANUP_WORK_DIR)
+    out = []
+    for stage in _subdirs(work):
+        base = os.path.join(work, stage, CLEANUP_SCRATCH_SUB)
+        for name in _subdirs(base):
+            p = os.path.join(base, name)
+            if name.startswith(CLEANUP_PTEST_PREFIX) and not os.path.islink(p) and now - _newest_mtime(p) >= CLEANUP_PTEST_MIN_AGE_S:
+                out.append(p)
+    return out
+
+
+def _checked_out(repo):
+    """Local branches checked out in some worktree of REPO (the main one included)."""
+    lines = (gitx.try_out(repo, "worktree", "list", "--porcelain") or "").splitlines()
+    return {ln[len("branch ") :].removeprefix(CLEANUP_HEADS_REF) for ln in lines if ln.startswith("branch ")}
+
+
+def _prune_branches(a_dir, dry_run):
+    """Local job branches merged into the release branch or a work branch, checked out nowhere -> [(branch, into)]. Deletes unless dry_run.
+    A worktree removed by this run takes its branch with it (worktree.remove), so its branch is already held here."""
+    cfg = project(a_dir)
+    repo = os.path.abspath(repo_dir(a_dir, cfg))
+    # a constant branch_work is the work branch of every stage; with {feature} each stage names its own
+    bases = [release_branch(repo, cfg), work_branch(cfg, ""), *(work_branch(cfg, s) for s in _stages(a_dir))]
+    targets = [b for b in dict.fromkeys(bases) if gitx.try_out(repo, "rev-parse", "--verify", "--quiet", b)]
+    held = _checked_out(repo)
+    refs = gitx.try_out(repo, "for-each-ref", "--format=%(refname:short)", CLEANUP_HEADS_REF + JOB_BRANCH_PREFIX) or ""
+    out = []
+    for branch in refs.split():
+        if branch in held:
+            continue
+        into = next((b for b in targets if gitx.try_out(repo, "merge-base", "--is-ancestor", branch, b) is not None), None)
+        if into is None:
+            continue  # not merged anywhere: its commits may be the only copy
+        if not dry_run and gitx.try_out(repo, "branch", "-D", branch) is None:
+            continue  # git refused the delete: keep it and report nothing
+        out.append((branch, into))
+    return out
+
+
 def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
-    """-> {"worktrees": [(stage, task, why)], "kept": [(stage, task)], "tmp": [paths], "dry_run": bool}. Removes unless dry_run."""
+    """-> {"worktrees": [(stage, task, why)], "kept": [(stage, task)], "tmp": [paths], "branches": [(branch, into)], "dry_run": bool}. Removes unless dry_run."""
     tmp_root = tmp_root or tempfile.gettempdir()
     now = time.time() if now is None else now
     done, kept = [], []
@@ -70,11 +139,12 @@ def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
             if not dry_run:
                 worktree.remove(a_dir, stage, task, force=(why == "gone"))
             done.append((stage, task, why))
-    tmp = _acceptance_dirs(tmp_root, now)
+    tmp = [*_acceptance_dirs(tmp_root, now), *_qrun_tmp_dirs(tmp_root, now), *_ptest_dirs(a_dir, now)]
     if not dry_run:
         for p in tmp:
             shutil.rmtree(p, ignore_errors=True)
-    return {"worktrees": done, "kept": kept, "tmp": tmp, "dry_run": dry_run}
+    branches = _prune_branches(a_dir, dry_run)
+    return {"worktrees": done, "kept": kept, "tmp": tmp, "branches": branches, "dry_run": dry_run}
 
 
 def main(argv=None):
@@ -91,6 +161,8 @@ def main(argv=None):
         print(f"kept {stage}/{task} (live)")
     for path in res["tmp"]:
         print(f"{verb} temp dir {path}")
+    for branch, into in res["branches"]:
+        print(f"{verb} branch {branch} (merged into {into})")
     return 0
 
 

@@ -37,7 +37,7 @@ import subprocess
 import sys
 
 from . import gitx, lead_context, verify_retry, worktree
-from .briefs import leads_for
+from .briefs import last_report_file, lead_note_line, leads_for
 from .configuration import (
     ADDENDUM_HEADING,
     ADDENDUM_TIME_FORMAT,
@@ -60,9 +60,10 @@ from .configuration import (
 from .graph import decide
 from .plan_files import is_last_phase
 from .requests import take_request
+from .steps_verify import blocked_for_checks
 from .triggers import is_trigger, log_trigger, retro_signals, trigger_log
-from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now, paths, read_jsonl, read_text, stage_root, work_path, write_text
-from .verdicts import ROLES, missing_note, verdict
+from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now, paths, read_jsonl, read_text, stage_root, unreported, work_path, write_text
+from .verdicts import ROLES, is_unclear, missing_note, verdict
 
 
 def cmd_triggers(a):
@@ -129,21 +130,11 @@ def warm_index(a):
         pass  # a missing index only makes search slower, never blocks the stage
 
 
-def _unreported(evs):
-    """Ids of dispatches that got neither a report nor a later retry/skip of the same task."""
-    reported = {e["id"] for e in evs if e["ev"] == EV_REPORT}
-
-    def cleared(i, e):  # a later retry/skip of the same task settles the dispatch
-        return any(x["ev"] in ("retry", "skip") and x.get("task") == e.get("task") for x in evs[i + 1 :])
-
-    return [e["id"] for i, e in enumerate(evs) if e["ev"] == EV_DISPATCH and e["id"] not in reported and not cleared(i, e)]
-
-
 def _record_dispatch(a, log, evs, d):
     """Log one dispatch (and its trigger); the lead's note from `retry --note` goes in front of the re-run agent's prompt."""
     note = next((e.get("note") for e in reversed([e for e in evs if e.get("task") == d["task"] and e["ev"] == EV_RETRY])), "")
     if note and d["agent"] != "script":
-        d["prompt"] = f"Lead note (read first): {note}\n{d['prompt']}"
+        d["prompt"] = f"{lead_note_line(note, last_report_file(evs, d['task']))}\n{d['prompt']}"
     trig = is_trigger(d)
     append_event(
         log,
@@ -223,7 +214,7 @@ def cmd_next(a):
     warm_index(a)
     w, log = paths(a)
     evs = read_jsonl(log)
-    pending = _unreported(evs)
+    pending = unreported(evs)
     if pending:
         msg = f"dispatch {pending[0]} was never reported; run `orch.py report --id {pending[0]}`"
         _log_ask(log, evs, msg)
@@ -311,7 +302,7 @@ def _auto_retry(log, evs, d, reason):
     """First unclear verdict of a role: run the agent once more. -> True when a retry was logged."""
     if (
         d["role"] not in ROLES
-        or reason not in ("no clear verdict", "no report file written")
+        or not is_unclear(reason)
         or any(e["ev"] == EV_RETRY and e.get("auto") and e.get("task") == d["task"] and e.get("role") == d["role"] for e in evs)
     ):
         return False
@@ -410,16 +401,6 @@ def _checks_green(a):
     return None if any(r[1] for r in results) else (note, len(cmds))
 
 
-_OWNER_WORDS = re.compile(r"owner|decision|decide|scope|unsafe|security|permission|not allowed|forbidden|ambiguous|unclear|which of", re.I)
-_CHECK_WORDS = re.compile(r"\btests?\b|environment|\benv\b|sandbox|network|install|timeout|timed out|toolchain|missing (?:tool|binary)|flaky", re.I)
-
-
-def _blocked_for_checks(rep):
-    """True when the BLOCKED reason is about tests or the environment, not an owner decision, scope or safety question."""
-    text = " ".join(str(rep.get(k) or "") for k in ("reason", "why")) + " " + read_text(rep.get("file") or "")
-    return bool(_CHECK_WORDS.search(text)) and not _OWNER_WORDS.search(text)
-
-
 def _job_has_commits(a):
     """True when the task's job branch holds commits its base branch lacks (a blocked dev with nothing committed has nothing to call done)."""
     info = worktree.live_job(a.dir, a.stage, a.step)
@@ -435,7 +416,7 @@ def _blocked_dev_is_green(a, log):
     reps = [e for e in evs if e.get("task") == a.step and e["ev"] == EV_REPORT and e.get("role") == "dev"]
     if not reps or reps[-1]["verdict"] != BLOCKED or not os.path.isfile(os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")):
         return False
-    if not _blocked_for_checks(reps[-1]) or not _job_has_commits(a):
+    if not blocked_for_checks(reps[-1]) or not _job_has_commits(a):
         return False
     ok = _checks_green(a)
     if not ok:

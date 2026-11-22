@@ -1,6 +1,7 @@
 """Task briefs: the dev and reviewer prompts, code leads and the script-driven switches they read."""
 
 import ast
+import fnmatch
 import hashlib
 import os
 import re
@@ -11,11 +12,19 @@ from pathlib import Path
 from . import linkguard, maincheck
 from .configuration import (
     ENV_NO_LEADS,
+    EV_DISPATCH,
+    EV_REPORT,
+    GATE_OUTPUT_CHARS,
+    GATE_SKIP_PATHS,
+    LEAD_NOTE_CHARS,
+    LEAD_SLICE_CHARS,
+    LEAD_SLICE_CHARS_WITH_PATTERN,
     LOCAL_FIND_TIMEOUT_S,
     PRACTICES_DIR,
     PRE_EXISTING_RED,
     QRUN_CHAIN_READ_ONLY,
     QRUN_WRAPPER,
+    REVIEW_DOCS_MAX_TURNS,
     SCOPE_HINT_NOTE,
     SCRATCH_DIR,
     SERVE_DIR_NAME,
@@ -121,7 +130,15 @@ def _lead_lines(root, path, start, end, cap):
     return [f"{n}: {lines[n - 1]}" for n in range(start, hi + 1)]
 
 
-def lead_slices(d, leads_text, max_slices=4, cap=40, max_chars=6000):
+PREDICTED_RE = re.compile(r"(?m)^Predicted paths:[ \t]*\S")
+
+
+def slice_chars(text):
+    """Char cap of the code slices under the leads: the smaller one when the task names a Pattern file and its Predicted paths, else the larger one."""
+    return LEAD_SLICE_CHARS_WITH_PATTERN if PATTERN_RE.search(text) and PREDICTED_RE.search(text) else LEAD_SLICE_CHARS
+
+
+def lead_slices(d, leads_text, max_slices=4, cap=40, max_chars=LEAD_SLICE_CHARS):
     """Real code lines under the `path:START-END` leads. Read fresh on every call (no cache). "" when nothing. Never raises."""
     try:
         root = os.path.realpath(d)
@@ -229,7 +246,7 @@ def leads_for(a, key, text):
     if not out or "IDK" in out[:20]:
         return ""
     text_out = f" Code leads from `local.py find` (start here, then read only what you need):\n{out}\n"
-    slices = lead_slices(d, out)
+    slices = lead_slices(d, out, max_chars=slice_chars(text))
     if slices:
         text_out += f" Code of the leads (read it here, open the file only for more):\n{slices}\n"
     rel_cache = work_path(os.path.join(d, WORK_DIR, a.stage), f"leads-{key}-rel.md", create=True)
@@ -301,6 +318,20 @@ def _lint_left(a, task):
     )
 
 
+def docs_only(diff):
+    """True when every file in the diff matches a GATE_SKIP_PATHS glob (docs only). False for an empty or unparsed diff."""
+    names = re.findall(r"(?m)^diff --git a/(\S+) b/", diff or "")
+    return bool(names) and all(any(fnmatch.fnmatch(n, g) for g in GATE_SKIP_PATHS) for n in names)
+
+
+def gate_output(a, task):
+    """Tail of the report of the task's last driver test run ("" when none ran or the file is gone): the reviewer reads it in the brief instead of rerunning the gate."""
+    evs = [e for e in (getattr(a, "orch_events", None) or []) if e.get("task") == task["id"]]
+    ids = {e["id"] for e in evs if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith("test run")}
+    rep = next((e for e in reversed(evs) if e["ev"] == EV_REPORT and e.get("id") in ids and e.get("file")), None)
+    return read_text(rep["file"]).strip()[-GATE_OUTPUT_CHARS:] if rep else ""
+
+
 def _review_base(a, task):
     info = job_info(a, task["id"], create=False)
     if not info:
@@ -308,14 +339,19 @@ def _review_base(a, task):
     d = job_diff(a, task["id"])
     head = f"the work is committed on branch `{info['branch']}` (worktrees: {', '.join(info['repos'].values())}); full diff per repo: `git diff {info['base']}...{info['branch']}`; leave the worktrees as they are"
     ran = (
-        ". Driver test run: the script already ran the task's Test lines in the worktree after the dev's last DONE and they passed (a task with no Test line was not run); do not rerun them"
+        ". Driver test run: the script already ran the task's Test lines in the worktree after the dev's last DONE and they passed (a task with no Test line was not run); do not rerun them or the gate"
         if testrun_on(a)
         else ""
     )
+    out = gate_output(a, task) if testrun_on(a) else ""
+    green = f". Green gate output (tail, from the driver run; the gate passed):\n{out}\n" if out else ""
+    docs = f". Docs-only diff: review in at most {REVIEW_DOCS_MAX_TURNS} turns" if docs_only(d) else ""
     return (
         head
         + ran
         + _lint_left(a, task)
+        + green
+        + docs
         + (f". The change as the script saw it (long diffs are cut, read the rest with the command above):\n{d}\n" if d else "")
     )
 
@@ -409,6 +445,30 @@ def affected_note(task_file, text):
     return text.format(named=named) if named else ""
 
 
+def last_report_file(evs, tid):
+    """Path of the task's newest report file that still exists, "" when none."""
+    for e in reversed([e for e in evs if e.get("task") == tid and e["ev"] == EV_REPORT]):
+        if e.get("file") and os.path.isfile(e["file"]):
+            return e["file"]
+    return ""
+
+
+def lead_note_line(note, report_file):
+    """The line in front of a lead-retry brief. With an existing report the agent gets its path (the findings stay there, not pasted) and the first line of the note."""
+    if not report_file:
+        return f"Lead note (read first): {note}"
+    return f"Lead note (read first): the findings of the last try are in {report_file}; read that file, they are not pasted here. {note.splitlines()[0][:LEAD_NOTE_CHARS]}"
+
+
+def rework_note(rework_file):
+    """Dev brief lines for a rework: the findings of the rework file verbatim, with the rule to fix all of them in one pass. "" without a rework file."""
+    if not rework_file:
+        return ""
+    if not os.path.isfile(rework_file):  # the file is gone: the path alone still names the findings
+        return f" Rework: fix the findings in {rework_file} first. Fix ALL of them in one pass."
+    return f" Rework: fix the findings in {rework_file} first. Fix ALL of them in one pass; they are verbatim below:\n{read_text(rework_file)}\n"
+
+
 def prompt_for(a, task, role, rework_file, rid):
     t = os.path.join(os.path.abspath(getattr(a, "dir", ".")), WORK_DIR, a.stage, f"{task['id']}.md")
     out = (
@@ -420,7 +480,7 @@ def prompt_for(a, task, role, rework_file, rid):
     )
     if role == "dev":
         extra = (
-            (f" Rework: fix the findings in {rework_file} first." if rework_file else "")
+            rework_note(rework_file)
             + NO_CHECKOUT_NOTE
             + DEV_SCOPE_NOTE
             + WORKTREE_NOTE

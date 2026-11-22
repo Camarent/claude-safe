@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402
-from pipeline import gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck  # noqa: E402
+from pipeline import gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402
 from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GATE_TIMEOUT_S, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd, work_branch  # noqa: E402
 from pipeline.plan_check import LEAD_MARK, is_lead_verified  # noqa: E402
 from pipeline.plan_files import task_type  # noqa: E402
@@ -194,7 +194,16 @@ def main(argv=None):
     ap.add_argument("--stage", required=True)
     ap.add_argument("--task", required=True)
     ap.add_argument("--dir", default=".")
+    ap.add_argument("--repair-env", action="store_true", help="rerun the worktree_setup commands in the job worktree instead of the Test lines")
     a = ap.parse_args(argv)
+    if a.repair_env:  # an environment repair: the step that asked for it runs its test again next
+        try:
+            worktree.repair_env(os.path.abspath(a.dir), a.stage, a.task)
+        except RuntimeError as ex:
+            print(f"repair failed: {ex}")
+            return 0  # the rerun of the red step shows the state; a second env red goes to the lead
+        print("repair done: worktree_setup reran")
+        return 0
     v, note = run(a.stage, a.task, os.path.abspath(a.dir))
     print(f"VERDICT: {v}\n{note}")
     return 0
