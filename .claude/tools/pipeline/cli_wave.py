@@ -19,6 +19,7 @@ import unicodedata
 from pathlib import Path
 
 from . import driver, gitx, graph, lead_context, limits, metrics, pr_ops, progress
+from . import preflight as env_preflight
 from .branches import dirty_block, ensure_work_branch, red_base_block
 from .briefs import ENV_DRY_NO_CCN
 from .configuration import (
@@ -46,7 +47,7 @@ from .configuration import (
 from .ctx import Ctx
 from .run import Run
 from .tasks import parse_tasks
-from .util import add_subcommand, append_event, read_jsonl, read_text, work_path, write_text
+from .util import add_subcommand, append_event, read_jsonl, read_text, swallowed, work_path, write_text
 from .worktrees import review_recover
 
 
@@ -256,7 +257,21 @@ def _run_locked(a, c):
     if bad := review_recover(a):  # under the lock only: a crashed run left a reviewer's mutations in a job worktree
         print("blocked: review reset failed: " + "; ".join(bad))
         return 4
+    if problems := _env_preflight(a, c):
+        for msg, fix in problems:
+            print(f"blocked: {msg} (fix: {fix})")
+        print(f"blocked: env preflight failed, see {os.path.join(c.w, BLOCKED_FILE)}")
+        return 4
     return run_loop(a, c)
+
+
+def _env_preflight(a, c):
+    """-> the (message, fix) env problems of the stage's task files; preflight.run writes them to BLOCKED.md. A probe that raises is logged and the run goes on."""
+    try:
+        return env_preflight.run(repo_path(a.dir), c.w)
+    except Exception as ex:
+        swallowed("cli_wave.env_preflight", ex)
+        return []
 
 
 def _limit_hit(a, c, ds):
