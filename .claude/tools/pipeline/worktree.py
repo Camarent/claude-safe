@@ -28,6 +28,7 @@ from .configuration import (
     work_branch,
 )
 from .plan_files import paths_in
+from .preflight import mode_lines
 
 SKIP = ("node_modules", "target", WORK_DIR, ".cache", "dist", ".wt", ".venv", "__pycache__", ".code-index", "vendor")
 LINK = ("node_modules",)
@@ -654,6 +655,22 @@ def _regen_docs_index(r, w):
         util.swallowed("worktree._regen_docs_index", ex)
 
 
+def _apply_modes(a_dir, stage, task, rel, w):
+    """Set the index mode of each `Mode: <path> <mode>` line of the task brief that is staged in job worktree W (git update-index --chmod +x for a mode with an exec bit, -x otherwise), so the commit carries the brief's mode, not the disk's. A path not staged here is skipped. No brief: nothing."""
+    brief = pathlib.Path(a_dir, WORK_DIR, stage, f"{task}.md")
+    if not brief.is_file():
+        return
+    staged = set(git(w, "diff", "--cached", "--name-only", "--diff-filter=ACMR").split("\n"))
+    for mpath, mode in mode_lines(brief.read_text(encoding="utf-8", errors="replace")):
+        local = mpath[len(rel) + 1 :] if rel else mpath
+        if rel and not mpath.startswith(rel + "/"):
+            continue
+        if local not in staged:
+            continue
+        flag = "+x" if int(mode, 8) & 0o111 else "-x"
+        git(w, "update-index", f"--chmod={flag}", "--", local)
+
+
 def commit(a_dir, stage, task, subject):
     """Commit every change of the task's worktrees (one commit per repo, nested first) with `<type>(<area>): <what>`. -> {rel: short sha | None (nothing to commit)}."""
     if not subject_ok(subject):
@@ -672,6 +689,7 @@ def commit(a_dir, stage, task, subject):
         for name in LINK:
             if os.path.islink(os.path.join(w, name)):
                 git(w, "reset", "-q", "--", name)  # a pipeline-made link is never part of a job commit, whatever the .gitignore says
+        _apply_modes(a_dir, stage, task, rel, w)
         git(w, "commit", "-q", "-m", subject)
         out[rel or "."] = git(w, "rev-parse", "--short", "HEAD")
     return out
