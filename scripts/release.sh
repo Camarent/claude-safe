@@ -19,7 +19,7 @@ uvdir="${DEV_UV_DIR:-$root/.uv}"
   logs="$(mktemp -d)"
   tracked="$(mktemp -d)"; trap 'rm -rf "$tracked" "$logs"' EXIT
   # Container suite and gitleaks run in the background beside the host steps; their output is printed after the host steps.
-  docker run --rm --network none -e PYTHONDONTWRITEBYTECODE=1 -v "$root":/src:ro -w /src --entrypoint python3 "$image" -I /src/.claude/tools/ptest.py --dir /src/.claude/tools/tests >"$logs/suite" 2>&1 &
+  docker run --rm --network none -e PYTHONDONTWRITEBYTECODE=1 -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src -v "$root":/src:ro -w /src --entrypoint python3 "$image" -I /src/.claude/tools/ptest.py --dir /src/.claude/tools/tests >"$logs/suite" 2>&1 &
   suite_pid=$!
   (
     # Scan a copy of the tracked files only: the working dir holds ignored data that --no-git would walk.
