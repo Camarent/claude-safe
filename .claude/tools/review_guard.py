@@ -25,6 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cmd_guard
+import denial_log
 from pipeline.configuration import ENV_REVIEW_DIR, ENV_SCRATCH_DIR, HOST_AGENT_PREFIX, SCRATCH_ENV, SNIP_WRAPPER, WORK_DIR
 from pipeline.shellwords import short_flag, split_commands
 
@@ -180,7 +181,7 @@ def main_checkout_why(path, cwd):
         return ""
     main = os.path.dirname(common)
     real = resolve(path, cwd)
-    if under(real, top) or not under(real, main):
+    if under(real, top) or not under(real, main) or is_report(real):  # the reviewer's report lives in the main checkout's .work/ by design
         return ""
     rel = os.path.relpath(real, main)  # the same file, as a path inside the worktree
     return f"Edit the job worktree, not the main checkout: {path} is in {main}, outside this worktree {top}. Use the worktree-relative path {rel} (under {top}) instead."
@@ -515,6 +516,15 @@ def main_checkout_deny(data):
     return main_checkout_why(p, cwd)
 
 
+def log_denial(rule, data):
+    """Record a deny in the stage denial log: the Bash command, or the Edit/Write path, with the session cwd."""
+    tool = data.get("tool_name")
+    ti = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
+    command = ti.get(PATH_KEYS.get(tool, "command") if isinstance(tool, str) else "command")
+    cwd = data.get("cwd")
+    denial_log.append(rule, command if isinstance(command, str) else "", cwd if isinstance(cwd, str) else os.getcwd())
+
+
 def main():
     root = os.environ.get(ENV_REVIEW_DIR)
     try:
@@ -523,6 +533,7 @@ def main():
         data = None
     why = main_checkout_deny(data)  # every session: a linked worktree never writes the main checkout
     if why:
+        log_denial("main_checkout", data)
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why}}))
         return 0
     if not root:
@@ -535,6 +546,7 @@ def main():
         return 2
     why = verdict(data, root)
     if why:
+        log_denial("guard", data)
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why}}))
     return 0
 
