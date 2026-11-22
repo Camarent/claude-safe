@@ -19,10 +19,6 @@
       "cmd": "scripts/dev.sh check"
     },
     {
-      "name": "test",
-      "cmd": "scripts/dev.sh test"
-    },
-    {
       "name": "cov",
       "cmd": "scripts/dev.sh cov"
     },
