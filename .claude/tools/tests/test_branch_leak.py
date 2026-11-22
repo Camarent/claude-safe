@@ -28,6 +28,8 @@ class NoGitScenarioKeepsRealCheckout(unittest.TestCase):
         # the temp dirs of the driver tests sit in the real checkout; before the fix their plan-init switched it to stage/F
         # under .work/ (git-ignored): the driver's dirty-checkout guard passes there, so a leak is not masked by it
         ignored = os.path.join(main_dir(), ".work")
+        if not os.access(main_dir(), os.W_OK):  # the image suite mounts the checkout read-only: it cannot leak a branch there
+            self.skipTest("checkout is read-only")
         os.makedirs(ignored, exist_ok=True)
         inside = tracked_tmpdir(dir=ignored)
         before = ptest.main_branch_state()
