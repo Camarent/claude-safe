@@ -246,6 +246,7 @@ GATE_LABELS = {"gates": "gate", "gates_merge": "gates_merge", "gates_final": "ga
 EV_FORCED_REMOVE = (
     "forced_remove"  # a worktree removed with --force although its refusal check fired; carries no `task` key (the retry ladder reads every event with one)
 )
+EV_SETUP = "setup"  # metrics.jsonl: one worktree_setup command of a new job worktree (for = task, cmd, rc, seconds); no `task` key (the retry ladder reads every event with one)
 FORCED_WHY_MAX = 300  # chars of the refusal text kept in a `forced_remove` event
 EV_MAIN_RESTORED = "main_restored"  # the main checkout was on another branch at merge time and wt.py switched it back to the stage branch; carries no `task` key (as forced_remove)
 PLAN_MAX_PHASES = 99  # highest NN- phase folder number

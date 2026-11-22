@@ -14,6 +14,7 @@ from . import commit_subject, gitx, util
 from .configuration import (
     EV_FORCED_REMOVE,
     EV_MAIN_RESTORED,
+    EV_SETUP,
     FORCED_WHY_MAX,
     GIT_LONG_TIMEOUT_S,
     JOB_BRANCH_PREFIX,
@@ -283,16 +284,23 @@ def _copy_mtimes(src, dst):
             pass
 
 
-def _run_setup(a_dir, stage, task, root, cfg):
-    """Run the project's `worktree_setup` commands (pipeline.json; sh -c, cwd = the new worktree) in order. The first failure removes the fresh worktree and raises with its output tail, so no dev starts in a half-ready one."""
+def _run_setup(a_dir, stage, task, root, cfg, clock=time.monotonic):
+    """Run the project's `worktree_setup` commands (pipeline.json; sh -c, cwd = the new worktree) in order. The first failure removes the fresh worktree and raises with its output tail, so no dev starts in a half-ready one. Each command logs an `EV_SETUP` metrics line with its exit code and seconds (CLOCK = the time source)."""
     commands = cfg.get("worktree_setup") or []
     limit = float(cfg.get("worktree_setup_timeout") or PROJECT_DEFAULTS["worktree_setup_timeout"])  # a cfg without the key (older callers) gets the default
+    metrics = os.path.join(os.path.abspath(a_dir), WORK_DIR, stage, METRICS_LOG)
     for cmd in commands:
+        t0, rc = clock(), None
         try:
             r = subprocess.run(["sh", "-c", cmd], cwd=root, capture_output=True, text=True, timeout=limit, check=False)
+            rc = r.returncode
             why = f"exit {r.returncode}: {(r.stdout + r.stderr).strip()[-300:]}" if r.returncode else ""
         except subprocess.TimeoutExpired:
             why = f"timed out after {limit:.0f}s"
+        try:  # a timing line is best effort: an unwritable stage dir must not fail the setup
+            util.append_jsonl(metrics, {"ev": EV_SETUP, "ts": util.now(), "stage": stage, "for": task, "cmd": cmd, "rc": rc, "seconds": round(clock() - t0, 1)})
+        except OSError as ex:
+            util.swallowed("worktree._run_setup", ex)
         if why:
             remove(a_dir, stage, task, force=True)
             raise RuntimeError(f"worktree_setup `{cmd}` failed in the new worktree of {task} ({why}); the worktree was removed")
@@ -683,14 +691,34 @@ def _apply_modes(a_dir, stage, task, rel, w):
         git(w, "update-index", f"--chmod={flag}", "--", local)
 
 
+def _parallel_wave(a_dir, stage, task):
+    """True when the brief of TASK names a `Wave: <w>` that another task brief of STAGE shares (the task runs beside others). No wave line, or a wave of its own: False."""
+    plan = os.path.join(os.path.abspath(a_dir), WORK_DIR, stage)
+
+    def wave_of(name):
+        m = re.search(r"(?m)^Wave: (\S+)$", util.read_text(os.path.join(plan, name)))
+        return m[1] if m else None
+
+    mine = wave_of(f"{task}.md")
+    if mine is None:
+        return False
+    try:
+        names = os.listdir(plan)
+    except OSError:
+        return False
+    return any(n.endswith(".md") and n != f"{task}.md" and wave_of(n) == mine for n in names)
+
+
 def commit(a_dir, stage, task, subject):
     """Commit every change of the task's worktrees (one commit per repo, nested first) with `<type>(<area>): <what>`. -> {rel: short sha | None (nothing to commit)}."""
     if not subject_ok(subject):
         raise RuntimeError(f"commit subject must look like `<type>(<area>): <what>` (lower-case type, at least 4 chars of text): {subject!r}")
     _cfg, _branch, parts = _parts(a_dir, stage, task)
+    regen = not _parallel_wave(a_dir, stage, task)  # tasks of one parallel wave would each rewrite the shared index: the lead regenerates it
     out: dict = {}
     for rel, r, w in parts:
-        _regen_docs_index(r, w)
+        if regen:
+            _regen_docs_index(r, w)
         inner = nested_repos(r)
         if not _dirty(w, r, inner):
             out[rel or "."] = None

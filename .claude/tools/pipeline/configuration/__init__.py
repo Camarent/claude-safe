@@ -233,6 +233,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     EV_REPORT,
     EV_RETRY,
     EV_SESSION,
+    EV_SETUP,
     EV_SKIP,
     EXCLUDE_FILE,
     EXPLORE_MAX_TURNS,
