@@ -54,6 +54,20 @@ class AgentTuningFlagsTest(unittest.TestCase):
         self.assertIs(claude.AGENT_TUNING_FLAGS, AGENT_TUNING_FLAGS)
         self.assertIs(claude.TUNING_EXEMPT_AGENTS, TUNING_EXEMPT_AGENTS)
 
+    def test_every_allow_pattern_follows_an_allowedtools_flag(self):
+        """A word after another flag would become the prompt; every Bash(...) pattern must sit in an --allowedTools list."""
+        for agent in TUNED_AGENTS + TUNING_EXEMPT_AGENTS:
+            args = claude.claude_args(agent, None, None, "the-prompt", dir=self.d, scratch=self.d)
+            self.assertEqual(args[-2:], ["--", "the-prompt"])
+            in_list = False
+            for word in args[: args.index("--")]:
+                if word == "--allowedTools":
+                    in_list = True
+                elif word.startswith("--"):
+                    in_list = False
+                elif word.startswith("Bash("):
+                    self.assertTrue(in_list, f"{agent}: {word} is outside an --allowedTools list")
+
 
 if __name__ == "__main__":
     unittest.main()

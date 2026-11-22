@@ -96,7 +96,8 @@ AGENT_TUNING_FLAGS = (  # per-session token trim: no slash commands, only the ru
 )
 # agents that call Skill: disabling slash commands would break it, so claude.py strips AGENT_TUNING_FLAGS for them
 TUNING_EXEMPT_AGENTS = ("publisher", "pl-publisher")
-BASE_FLAGS = "--permission-mode acceptEdits --allowedTools Read Edit Write Grep Glob " + " ".join(AGENT_TUNING_FLAGS)
+# the tuning flags come BEFORE `--allowedTools`: that option takes every following word, and the Bash allow patterns that callers append must stay inside its list
+BASE_FLAGS = "--permission-mode acceptEdits " + " ".join(AGENT_TUNING_FLAGS) + " --allowedTools Read Edit Write Grep Glob"
 PROJECT_FILE = "pipeline.json"  # per-project settings file name
 TEST_RUNNERS = (  # cmd_guard.py: regexes of command heads that count as a test run; pipeline.json `test_runners` replaces it
     QRUN_PATTERN,
