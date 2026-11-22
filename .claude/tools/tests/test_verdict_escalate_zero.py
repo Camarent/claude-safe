@@ -21,6 +21,25 @@ class EscalateZero(unittest.TestCase):
     def test_counts_line_alone_still_passes(self):
         self.assertEqual(self.v("wrong 0, risky 0, nit 0\nVERDICT: ESCALATE"), "PASS")
 
+    def test_wrong_zero_among_last_lines_passes_with_notes(self):
+        text = "- nit: rename foo to bar\nwrong 0, risky 0, nit 1\nnotes: style only\nVERDICT: ESCALATE"
+        self.assertEqual(verdicts.verdict("reviewer", text), ("PASS", "escalate_downgraded: ESCALATE with wrong 0 and no security line: PASS with notes"))
+
+    def test_risky_nonzero_stays_escalate(self):
+        self.assertEqual(self.v("wrong 0, risky 1, nit 0\nVERDICT: ESCALATE"), "ESCALATE")
+
+    def test_wrong_nonzero_stays_escalate(self):
+        self.assertEqual(self.v("wrong 1, risky 0, nit 0\nVERDICT: ESCALATE"), "ESCALATE")
+
+    def test_wrong_zero_with_wrong_nonzero_elsewhere_stays_escalate(self):
+        self.assertEqual(self.v("wrong 0, risky 0, nit 0\nwrong 2: a real bug in x.py:3\nVERDICT: ESCALATE"), "ESCALATE")
+
+    def test_wrong_zero_with_security_line_stays_escalate(self):
+        self.assertEqual(self.v("ESCALATE: tools/x.py:12 shell=True with input\nwrong 0, risky 1, nit 0\nVERDICT: ESCALATE"), "ESCALATE")
+
+    def test_dev_escalate_with_wrong_zero_untouched(self):
+        self.assertEqual(verdicts.verdict("dev", "wrong 0, risky 0, nit 0\nVERDICT: ESCALATE")[0], "ESCALATE")
+
 
 if __name__ == "__main__":
     unittest.main()
