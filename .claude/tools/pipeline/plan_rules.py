@@ -464,6 +464,27 @@ PATH_TEST_FLAGS = ("-f", "-e", "-s", "-d")
 PATH_GREP_FLAGS = ("-q", "-c")
 
 
+def _is_path_test(args):
+    """`test -f|-e|-s|-d X` (args after `test`, or after `[` with the closing `]` removed)."""
+    return len(args) == 2 and args[0] in PATH_TEST_FLAGS
+
+
+def _is_path_ls(args):
+    """`ls X` or `stat X`: one operand, no option."""
+    return len(args) == 1 and not args[0].startswith("-")
+
+
+def _is_path_grep(args):
+    """`grep -q|-c NAME FILE`: only the quiet or count option, two operands."""
+    opts = [a for a in args if a.startswith("-")]
+    operands = [a for a in args if not a.startswith("-")]
+    return bool(opts) and all(o in PATH_GREP_FLAGS for o in opts) and len(operands) == 2
+
+
+# command name -> predicate over its arguments; a command not listed here never only tests a path
+PATH_ONLY_PREDICATES = {"test": _is_path_test, "ls": _is_path_ls, "stat": _is_path_ls, "grep": _is_path_grep}
+
+
 def _path_only_segment(words):
     """True when WORDS (one command segment, split on blanks) only tests that a path exists: `test -f|-e|-s|-d X`, `[ -f X ]`, `ls X`, `stat X`, `grep -q|-c NAME FILE`."""
     name, args = words[0], words[1:]
@@ -471,15 +492,8 @@ def _path_only_segment(words):
         if not args or args[-1] != "]":
             return False
         name, args = "test", args[:-1]
-    if name == "test":
-        return len(args) == 2 and args[0] in PATH_TEST_FLAGS
-    if name in ("ls", "stat"):
-        return len(args) == 1 and not args[0].startswith("-")
-    if name == "grep":
-        opts = [a for a in args if a.startswith("-")]
-        operands = [a for a in args if not a.startswith("-")]
-        return bool(opts) and all(o in PATH_GREP_FLAGS for o in opts) and len(operands) == 2
-    return False
+    predicate = PATH_ONLY_PREDICATES.get(name)
+    return predicate is not None and predicate(args)
 
 
 def _only_tests_path(text):
