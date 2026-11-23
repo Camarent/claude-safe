@@ -503,6 +503,12 @@ from .project import (  # noqa: F401  (re-export: the facade keeps every name im
     repo_path,
     test_env,
 )
+from .public import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    ENV_PUBLIC_FORBIDDEN_WORDS,
+    PUBLIC_DOC_GLOB,
+    PUBLIC_FORBIDDEN_WORDS_DEFAULT,
+    PUBLIC_FORBIDDEN_WORDS_KEY,
+)
 from .publish import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     _check_publish_entry,
     _escapes_project,
