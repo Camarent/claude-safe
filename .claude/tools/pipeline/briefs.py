@@ -11,6 +11,8 @@ from pathlib import Path
 
 from . import linkguard, maincheck
 from .configuration import (
+    CLAUDE_FILE,
+    DB_START_PREFIX,
     ENV_NO_LEADS,
     EV_DISPATCH,
     EV_REPORT,
@@ -477,6 +479,14 @@ def _main_dirt_report(rework_file):
     return bool(rework_file) and os.path.isfile(rework_file) and any(maincheck.dirt(line) for line in read_text(rework_file).splitlines())
 
 
+def db_start_note(a):
+    """Dev brief line `DB start: <cmd>` from the `db-start:` line of the workspace CLAUDE.md, "" when there is none."""
+    for line in read_text(os.path.join(getattr(a, "dir", "."), CLAUDE_FILE)).splitlines():
+        if line.startswith(DB_START_PREFIX):
+            return f"\nDB start: {line[len(DB_START_PREFIX) :].strip()}"
+    return ""
+
+
 def prompt_for(a, task, role, rework_file, rid):
     t = os.path.join(os.path.abspath(getattr(a, "dir", ".")), WORK_DIR, a.stage, f"{task['id']}.md")
     out = (
@@ -494,6 +504,7 @@ def prompt_for(a, task, role, rework_file, rid):
             + WORKTREE_NOTE
             + pattern_header_note(os.path.abspath(getattr(a, "dir", ".")), t)
             + gates_note(a)
+            + db_start_note(a)
             + affected_note(t, AFFECTED_DEV)
             + lead_note(t)
         )

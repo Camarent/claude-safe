@@ -21,3 +21,4 @@ SQUASH_MSG_FILE = "SQUASH_MSG"  # file in the git dir that git writes on `merge 
 STOP_SIGNALS = ("SIGTERM", "SIGINT", "SIGHUP")  # signals that stop the wave driver: kill every live session group, then exit
 INIT_PID = 1  # a driver running as this pid (container init) does not take SIGHUP as a stop: the hangup stays optional
 MERGE_RESIDUE_FILE = "merge-residue.txt"  # file in the stage folder that lists merge leftovers a later merge must clean up
+DB_START_PREFIX = "db-start:"  # CLAUDE.md line prefix (`db-start: <cmd>`) that names the command a brief passes as its DB start line

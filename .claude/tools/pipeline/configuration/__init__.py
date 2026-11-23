@@ -543,6 +543,7 @@ from .serve import (  # noqa: F401  (re-export: the facade keeps every name impo
     SERVE_WRAPPER,
 )
 from .tuning import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    DB_START_PREFIX,
     DENIAL_LOG_NAME,
     DOC_CITE_RE,
     DOC_PATHS,
