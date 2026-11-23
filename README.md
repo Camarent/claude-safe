@@ -129,7 +129,9 @@ holds the GPU at a time.
 `run.sh` connects by itself, nothing to flag: when the Docker network `model-net` exists, the container joins it, and for each engine
 running at that moment it sets `OLLAMA_URL=http://model-host-ollama:11434` and `STRATA_URL=http://model-host-strata:8080` plus
 `STRATA_KEY` (read from model-host's generated `data/strata.key`). Without model-host the container starts as before.
-An engine started after the container has no variables in it: restart the container.
+Start the engines first: an engine started after the container has no variables in it (restart the container). A Strata that is still
+loading when the container starts is waited for by the pipeline preflight (`STRATA_LOAD_WAIT`, default 90 s). The container sits on the
+shared network `model-net`, so other containers there can reach Ollama, which has no login.
 
 The pipeline can no longer start Strata (it has no access to the host): `preflight()` in `.claude/tools/search/strata.py` skips the
 local-model steps when it does not answer. `--with strata` and `--with ollama` are gone and say where to go.

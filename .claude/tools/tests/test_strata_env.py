@@ -46,6 +46,7 @@ class StrataEnvTests(unittest.TestCase):
     def test_preflight_sets_zero_when_down(self):
         with mock.patch.dict(os.environ, {"STRATA_PHASE_FILE": "/nonexistent"}), mock.patch("urllib.request.urlopen", side_effect=OSError):
             os.environ.pop("STRATA", None)
+            os.environ.pop("STRATA_URL", None)
             self.assertFalse(strata.preflight())
             self.assertEqual(os.environ["STRATA"], "0")
 
@@ -64,12 +65,25 @@ class StrataEnvTests(unittest.TestCase):
                 self.assertTrue(strata.preflight())
                 self.assertNotEqual(os.environ.get("STRATA"), "0")
 
+    def test_preflight_waits_when_strata_url_is_announced(self):
+        ups = iter([False, False, True])  # model-host's Strata is still loading, answers on the third probe
+        env = {"STRATA_URL": "http://model-host-strata:8080", "STRATA_PHASE_FILE": "/nonexistent", "STRATA_LOAD_WAIT": "30"}
+        with (
+            mock.patch.dict(os.environ, env),
+            mock.patch.object(strata, "strata_up", side_effect=lambda: next(ups)),
+            mock.patch.object(strata.time, "sleep"),
+        ):
+            os.environ.pop("STRATA", None)
+            self.assertTrue(strata.preflight())
+            self.assertNotEqual(os.environ.get("STRATA"), "0")
+
     def test_preflight_gives_up_when_not_loading(self):
         with tempfile.TemporaryDirectory() as d:
             ph = os.path.join(d, "phase")
             open(ph, "w").write("ready\n")
             with mock.patch.dict(os.environ, {"STRATA_PHASE_FILE": ph}), mock.patch.object(strata, "strata_up", return_value=False):
                 os.environ.pop("STRATA", None)
+                os.environ.pop("STRATA_URL", None)
                 self.assertFalse(strata.preflight())
                 self.assertEqual(os.environ["STRATA"], "0")
 

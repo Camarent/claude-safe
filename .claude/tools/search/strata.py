@@ -92,7 +92,10 @@ def strata_up():
 
 
 def _loading():
-    """True when the Strata entrypoint's phase file (STRATA_PHASE_FILE, default /run/strata-phase) says the model is loading."""
+    """True when the model may still be loading: STRATA_URL is set (run.sh found model-host's Strata running when this container started, so
+    a Strata that does not answer is most likely still loading), or the phase file (STRATA_PHASE_FILE, default /run/strata-phase) says so."""
+    if "STRATA_URL" in os.environ:
+        return True
     try:
         return "loading" in Path(os.environ.get("STRATA_PHASE_FILE", "/run/strata-phase")).read_text(encoding="utf-8").lower()
     except OSError:

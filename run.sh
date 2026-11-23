@@ -374,9 +374,13 @@ if docker network inspect model-net >/dev/null 2>&1; then
         modelNetArgs+=(-e "OLLAMA_URL=http://model-host-ollama:11434")
         echo -e "\033[32mmodel-host: Ollama is up (OLLAMA_URL=http://model-host-ollama:11434).\033[0m"
     fi
-    if engineUp model-host-strata && [[ -s "$modelHostDir/data/strata.key" ]]; then
-        modelNetArgs+=(-e "STRATA_URL=http://model-host-strata:8080" -e "STRATA_KEY=$(cat "$modelHostDir/data/strata.key")" -e ORCH_LEAD=1)
-        echo -e "\033[32mmodel-host: Strata is up (STRATA_URL=http://model-host-strata:8080).\033[0m"
+    if engineUp model-host-strata; then
+        if [[ -s "$modelHostDir/data/strata.key" ]]; then
+            modelNetArgs+=(-e "STRATA_URL=http://model-host-strata:8080" -e "STRATA_KEY=$(cat "$modelHostDir/data/strata.key")" -e ORCH_LEAD=1)
+            echo -e "\033[32mmodel-host: Strata is up (STRATA_URL=http://model-host-strata:8080).\033[0m"
+        else
+            echo -e "\033[33mmodel-host: Strata is running but $modelHostDir/data/strata.key is missing or empty (set MODEL_HOST_DIR); Strata is not connected.\033[0m"
+        fi
     fi
 fi
 echo -e "\033[32mStarting sandboxed Claude...\033[0m"
