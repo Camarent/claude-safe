@@ -4,15 +4,26 @@
 """
 
 import contextlib
+import datetime
+import fnmatch
 import json
 import os
 
 from . import util
-from .configuration import LINK_WRITE_SHOWN, MAIN_BASE_FILE, MAIN_GUARD_IGNORE, MAIN_WRITE_NOTE
+from .configuration import (
+    LINK_WRITE_SHOWN,
+    MAIN_BASE_FILE,
+    MAIN_DIRT_PREFIX,
+    MAIN_GUARD_IGNORE,
+    MAIN_GUARD_IGNORE_GLOBS,
+    MAIN_WRITE_NOTE,
+)
 from .linkguard import ERRORS, merging
 from .worktree import git, layout
 
 RENAME_CODES = ("R", "C")  # a porcelain rename/copy entry is followed by the source path as its own entry
+GUARD_GLOBS_KEY = "main_guard_ignore_globs"  # pipeline.json key that replaces MAIN_GUARD_IGNORE_GLOBS (read like cfg "gate_watch" in audit/taskgates.py)
+GONE = "gone"  # the mtime shown for a path the main checkout no longer has
 
 
 def _entries(text):
@@ -28,11 +39,28 @@ def _entries(text):
     return out
 
 
-def _state(main):
-    """-> {path: content hash ("" = gone)} of every dirty path of the repo MAIN outside the pipeline's own folders. A git error raises."""
+def _globs(cfg):
+    """The path globs the guard never reports: the pipeline.json key when set (an empty list ignores nothing), else the default."""
+    return cfg.get(GUARD_GLOBS_KEY, MAIN_GUARD_IGNORE_GLOBS)
+
+
+def _state(main, globs):
+    """-> {path: content hash ("" = gone)} of every dirty path of the repo MAIN outside the pipeline's own folders and the GLOBS. A git error raises."""
     out = git(main, "status", "--porcelain", "-z", "-uall")
-    paths = [p for p in _entries(out) if p.split("/", 1)[0] not in MAIN_GUARD_IGNORE]
+    paths = [p for p in _entries(out) if p.split("/", 1)[0] not in MAIN_GUARD_IGNORE and not any(fnmatch.fnmatch(p, g) for g in globs)]
     return {p: git(main, "hash-object", "--", p).strip() if os.path.isfile(os.path.join(main, p)) else "" for p in paths}
+
+
+def _iso(ts):
+    return datetime.datetime.fromtimestamp(ts, datetime.UTC).isoformat(timespec="seconds")
+
+
+def _stamp(main, p):
+    """The UTC mtime of path P of the main checkout, GONE when it is no longer there."""
+    try:
+        return _iso(os.path.getmtime(os.path.join(main, p)))
+    except OSError:
+        return GONE
 
 
 def _base_path(a_dir, stage, task):
@@ -45,8 +73,8 @@ def snapshot(a_dir, stage, task):
     with contextlib.suppress(*ERRORS):
         path = _base_path(a_dir, stage, task)
         if not os.path.exists(path):
-            _cfg, repo, _root, _branch = layout(a_dir, stage, task)
-            util.write_text(path, json.dumps(_state(repo)))
+            cfg, repo, _root, _branch = layout(a_dir, stage, task)
+            util.write_text(path, json.dumps(_state(repo, _globs(cfg))))
 
 
 def _base(path):
@@ -62,15 +90,21 @@ def check(a_dir, stage, task):
     """-> "" or the FAIL note naming the files that are new or changed in the main checkout since the snapshot. Nothing is deleted. No snapshot: no verdict."""
     try:
         path = _base_path(a_dir, stage, task)
-        _cfg, repo, _root, _branch = layout(a_dir, stage, task)
+        cfg, repo, _root, _branch = layout(a_dir, stage, task)
         base = _base(path)
         if base is None or merging(repo):
             return ""
-        cur = _state(repo)
+        cur = _state(repo, _globs(cfg))
+        started = _iso(os.path.getmtime(path))  # the snapshot is written when the job's first dev starts
     except ERRORS:
         return ""
     changed = sorted(p for p, h in cur.items() if base.get(p) != h)
     if not changed:
         return ""
-    shown = ", ".join(changed[:LINK_WRITE_SHOWN])
+    shown = ", ".join(f"{p} (mtime {_stamp(repo, p)}, job start {started})" for p in changed[:LINK_WRITE_SHOWN])
     return MAIN_WRITE_NOTE.format(files=shown, more=max(0, len(changed) - LINK_WRITE_SHOWN))
+
+
+def dirt(note):
+    """True when NOTE is a check() note about the main checkout (not a dev's own failure)."""
+    return note.startswith(MAIN_DIRT_PREFIX)

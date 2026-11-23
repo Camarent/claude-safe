@@ -54,6 +54,10 @@ Reason: A cleanup step in the finish phase removes merged or gone job worktrees 
 
 Reason: `scripts/sync-claude-config.sh` syncs `~/.claude` in one command. It refuses while a driver is mid-step and never runs `host_agents.py --apply`.
 
+## Problem 14
+
+Reason: main-dirt (a dev's write into the main checkout) is BLOCKED, not FAIL, because the dev cannot fix it from its worktree and a FAIL retry would only repeat the write. The driver names the paths, deletes nothing and clears by itself once the paths are gone; the lead decides after `git -C <main> status` and runs `orch.py retry`.
+
 ## Pipeline tuning
 
 Owner decisions (from the stage request):
@@ -167,3 +171,4 @@ Owner decisions per task. Reason = the report item it fixes.
 - Retry-note rule: a retry note names the file, the line and the replacement text (task-12; `cli_orch.py`, `ORCHESTRATOR.md`).
 - Orphan job branch prune: branch-cleanup (phase `branch-cleanup`, `phases.py:230`, `pr_ops._cleanup` in `pr_ops.py:640`) deletes merged orphan `job/*` branches itself. Unmerged ones are kept and named in the step note and by `cleanup.py` main.
 - `ci_drift_ignore` is described in `.claude/practices/orch-pipeline.md` (CI drift warning). The cite check and its `cite_check` switch are described there too.
+- main-dirt: dirt in the main checkout ends the step BLOCKED, not FAIL. Reason: the cause is outside the job (a file the lead or another process left), no dev retry can fix it, and a FAIL would burn the retry ladder; BLOCKED waits for the lead, auto-clears when the dirt is gone, and the driver never deletes user files.

@@ -102,6 +102,11 @@ def outside_writes(d, stage, task):
     return "\n".join(n for n in notes if n)
 
 
+def outside_verdict(note):
+    """-> (BLOCKED, note) when NOTE is main-checkout dirt (maincheck: the lead clears it, the dev is not at fault), else (FAIL, note) for a dev's own write (linkguard). Callers pass the outside_writes note."""
+    return (BLOCKED if maincheck.dirt(note) else FAIL), note
+
+
 def _tree(cwd):
     """Tree hash of cwd for the gate-run record, or None: a record error never blocks the run."""
     try:
@@ -196,7 +201,7 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
     cmds, leads = test_lines(text), lead_lines(text)
     outside = outside_writes(d, stage, task)
     if outside:
-        return FAIL, outside
+        return outside_verdict(outside)
     if not cmds and not leads:
         return DONE, "test run skipped: the task has no Test line"
     cwd = workdir(d, stage, task)
