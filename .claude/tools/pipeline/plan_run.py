@@ -30,6 +30,17 @@ from .util import TOOLS, read_text, swallowed, write_text
 
 PLAN = tool_cmd("plan.py")
 EFFORT = {MODEL_SONNET: "medium", MODEL_OPUS: "high"}
+# Checklist of the rules `plan.py check` enforces, in the architect brief: the architect fixes these before the check runs.
+BRIEF_CHECKLIST = (
+    "CHECKLIST (the rules `plan.py check` enforces; fix each before you reply):\n"
+    "- Test line: one command that runs the task's own test file(s) from the project root; no bare absolute main-checkout paths.\n"
+    "- Affected tests line: every existing test file the change could break, named by file.\n"
+    "- Predicted paths: every file the task edits, relative to the project root.\n"
+    "- Wave and depends: a task that uses code another task adds goes in a later wave, with `--depends` on that task.\n"
+    "- Docs tasks: a docs task that cites new code runs in a later wave than that code, with depends on it; a docs task never shares a wave with the code it documents.\n"
+    "- Size: each task fits one agent turn budget (about 25 turns); split a larger task.\n"
+    f"- Run `{PLAN} check` on the plan and fix every problem it prints before you reply.\n"
+)
 
 
 def build_prompt(a, model, goal, extra=""):
@@ -51,7 +62,7 @@ def build_prompt(a, model, goal, extra=""):
         f"Decide the size yourself, then take exactly ONE route. {small} {big}\n"
         f"Write the plan ONLY through plan.py commands; reply VERDICT: DONE|BLOCKED|ESCALATE (ESCALATE with a reason only on Sonnet, when the request touches a contract, data format, schema, migration, save/progress format or scheduling logic: Opus then plans it). "
         f"Before replying ESCALATE write .work/{F}/ESCALATE.md for Opus: why you escalate, the files and facts you found (path and one line each), the decisions you already made, what is still open. Opus will not repeat your exploration. "
-        f"Never hand-write TASKS.md, Plan.md or task-N.md.\n{extra}\nREQUEST:\n{goal}"
+        f"Never hand-write TASKS.md, Plan.md or task-N.md.\n{BRIEF_CHECKLIST}{extra}\nREQUEST:\n{goal}"
     )
 
 
