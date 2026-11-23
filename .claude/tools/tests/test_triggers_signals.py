@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import triggers
 from tests.support.tmpdirs import tracked_mkdtemp
 
+T1 = "task-1"  # task id; asserts use this name, not the literal (path-dependent check)
+
 
 def table(n):
     rows = "".join(f"| task-{i} | a | dev | 1 | wave 1, haiku |\n" for i in range(1, n + 1))
@@ -60,7 +62,7 @@ class RetroSignalsTest(unittest.TestCase):
 
     def test_review_rounds(self):
         evs = [rep("task-1", "FAIL", "reviewer"), rep("task-1", "FAIL", "reviewer"), rep("task-2", "FAIL", "reviewer")]
-        self.assertEqual(self.go(evs=evs), [("review-rounds", "tasks with 2+ failed review rounds: task-1")])
+        self.assertEqual(self.go(evs=evs), [("review-rounds", f"tasks with 2+ failed review rounds: {T1}")])
 
     def test_escalations(self):
         evs = [rep("task-1", "ESCALATE"), rep("task-2", "ESCALATE")]
@@ -76,7 +78,7 @@ class RetroSignalsTest(unittest.TestCase):
         evs = [disp("a1", "task-1", "haiku"), dev("a1", "task-1", "ESCALATE"), disp("a2", "task-1", "sonnet"), dev("a2", "task-1", "BLOCKED")]
         evs += [disp("a3", "task-2", "haiku"), dev("a3", "task-2", "ESCALATE"), disp("a4", "task-2", "sonnet"), dev("a4", "task-2", "DONE")]
         got = [x for x in self.go(evs=evs) if x[0] == "useless-escalations"]
-        self.assertEqual(got, [("useless-escalations", "Haiku ESCALATE then Sonnet not DONE, investigate: task-1: haiku ESCALATE > sonnet BLOCKED")])
+        self.assertEqual(got, [("useless-escalations", f"Haiku ESCALATE then Sonnet not DONE, investigate: {T1}: haiku ESCALATE > sonnet BLOCKED")])
 
     def test_audit_fixes(self):
         evs = [rep("audit-sec", "FIXES"), rep("audit-arch", "CLEAN"), rep("audit-ux", "FIXES")]
@@ -85,6 +87,18 @@ class RetroSignalsTest(unittest.TestCase):
     def test_fix_share(self):
         evs = [rep("fix-plan-1", "DONE"), {"ev": "dispatch", "task": "task-4", "role": "dev"}, {"ev": "dispatch", "task": "task-3", "role": "dev"}]
         self.assertEqual(self.go(evs=evs), [("fix-share", "2 fix task(s) vs 2 base task(s) (>20%)")])
+
+    def test_audit_fix_asks_are_not_stuck(self):
+        evs = [rep("audit-sec", "FIXES", "sec-auditor")] + [{"ev": "ask", "message": "audit-sec: sec-auditor verdict FIXES"}] * 3
+        self.assertEqual(self.go(evs=evs), [("audit-fixes", "sec/arch audits asked for fixes: audit-sec")])
+
+    def test_non_audit_asks_still_stuck(self):
+        evs = [rep("audit-sec", "FIXES", "sec-auditor"), {"ev": "ask", "message": "audit-sec: sec-auditor verdict FIXES"}]
+        evs += [{"ev": "ask", "message": f"task-{i}: Test lines still red"} for i in range(1, 4)]
+        self.assertEqual(
+            self.go(evs=evs),
+            [("audit-fixes", "sec/arch audits asked for fixes: audit-sec"), ("stuck", "3 ask_main stop(s), 0 retry/skip")],
+        )
 
     def test_stuck_by_asks_and_by_manual_retry(self):
         self.assertEqual(self.go(evs=[{"ev": "ask"}] * 3), [("stuck", "3 ask_main stop(s), 0 retry/skip")])
