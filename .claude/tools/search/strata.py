@@ -4,8 +4,6 @@
 import http.client
 import json
 import os
-import shutil
-import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -94,28 +92,14 @@ def strata_up():
 
 
 def _loading():
-    """True when the Strata entrypoint's phase file (STRATA_PHASE_FILE, default /run/strata-phase) says the model is loading."""
+    """True when the model may still be loading: STRATA_URL is set (run.sh found model-host's Strata running when this container started, so
+    a Strata that does not answer is most likely still loading), or the phase file (STRATA_PHASE_FILE, default /run/strata-phase) says so."""
+    if "STRATA_URL" in os.environ:
+        return True
     try:
         return "loading" in Path(os.environ.get("STRATA_PHASE_FILE", "/run/strata-phase")).read_text(encoding="utf-8").lower()
     except OSError:
         return False
-
-
-def _start_strata():
-    """Strata is not started at container boot: start it here through `modelctl strata start` (blocks until it answers; the first start may
-    download the model). Skipped when modelctl or the Strata image is missing, STRATA_URL points elsewhere, or STRATA_NO_START=1.
-    Refused by modelctl while Ollama holds the GPU: the run then goes on without the local model. -> True when the server answers."""
-    if os.environ.get("STRATA_NO_START") == "1" or "STRATA_URL" in os.environ:
-        return False
-    ctl = shutil.which("modelctl")
-    if not ctl or not Path("/opt/strata/entrypoint.sh").exists():
-        return False
-    print("preflight: local model (Strata) is down: starting it with modelctl (waits until it answers)", flush=True)
-    try:
-        r = subprocess.run([ctl, "strata", "start"], timeout=float(os.environ.get("STRATA_START_TIMEOUT", "1000")), check=False)  # nosec B603  # fixed command
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return r.returncode == 0 and strata_up()
 
 
 def preflight():
@@ -123,8 +107,6 @@ def preflight():
     if os.environ.get("STRATA") == "0":
         return False
     if strata_up():
-        return True
-    if _start_strata():
         return True
     if _loading():
         deadline = time.time() + float(os.environ.get("STRATA_LOAD_WAIT", "90"))  # the entrypoint says the model is still loading (about 50 s): wait for it
@@ -135,5 +117,7 @@ def preflight():
         if strata_up():
             return True
     os.environ["STRATA"] = "0"
-    print("preflight: local model (Strata) down: local-model steps are skipped for this run")
+    print(
+        "preflight: local model (Strata) down: local-model steps are skipped for this run (start it on the host: modelctl use strata, in the model-host project)"
+    )
     return False

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Provision a plain Ubuntu Server VM (normal sudo user, no GPU, no container) with the tools the
-# claude-safe Docker image has, minus the PC-only profiles (strata, ollama, cluster, exttest),
-# modelctl and the GPU parts. Source of truth: Dockerfile and profiles/*.Dockerfile; the pinned
+# claude-safe Docker image has, minus the PC-only profiles (cluster, exttest)
+# and the GPU parts (local models are the model-host project). Source of truth: Dockerfile and profiles/*.Dockerfile; the pinned
 # versions below are copies of their ARG lines (tests/test_provision_script.py compares them).
 # Rerunnable: every step checks its result first and prints "skip <step>: already done".
 #

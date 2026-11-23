@@ -18,7 +18,6 @@ if [[ "$(id -u)" == "0" ]]; then
     # A row accepted mid-session is installed at the next container start.
     [[ -r /root/.claude/tools/xtools.py ]] && python3 -I /root/.claude/tools/xtools.py check --install --kinds apt >/tmp/xtools-apt.log 2>&1
     mkdir -p -m 1777 /tmp/.X11-unix
-    : > /run/strata-phase; chown "$hostUid:$hostGid" /run/strata-phase   # Strata's entrypoint reports its phase here and cannot write to root-owned /run
     mkdir -p /opt/jstools /data
     # Hand over what an earlier root session left behind (host files become the host user's again).
     # Only root-owned entries are touched; -xdev keeps this to one filesystem per mount.
@@ -146,12 +145,6 @@ if [[ "${PONYTAIL:-0}" == "1" ]]; then
     fi
 else
     claude plugin disable ponytail@ponytail >/dev/null 2>&1 || true
-fi
-
-# Strata is never started here: the pipeline starts it when it needs it (search/strata.py preflight -> `modelctl strata start`),
-# and `modelctl use ollama|strata|none` switches the GPU by hand.
-if [[ "${STRATA_SIDE:-0}" == "1" && ! -x /opt/strata/entrypoint.sh ]]; then
-    echo -e "\033[33mStrata is not in this image; /run-stage will have no local lead.\033[0m"
 fi
 
 if [[ -n "${RUN_CMD:-}" ]]; then exec bash -c "$RUN_CMD"; fi

@@ -33,8 +33,6 @@ scratch/
 # Chrome profile: cookies and session state, regenerated on demand
 browser-profile/
 
-# Strata models/state (tens of GB)
-strata-data/
 .claude-local/
 
 # shared vector cache for local.py find (rebuildable)
@@ -59,6 +57,4 @@ __pycache__/
 .code-index/
 .notes/
 
-# Ollama models/state
-ollama-data/
 .claude/git/privacy.gitconfig
