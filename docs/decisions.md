@@ -172,3 +172,7 @@ Owner decisions per task. Reason = the report item it fixes.
 - Orphan job branch prune: branch-cleanup (phase `branch-cleanup`, `phases.py:230`, `pr_ops._cleanup` in `pr_ops.py:640`) deletes merged orphan `job/*` branches itself. Unmerged ones are kept and named in the step note and by `cleanup.py` main.
 - `ci_drift_ignore` is described in `.claude/practices/orch-pipeline.md` (CI drift warning). The cite check and its `cite_check` switch are described there too.
 - main-dirt: dirt in the main checkout ends the step BLOCKED, not FAIL. Reason: the cause is outside the job (a file the lead or another process left), no dev retry can fix it, and a FAIL would burn the retry ladder; BLOCKED waits for the lead, auto-clears when the dirt is gone, and the driver never deletes user files.
+
+## Stage pipeline-fixes
+
+- task-10: public docs and CI reads are documented in `practices/pipeline-dev.md` and `ORCHESTRATOR.md`. `public_forbidden_words` is a per-project list; an empty list or a private repo skips the scan, so it never fails on private docs. Source: `.claude/tools/pipeline/configuration/public.py:3`, `.claude/tools/ops_steps.py:170`.
