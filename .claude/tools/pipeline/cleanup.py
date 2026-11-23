@@ -133,7 +133,8 @@ def prune_branches(a_dir, dry_run=False):
 
 
 def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
-    """-> {"worktrees": [(stage, task, why)], "kept": [(stage, task)], "tmp": [paths], "branches": [(branch, into)], "dry_run": bool}. Removes unless dry_run."""
+    """-> {"worktrees": [(stage, task, why)], "kept": [(stage, task)], "tmp": [paths], "branches": [(branch, into)],
+    "unmerged": [branch] (orphan job branches merged nowhere, kept), "dry_run": bool}. Removes unless dry_run."""
     tmp_root = tmp_root or tempfile.gettempdir()
     now = time.time() if now is None else now
     done, kept = [], []
@@ -150,8 +151,8 @@ def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
     if not dry_run:
         for p in tmp:
             shutil.rmtree(p, ignore_errors=True)
-    branches, _unmerged = prune_branches(a_dir, dry_run)
-    return {"worktrees": done, "kept": kept, "tmp": tmp, "branches": branches, "dry_run": dry_run}
+    branches, unmerged = prune_branches(a_dir, dry_run)
+    return {"worktrees": done, "kept": kept, "tmp": tmp, "branches": branches, "unmerged": unmerged, "dry_run": dry_run}
 
 
 def main(argv=None):
@@ -170,6 +171,8 @@ def main(argv=None):
         print(f"{verb} temp dir {path}")
     for branch, into in res["branches"]:
         print(f"{verb} branch {branch} (merged into {into})")
+    for branch in res["unmerged"]:
+        print(f"kept unmerged branch {branch}")
     return 0
 
 

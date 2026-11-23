@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -118,6 +120,18 @@ class CleanupBranchesTest(unittest.TestCase):
         self.assertEqual(pruned, [(job_branch(T1), "dev")])
         self.assertEqual(unmerged, [job_branch(T2)])
         self.assertEqual(local_branches(self.m), [job_branch(T2)])
+
+    def test_cleanup_reports_unmerged_branch_and_main_prints_it(self):
+        self._branch_without_worktree(job_branch(T2), commits=1)  # unmerged orphan
+
+        res = cleanup.cleanup(self.t, tmp_root=self.t)
+
+        self.assertEqual(res["unmerged"], [job_branch(T2)])
+        self.assertEqual(local_branches(self.m), [job_branch(T2)])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cleanup.main(["--dir", self.t, "--tmp-root", self.t]), 0)
+        self.assertIn(f"kept unmerged branch {job_branch(T2)}", out.getvalue().splitlines())
 
     def test_prune_branches_keeps_branch_of_folder_without_worktree(self):
         self._branch_without_worktree(job_branch(T3), commits=0)  # merged, but its .wt folder is live
