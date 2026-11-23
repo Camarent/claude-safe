@@ -25,6 +25,7 @@ dev and runs the tests on top; after ALL waves: tester (+web-tester with ui), do
 Audit verdict CLEAN | FIXES | BLOCKED: FIXES starts ONE fix cycle (architect appends fix tasks + a new wave to TASKS.md, they run as normal waves: dev -> reviewer -> merger, then only the audits that said FIXES run again, Haiku low if all fix tasks were mechanical), a second FIXES
 or any BLOCKED/FAIL anywhere goes to the main session (`ask_main`). The main session (the lead) may fix the cause itself (read the named report, edit,
 run a command), then `retry --step X --note TEXT` (X runs again with the note in front of its prompt) or `skip --step X`; `/run-feature` goes on from that same place.
+A retry note names the file, the line and the replacement text; an intent-only note ("make it pass") is ignored by the dev.
 After the audits: `master-merged` (script `pr_steps.py merge` squash-merges a green PR; otherwise a pause: the lead squash-merges the stage branch into master, then `orch.py skip --step master-merged`) -> `push-master` (merger, skipped by `no-push`/`no-merge`) -> `republish` (publisher, only with a `PUBLISH:` line) -> `index-refresh` (default on, `no-index` off; also run as a script after each wave merge, failure only warns) -> `live-check` (ui); FAIL -> ask_main.
 State: .work/<stage>/orch.jsonl (append-only events).
 """
@@ -598,7 +599,11 @@ def main(argv=None):
             p.add_argument("--text", default="")
         if name in ("retry", "skip"):
             p.add_argument("--step", required=True)
-            p.add_argument("--note", default="")
+            p.add_argument(
+                "--note",
+                default="",
+                help="for retry: name the file, the line and the replacement text; an intent-only note is ignored by the dev",
+            )
             if name == "retry":
                 p.add_argument("--from", dest="from_step", default="", choices=["", "review"])
                 p.add_argument("--addendum", default="")
