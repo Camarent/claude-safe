@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import pr_ops
-from pipeline.configuration import CI_POLL_S, GH_CHECKS_PENDING_RC
+from pipeline.configuration import CI_POLL_S
 
 PIPELINE_DIR = Path(__file__).resolve().parents[1] / "pipeline"
 FIELD = "statusCheckRollup"
@@ -66,7 +66,13 @@ def view(field, value):
 OPEN_PR = {
     "gh pr view b --json state": view("state", "OPEN"),
     "gh pr view b --json isDraft": view("isDraft", False),
+    "gh pr view b --json headRefOid": view("headRefOid", "sha-b"),
 }
+
+
+def run_rows(*rows):
+    """`gh run list` answer: one (status, conclusion) per workflow run of the PR head."""
+    return R(0, json.dumps([{"name": "ci", "status": st, "conclusion": cn} for st, cn in rows]))
 
 
 class PollLogsEachRead(unittest.TestCase):
@@ -106,7 +112,7 @@ class MergeGateLogsEachPoll(unittest.TestCase):
         table = {
             **OPEN_PR,
             "gh pr view b --json mergeable": [view("mergeable", "UNKNOWN"), view("mergeable", "MERGEABLE")],
-            "gh pr checks b": [R(GH_CHECKS_PENDING_RC, "pending"), R(GH_CHECKS_PENDING_RC, "pending"), R(0, "all green")],
+            "gh run list": [run_rows(("in_progress", "")), run_rows(("in_progress", "")), run_rows(("completed", "success"))],
             "gh pr merge b": R(0),
         }
         run = Scripted(table)

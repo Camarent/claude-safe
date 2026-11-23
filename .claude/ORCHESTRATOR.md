@@ -117,4 +117,10 @@ Before any merge to `master` every project check (`each` in `pipeline.json`) exi
 - `test_env` in pipeline.json is an optional qrun feature; inside a job worktree it resolves to the worktree.
 - Pipeline tools tests (edits under `/root/.claude/tools`, `agents/`): run `cs-ptest [PATTERN...]` (parallel, one process per file, ~20 s (22 s in the container), last line `N files, F failed, T s`). It is the entry point; never run the suite with serial `unittest discover` (minutes, gets auto-backgrounded). A single file: `python3 -I tests/test_x.py`.
 
+**Public words:** a project with `public_forbidden_words` in `pipeline.json` (or env `PIPELINE_PUBLIC_FORBIDDEN_WORDS`) gets a scan of every tracked text file (files with a NUL byte in the first `PUBLIC_BINARY_SNIFF_BYTES` are skipped) before DONE; a hit is a `file:line: word` line the dev must fix. A private repo or an empty list skips the scan. Details: `practices/pipeline-dev.md`.
+
+**CI reads:** PR CI status comes from `gh run list --commit <head sha>`, never `gh pr checks`. A chained CI line `a && b` counts as covered when both parts are gates.
+
+**Rework notes:** name the file, the line and the replacement text.
+
 **main-dirt:** when the main checkout holds uncommitted dirt, the step ends BLOCKED and goes to the lead. Run `git -C <main> status`, clean or commit the files yourself, then `orch.py retry --step <task>`. The block clears on its own once the dirt is gone. The driver never deletes the files.

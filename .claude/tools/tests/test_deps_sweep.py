@@ -170,7 +170,45 @@ class NoChecksTokenTest(GhScratch):
 
     def test_unrelated_gh_error_is_not_swallowed(self):
         Path(self.root, "bin", "gh").write_text('#!/bin/sh\necho "boom" >&2\nexit 1\n', encoding="utf-8")
-        self.assertEqual(pr_ops._pr_checks(self.d, "stage/x").returncode, 1)
+        with self.assertRaises(pr_ops.CiReadError):  # no head sha: the CI read fails, never "no checks"
+            pr_ops._pr_checks(self.d, "stage/x")
+
+
+# Checks are read from the workflow runs only: `gh pr checks` must never be called (it needs checks:read).
+FAKE_GH_RUNS = """#!/bin/sh
+echo "$@" >> "$GH_LOG"
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "pr checks") echo "pr checks must not be called" >&2; exit 1 ;;
+  "pr view") echo '{"headRefOid": "sha-head"}' ;;
+  "run list") cat "$GH_LOG.runs" ;;
+esac
+"""
+
+
+class CiReadsRunsTest(GhScratch):
+    """Each check state comes from `gh run list`; the checks command stays uncalled."""
+
+    def setUp(self):
+        super().setUp()
+        Path(self.root, "bin", "gh").write_text(FAKE_GH_RUNS, encoding="utf-8")
+
+    def runs(self, text):
+        Path(self.log + ".runs").write_text(text, encoding="utf-8")
+
+    def test_green_red_pending_and_none(self):
+        cases = {
+            "green": ('[{"name": "ci", "status": "completed", "conclusion": "success"}]', (0, "")),
+            "red": ('[{"name": "ci", "status": "completed", "conclusion": "failure"}]', (1, "ci")),
+            "pending": ('[{"name": "ci", "status": "in_progress", "conclusion": ""}]', (pr_ops.GH_CHECKS_PENDING_RC, "pending")),
+            "none": ("[]", (1, "no checks reported")),
+        }
+        for name, (runs, want) in cases.items():
+            with self.subTest(name):
+                self.runs(runs)
+                c = pr_ops._pr_checks(self.d, "stage/x")
+                self.assertEqual((c.returncode, c.stdout), want)
+        self.assertFalse([x for x in self.calls() if x.startswith("pr checks")])
 
 
 if __name__ == "__main__":

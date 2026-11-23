@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ops_steps
@@ -89,8 +90,8 @@ class OpsStepsTest(unittest.TestCase):
 
     def test_digest_writes_the_file_and_main_prints_a_verdict_first(self):
         rows = [
-            {"ev": "session", "agent": "dev", "model": "haiku", "task": "task-1", "verdict": "BLOCKED", "reason": "no glob", "cost_usd": 0.5},
-            {"ev": "session", "agent": "reviewer", "model": "haiku", "task": "task-1", "verdict": "PASS", "cost_usd": 0.1},
+            {"ev": "session", "agent": "dev", "model": "haiku", "task": "alpha", "verdict": "BLOCKED", "reason": "no glob", "cost_usd": 0.5},
+            {"ev": "session", "agent": "reviewer", "model": "haiku", "task": "alpha", "verdict": "PASS", "cost_usd": 0.1},
             {"ev": "wave"},
         ]
         with open(os.path.join(self.root, "metrics.jsonl"), "w", encoding="utf-8") as fh:
@@ -100,7 +101,7 @@ class OpsStepsTest(unittest.TestCase):
             rc = ops_steps.main(["digest", "--dir", self.d, "--stage", "s"])
         self.assertEqual(rc, 0)
         self.assertTrue(out.getvalue().startswith("VERDICT: DONE\n"))
-        self.assertIn("task-1 BLOCKED: no glob", out.getvalue())
+        self.assertIn("alpha BLOCKED: no glob", out.getvalue())
         self.assertTrue(os.path.exists(os.path.join(self.root, "retro", "retro-digest.md")))
 
     def test_ops_as_script_only_when_listed(self):
@@ -130,6 +131,131 @@ class OpsStepsTest(unittest.TestCase):
         self.assertTrue(ok)
         ok, lines = ops_steps.cleanup(self.d, "feat/phases/none")  # a feature folder that has no stage files yet
         self.assertTrue(ok, lines)
+
+    def _repo_with_doc(self, text):
+        git(self.d, "init", "-q", "-b", "master")
+        with open(os.path.join(self.d, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write(text)
+        git(self.d, "add", "README.md")
+        git(self.d, "commit", "-q", "-m", "i")
+
+    def test_public_words_hit_on_public_repo_prints_file_line_and_fails(self):
+        self._repo_with_doc("intro\nthe sauce is here\n")
+        self.put_claude("This repo is public.\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}):
+            ok, lines = ops_steps.public_words_gate(self.d)
+            self.assertFalse(ok)
+            self.assertEqual(lines, ["README.md:2: sauce"])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = ops_steps.main(["public-words", "--dir", self.d])
+        self.assertEqual(rc, 1)
+        self.assertEqual(out.getvalue().splitlines()[0], "VERDICT: FAIL")
+        self.assertIn("README.md:2: sauce", out.getvalue())
+
+    def test_public_words_tracked_symlink_to_outside_file_is_not_a_hit(self):
+        self._repo_with_doc("intro\n")
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        secret = os.path.join(os.path.realpath(outside.name), "secret.txt")
+        with open(secret, "w", encoding="utf-8") as fh:
+            fh.write("the sauce is here\n")
+        os.symlink(secret, os.path.join(self.d, "link.txt"))
+        git(self.d, "add", "link.txt")
+        git(self.d, "commit", "-q", "-m", "link")
+        self.put_claude("This repo is public.\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, []))
+
+    def test_public_words_empty_setting_is_done_and_silent(self):
+        self._repo_with_doc("the sauce is here\n")
+        self.put_claude("This repo is public.\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": ""}):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, []))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = ops_steps.main(["public-words", "--dir", self.d])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().splitlines()[0], "VERDICT: DONE")
+        self.assertEqual(out.getvalue().splitlines()[1:], [""])
+
+    def _gh_says(self, stdout):
+        """Patch only the gh call of ops_steps; git keeps running for real."""
+        real_run = subprocess.run
+        gh = unittest.mock.Mock(returncode=0, stdout=stdout)
+
+        def fake_run(args, **kw):
+            return gh if args[0] == "gh" else real_run(args, **kw)
+
+        return unittest.mock.patch.object(ops_steps.subprocess, "run", side_effect=fake_run)
+
+    def test_public_words_private_repo_is_not_checked(self):
+        self._repo_with_doc("the sauce is here\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}), self._gh_says('{"isPrivate": true}'):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, []))
+
+    def test_public_words_gh_says_public_is_checked(self):
+        self._repo_with_doc("the sauce is here\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}), self._gh_says('{"isPrivate": false}'):
+            ok, lines = ops_steps.public_words_gate(self.d)
+        self.assertFalse(ok)
+        self.assertEqual(lines, ["README.md:1: sauce"])
+
+    def test_public_words_failed_ls_files_fails_closed(self):
+        self._repo_with_doc("the sauce is here\n")
+        self.put_claude("This repo is public.\n")
+        failed = unittest.mock.Mock(returncode=128, stdout="")
+        with (
+            unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            unittest.mock.patch.object(ops_steps.gitx, "try_run", return_value=failed),
+        ):
+            ok, lines = ops_steps.public_words_gate(self.d)
+        self.assertFalse(ok)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("scan failed", lines[0])
+
+    def test_public_words_gh_error_with_words_fails_closed(self):
+        self._repo_with_doc("the sauce is here\n")
+        with (
+            unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            unittest.mock.patch.object(ops_steps.subprocess, "run", side_effect=OSError("gh missing")),
+        ):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (False, ["repo visibility unknown"]))
+
+    def test_public_words_gh_timeout_with_words_fails_closed(self):
+        self._repo_with_doc("the sauce is here\n")
+        timeout = subprocess.TimeoutExpired(cmd="gh", timeout=1)
+        with (
+            unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            unittest.mock.patch.object(ops_steps.subprocess, "run", side_effect=timeout),
+        ):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (False, ["repo visibility unknown"]))
+
+    def test_public_words_gh_empty_stdout_with_words_fails_closed(self):
+        # rc 0 with no isPrivate key must not read as public: visibility unknown
+        self._repo_with_doc("the sauce is here\n")
+        for out in ("", "{}"):
+            with (
+                self.subTest(stdout=out),
+                self._gh_says(out),
+                unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            ):
+                self.assertEqual(ops_steps.public_words_gate(self.d), (False, ["repo visibility unknown"]))
+
+    def test_public_words_gh_error_with_empty_words_is_done_without_gh(self):
+        self._repo_with_doc("the sauce is here\n")
+        gh = unittest.mock.Mock(side_effect=OSError("gh missing"))
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": ""}), unittest.mock.patch.object(ops_steps.subprocess, "run", gh):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, []))
+        gh.assert_not_called()
+
+    def test_stage_is_required_for_the_stage_commands(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            ops_steps.main(["push", "--dir", self.d])
+
+    def put_claude(self, text):
+        with open(os.path.join(self.d, "CLAUDE.md"), "w", encoding="utf-8") as fh:
+            fh.write(text)
 
 
 if __name__ == "__main__":

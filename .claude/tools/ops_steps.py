@@ -7,6 +7,7 @@ Prints `VERDICT: DONE|FAIL` first, then facts. No model."""
 
 import argparse
 import glob
+import json
 import os
 import re
 import shutil
@@ -15,8 +16,24 @@ import sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pipeline import gitx, webskip
-from pipeline.configuration import BLOCKED, DONE, ESCALATE, EV_SESSION, FAIL, GIT_LONG_TIMEOUT_S, METRICS_LOG, VERDICT_PREFIX, project, release_branch, repo_dir
+from pipeline import gitx, public_words, webskip
+from pipeline.configuration import (
+    BLOCKED,
+    DONE,
+    ENV_PUBLIC_FORBIDDEN_WORDS,
+    ESCALATE,
+    EV_SESSION,
+    FAIL,
+    GIT_LONG_TIMEOUT_S,
+    GIT_QUICK_TIMEOUT_S,
+    METRICS_LOG,
+    PUBLIC_FORBIDDEN_WORDS_DEFAULT,
+    PUBLIC_FORBIDDEN_WORDS_KEY,
+    VERDICT_PREFIX,
+    project,
+    release_branch,
+    repo_dir,
+)
 from pipeline.stagedir import resolve_stage
 from pipeline.util import add_common_args, read_jsonl, read_text, work_path
 from pipeline.worktree import nested_repos
@@ -25,6 +42,8 @@ KEEP_REPORT_RE = re.compile(r"^\s*(?:VERDICT\s*:\s*)?(BLOCKED|FAIL|ESCALATE)\b")
 CRED_ARGS = ("-c", "credential.helper=!gh auth git-credential")
 TOP_SESSIONS = 5
 REMOTE = "origin"
+PUBLIC_MARK_RE = re.compile(r"\bpublic repo\b|\brepo(?:sitory)? is public\b", re.IGNORECASE)  # a CLAUDE.md line that says the repo is public
+GH_VISIBILITY_ARGS = ("gh", "repo", "view", "--json", "isPrivate")
 
 
 def stage_dir(d, stage):
@@ -126,12 +145,58 @@ def digest(d, stage):
     return True, out
 
 
+def _is_public(repo):
+    """True when the repo's CLAUDE.md says it is public, False when `gh repo view` says it is private, None when neither answers (gh error or timeout)."""
+    try:
+        with open(os.path.join(repo, "CLAUDE.md"), encoding="utf-8", errors="replace") as fh:
+            if any(PUBLIC_MARK_RE.search(line) for line in fh):
+                return True
+    except OSError:
+        pass
+    try:
+        r = subprocess.run(list(GH_VISIBILITY_ARGS), cwd=repo, capture_output=True, text=True, timeout=GIT_QUICK_TIMEOUT_S, check=False)
+        if r.returncode != 0:
+            return None
+        private = json.loads(r.stdout or "{}").get("isPrivate")
+        return None if private is None else private is False
+    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
+        return None
+
+
+def _forbidden_words(d):
+    """The env override (comma-separated) when set, else the pipeline.json key, else no words."""
+    if ENV_PUBLIC_FORBIDDEN_WORDS in os.environ:
+        return [w.strip() for w in os.environ[ENV_PUBLIC_FORBIDDEN_WORDS].split(",")]
+    return list(project(d).get(PUBLIC_FORBIDDEN_WORDS_KEY, PUBLIC_FORBIDDEN_WORDS_DEFAULT))
+
+
+def public_words_gate(d):
+    """-> (ok, lines): on a public repo, every tracked text line that holds a forbidden word, as `file:line: word`; ok only when none. Fails closed: a scan or visibility check that cannot finish is not ok."""
+    words = _forbidden_words(d)
+    if not any(w.strip() for w in words):
+        return True, []
+    repo = repo_dir(os.path.abspath(d), project(d))
+    public = _is_public(repo)
+    if public is None:
+        return False, ["repo visibility unknown"]
+    if not public:
+        return True, []
+    try:
+        found = public_words.hits(repo, words)
+    except public_words.ScanError as e:
+        return False, [str(e)]
+    return not found, found
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("cleanup", "push", "digest", "webskip"))
-    add_common_args(ap, stage=True, dir_required=True)
+    ap.add_argument("cmd", choices=("cleanup", "push", "digest", "webskip", "public-words"))
+    add_common_args(ap, dir_required=True)
+    ap.add_argument("--stage", default=None, help="every command but public-words: the stage folder")
     ap.add_argument("--ids", default="", help="webskip: the task ids the skipped browser check covered")
     a = ap.parse_args(argv)
+    if a.cmd != "public-words" and a.stage is None:
+        ap.error("--stage is required")
     try:
         ok, lines = _run(a)
     except ValueError as e:
@@ -147,6 +212,7 @@ def _run(a):
         "push": lambda: push(a.dir),
         "digest": lambda: digest(a.dir, a.stage),
         "webskip": lambda: (True, [webskip.line(project(a.dir), a.ids)]),
+        "public-words": lambda: public_words_gate(a.dir),
     }[a.cmd]()
 
 

@@ -398,6 +398,7 @@ class MergeLocalCleanup(ReleaseReal):
                 "gh pr view stage/s --json state": state,
                 "gh pr view stage/s --json isDraft": R(0, json.dumps({"isDraft": False})),
                 "gh pr view stage/s --json mergeable": R(0, json.dumps({"mergeable": "MERGEABLE"})),
+                "gh pr view stage/s --json headRefOid": R(0, json.dumps({"headRefOid": "sha-s"})),
                 "gh pr merge": merge,
             }
         )

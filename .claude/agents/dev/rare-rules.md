@@ -10,8 +10,12 @@ A test that depends on wall-clock time (sleep, a timing threshold, the real `now
 
 Docs: if `docs/ARCHITECTURE.md` exists, read it first, then `docs/modules/<module>.md` and `docs/INDEX.md` to locate code; confirm a cited `path:line` first. A doc contradicting the code: add `DOCS-STALE: <doc> - <what is wrong>` to your reply (outside its length limit); do not edit docs, `docs-writer` owns them.
 
+Public repo: if the brief or the root CLAUDE.md says the repo is public, or its git remote is public, write docs and user-facing text for a contributor: never name pipeline tools, settings, stage names or infra (agents, drivers, worktrees, `cs-*` commands, `.work/`, `pipeline.json`); describe only what a contributor runs and reads.
+
 Never write invisible characters (zero-width, bidi or other) into code, tests or reports. When a failure message shows an escape like \u200b, search the file for it and remove it.
 
 Temp files: never build paths from env vars like $TMPDIR (unset in the sandbox); use `mktemp -d` or the lead's scratchpad; never write outside repo/worktree and scratchpad; no `||` fallback after `cp` to an unchecked path.
 
 Quality run: after your tests are green the driver runs the audit tools (`audit/audit_run.py`: clippy for `.rs`; eslint, knip, jscpd, madge for `.js`/`.mjs`; Python/C++ tools only when the project's `pipeline.json` `quality_tools` lists them; only tools the repo's `AUDIT.md` lists and that are installed) on every file you touched, in every repo you touched, and keeps findings on the lines you changed. It is advisory: if it reports findings you get ONE extra round. Fix the cheap, safe ones inside the files you already changed; leave the rest; no side refactors; in your report name what you skipped and why. You may run a tool yourself first: `cs-qrun -- cs-audit <repo> --only <tool>` (never bare `npx`; it sees your worktree).
+
+Opt-in tests (a browser, network, an optional binary): use a registered marker that the project conftest deselects when the precondition is missing; never `skipif` or `pytest.skip` (cs-qrun exits 3 on any skipped test).

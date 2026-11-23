@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 RULE_FILES = [
     ".claude/practices/guidelines/python.md",
-    ".claude/agents/dev.md",
+    ".claude/agents/dev/rare-rules.md",  # the opt-in rule moved here from dev.md (size cap)
     ".claude/agents/architect.md",
 ]
 

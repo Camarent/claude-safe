@@ -157,16 +157,24 @@ def _landed(repo, rel, br, pr=True):
     return f"{br} has work that is not in {rel} and its PR is not MERGED; merge it first, then skip master-merged again"
 
 
+class CiReadError(Blocked):
+    """The CI runs of a PR head could not be read: never read as "no checks" (a merge must not pass on it)."""
+
+
 def _ci_runs(repo, sha):
-    """-> [{name, status, conclusion}] (upper case, like a status rollup) of the workflow runs of one commit; [] when unreadable.
-    Fallback for a token without checks:read (fine-grained tokens have none): it reads Actions runs only."""
+    """-> [{name, status, conclusion}] (upper case, like a status rollup) of the workflow runs of one commit; [] when the commit has no runs.
+    Raises CiReadError when the read fails (no sha, gh error, bad JSON). Reads Actions runs only (no checks:read needed: fine-grained tokens lack it)."""
     if not sha:
-        return []
+        raise CiReadError("the head commit of the PR is unknown: CI cannot be read")
     r = _run(["gh", "run", "list", "--commit", sha, "--limit", str(CI_RUNS_LIMIT), "--json", "name,status,conclusion"], repo)
+    if r.returncode:
+        raise CiReadError(f"gh run list failed for {sha}: {(r.stderr or r.stdout).strip()[-200:]}")
     try:
-        rows = json.loads(r.stdout or "[]") if r.returncode == 0 else []
+        rows = json.loads(r.stdout or "[]")
     except ValueError:
-        return []
+        raise CiReadError(f"gh run list gave no JSON for {sha}") from None
+    if not isinstance(rows, list):
+        raise CiReadError(f"gh run list gave no run list for {sha}")
     return [
         {"name": x.get("name", ""), "status": (x.get("status") or "").upper(), "conclusion": (x.get("conclusion") or "").upper()}
         for x in rows
@@ -187,7 +195,7 @@ def _ci_wait(repo, br, limit):
         if not runs and (not has_workflows or empty > CI_EMPTY_POLLS):
             return runs
         if time.monotonic() >= deadline:
-            raise Blocked(f"gh pr checks {br} --watch timed out after {limit}s")
+            raise Blocked(f"checks of {br} still running after {limit}s")
         time.sleep(CI_POLL_S)
 
 
@@ -196,26 +204,20 @@ def _ci_failed(runs):
 
 
 def _pr_checks(repo, br, limit=None):
-    """`gh pr checks BR` (with --watch and a time limit when `limit` is set) -> CompletedProcess. A token that cannot read check runs
-    falls back to the workflow runs of the PR head, answered in the same shape: rc 0 green, 1 red or none, 8 pending."""
-    c = _run(["gh", "pr", "checks", br, *(["--watch"] if limit else [])], repo, *([limit] if limit else []))
-    if not c.returncode or CI_DENIED_MSG not in c.stdout + c.stderr:
-        return c
+    """Checks of BR -> CompletedProcess: rc 0 green, 1 red or "no checks reported", GH_CHECKS_PENDING_RC pending. Reads the workflow
+    runs of the PR head (`gh run list --commit <head sha>`, inside _ci_runs), never `gh pr checks`: a token without checks:read cannot read that.
+    A failed read raises CiReadError, never "no checks reported". With `limit`, waits up to `limit` s."""
     runs = _ci_wait(repo, br, limit) if limit else _ci_runs(repo, _view(repo, br, "headRefOid"))
     pending = any(x["status"] != "COMPLETED" for x in runs)
     bad = _ci_failed(runs)
     rc, out = (GH_CHECKS_PENDING_RC, "pending") if pending else (1, ", ".join(bad)) if bad else (0, "") if runs else (1, "no checks reported")
-    return subprocess.CompletedProcess(c.args, rc, out, "")
+    # args label the answer only: the command that ran is `gh run list --commit <head sha>` (see _ci_runs)
+    return subprocess.CompletedProcess(["gh", "run", "list", "--commit", "<head sha>"], rc, out, "")
 
 
 def _failing(repo, br):
-    r = _run(["gh", "pr", "checks", br, "--json", "name,bucket"], repo)
-    if r.returncode and CI_DENIED_MSG in r.stdout + r.stderr:
-        return _ci_failed(_ci_runs(repo, _view(repo, br, "headRefOid")))
-    try:
-        return [c["name"] for c in json.loads(r.stdout or "[]") if isinstance(c, dict) and c.get("bucket") in ("fail", "cancel")]
-    except (ValueError, TypeError, KeyError):
-        return []
+    """-> the names of the failed workflow runs of the PR head (`gh run list`, as _pr_checks reads them)."""
+    return _ci_failed(_ci_runs(repo, _view(repo, br, "headRefOid")))
 
 
 def web_note(a_dir, stage):
@@ -267,6 +269,8 @@ def _ready(repo, cfg, br):
     limit = int(checks_timeout(cfg))
     try:
         c = _pr_checks(repo, br, limit)
+    except CiReadError:
+        raise
     except Blocked:
         raise Blocked(f"checks of {br} not finished after {limit}s; still running: {_failing(repo, br) or 'see the PR'}") from None
     if c.returncode:
@@ -369,7 +373,7 @@ def _poll(read, limit, clock=SystemClock, what="poll"):
 
 
 def _checks_read(repo, br):
-    """-> the `gh pr checks` answer once no check is pending, else None (a pending check is polled again)."""
+    """-> the checks answer (_pr_checks) once no check is pending, else None (a pending check is polled again)."""
     c = _pr_checks(repo, br)
     return None if c.returncode == GH_CHECKS_PENDING_RC else c
 

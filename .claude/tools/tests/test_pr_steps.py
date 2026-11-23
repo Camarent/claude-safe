@@ -39,16 +39,14 @@ case "$1 $2" in
   "pr ready") [ -f "$GH_LOG.readyfail" ] && { echo "cannot" >&2; exit 1; }; exit 0 ;;
   "pr view")
     case "$*" in
+      *headRefOid*) echo '{"headRefOid": "sha-ok"}' ;;
       *isDraft*) cat "$GH_LOG.draft" 2>/dev/null || echo '{"isDraft": false}' ;;
       *mergeable*) cat "$GH_LOG.mergeable" 2>/dev/null || echo '{"mergeable": "MERGEABLE"}' ;;
       *) cat "$GH_LOG.state" 2>/dev/null || exit 1 ;;
     esac ;;
   "pr merge") [ -f "$GH_LOG.mergefail" ] && { echo "denied" >&2; exit 1; }; exit 0 ;;
-  "pr checks")
-    case "$*" in
-      *--json*) cat "$GH_LOG.checks" 2>/dev/null || echo '[]' ;;
-      *) [ -f "$GH_LOG.red" ] && { echo "build fail" >&2; exit 1; }; exit 0 ;;
-    esac ;;
+  "pr checks") echo "pr checks must not be called" >&2; exit 1 ;;
+  "run list") cat "$GH_LOG.runs" 2>/dev/null || echo '[{"name": "ci", "status": "completed", "conclusion": "success"}]' ;;
 esac
 """
 
@@ -102,8 +100,9 @@ class RunTest(Base):
         creates = [x for x in c if x.startswith("pr create")]
         self.assertEqual(len(creates), 1)  # the second run reused the open PR
         self.assertIn("--draft --base master", creates[0])
-        order = [x for x in c if x.startswith(("pr create", "pr ready", "pr checks"))]
-        self.assertTrue(order[0].startswith("pr create") and order[1].startswith("pr ready") and "--watch" in order[2])
+        order = [x for x in c if x.startswith(("pr create", "pr ready", "run list"))]
+        self.assertTrue(order[0].startswith("pr create") and order[1].startswith("pr ready") and order[2].startswith("run list"))
+        self.assertFalse([x for x in c if x.startswith("pr checks")])
         self.assertIn("stage/x", git(self.d, "ls-remote", "--heads", "origin"))
 
     def test_empty_stage_branch_is_not_pushed_and_gets_no_pr(self):
@@ -133,8 +132,9 @@ class RunTest(Base):
     def test_red_checks_are_blocked_with_names(self):
         self.add_origin()
         self.commit_on_stage()
-        Path(self.log + ".red").write_text("")
-        Path(self.log + ".checks").write_text('[{"name": "unit", "bucket": "fail"}, {"name": "lint", "bucket": "pass"}]')
+        Path(self.log + ".runs").write_text(
+            '[{"name": "unit", "status": "completed", "conclusion": "failure"}, {"name": "lint", "status": "completed", "conclusion": "success"}]'
+        )
         v, text = pr_ops.run("ready", self.d, "s", "x")
         self.assertEqual(v, "BLOCKED")
         self.assertIn("unit", text)
@@ -173,10 +173,9 @@ class MergeTest(Base):
         Path(self.log + ".mergeable").write_text('{"mergeable": "CONFLICTING"}')
         self.assertIn("CONFLICTING", pr_ops.run("merge", self.d, "s", "x")[1])
         Path(self.log + ".mergeable").write_text('{"mergeable": "MERGEABLE"}')
-        Path(self.log + ".red").write_text("")
-        Path(self.log + ".checks").write_text('[{"name": "unit", "bucket": "fail"}]')
+        Path(self.log + ".runs").write_text('[{"name": "unit", "status": "completed", "conclusion": "failure"}]')
         self.assertIn("unit", pr_ops.run("merge", self.d, "s", "x")[1])
-        Path(self.log + ".red").unlink()
+        Path(self.log + ".runs").write_text('[{"name": "ci", "status": "completed", "conclusion": "success"}]')
         Path(self.log + ".mergefail").write_text("")
         v, text = pr_ops.run("merge", self.d, "s", "x")
         self.assertEqual(v, "BLOCKED")

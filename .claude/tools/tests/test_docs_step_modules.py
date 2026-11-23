@@ -66,6 +66,13 @@ class DocsStepModules(unittest.TestCase):
         self.assertNotIn("Index modules:", text)
         self.assertIn("Before VERDICT: DONE run `cs-docs-index", text)
 
+    def test_no_docs_root_is_done_not_blocked(self):
+        with tempfile.TemporaryDirectory() as root:
+            _make_repo(root, ["alpha"], docs=False)
+            text = self._step_text(root)
+        self.assertIn("no `docs:` line and the CLAUDE.md names no docs folder -> VERDICT: DONE with a one-line note, write nothing", text)
+        self.assertNotIn("none found -> BLOCKED", text)
+
     def test_repo_setting_resolves_subfolder(self):
         with tempfile.TemporaryDirectory() as ws:
             os.makedirs(os.path.join(ws, "sub"))

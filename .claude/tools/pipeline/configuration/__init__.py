@@ -338,6 +338,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     LONG_CMD_TIMEOUT_S,
     MAIN_BASE_FILE,
     MAIN_DIRT_PREFIX,
+    MAIN_DIRT_REWORK_NOTE,
     MAIN_GUARD_IGNORE,
     MAIN_GUARD_IGNORE_GLOBS,
     MAIN_WRITE_NOTE,
@@ -502,6 +503,12 @@ from .project import (  # noqa: F401  (re-export: the facade keeps every name im
     repo_dirs,
     repo_path,
     test_env,
+)
+from .public import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    ENV_PUBLIC_FORBIDDEN_WORDS,
+    PUBLIC_BINARY_SNIFF_BYTES,
+    PUBLIC_FORBIDDEN_WORDS_DEFAULT,
+    PUBLIC_FORBIDDEN_WORDS_KEY,
 )
 from .publish import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     _check_publish_entry,

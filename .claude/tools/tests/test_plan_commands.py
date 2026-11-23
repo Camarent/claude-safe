@@ -5,9 +5,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import plan_commands
+from pipeline import configuration, plan_commands, public_words
 
 
 class T(unittest.TestCase):
@@ -148,6 +149,81 @@ class T(unittest.TestCase):
                 got = self.findings(cmd)
                 self.assertEqual(len(got), 1)
                 self.assertTrue(got[0].startswith(plan_commands.WARN_PREFIX))
+
+
+class PublicWords(unittest.TestCase):
+    def setUp(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        self.repo = td.name
+        subprocess.run(["git", "-C", self.repo, "init", "-q"], check=True, capture_output=True)
+        self.write("README.md", "Intro line\nThe Secret Sauce is here\n")
+        self.write("docs/guide.md", "nothing\nsecret again\n")
+        self.write("code.py", "secret = 1\n")  # a tracked text file: scanned too
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True, capture_output=True)
+
+    def write(self, rel, text):
+        full = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_setting_default_is_empty_list(self):
+        self.assertEqual(configuration.PUBLIC_FORBIDDEN_WORDS_DEFAULT, [])
+        self.assertEqual(configuration.PUBLIC_FORBIDDEN_WORDS_KEY, "public_forbidden_words")
+
+    def test_hit_names_file_and_line(self):
+        got = public_words.hits(self.repo, ["sauce"])
+        self.assertEqual(got, ["README.md:2: sauce"])
+
+    def test_match_is_case_insensitive(self):
+        got = public_words.hits(self.repo, ["SECRET"])
+        self.assertEqual(sorted(got), ["README.md:2: SECRET", "code.py:1: SECRET", "docs/guide.md:2: SECRET"])
+
+    def test_empty_word_list_finds_nothing(self):
+        self.assertEqual(public_words.hits(self.repo, []), [])
+
+    def test_blank_word_does_not_match_every_line(self):
+        # mutation check: an empty pattern would match every line of every doc
+        self.assertEqual(public_words.hits(self.repo, ["", "   "]), [])
+        self.assertEqual(public_words.hits(self.repo, ["", "sauce"]), ["README.md:2: sauce"])
+
+    def test_tracked_text_file_is_scanned(self):
+        self.assertEqual(public_words.hits(self.repo, ["secret = 1"]), ["code.py:1: secret = 1"])
+
+    def test_untracked_file_not_scanned(self):
+        self.write("new.md", "sauce\n")  # written, never git-added
+        self.assertNotIn("new.md", " ".join(public_words.hits(self.repo, ["sauce"])))
+
+    def test_binary_file_is_skipped(self):
+        full = os.path.join(self.repo, "blob.dat")
+        with open(full, "wb") as f:
+            f.write(b"sauce\0\nsauce\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True, capture_output=True)
+        self.assertNotIn("blob.dat", " ".join(public_words.hits(self.repo, ["sauce"])))
+
+    def test_needle_is_stripped_before_matching(self):
+        self.assertEqual(public_words.hits(self.repo, [" sauce "]), ["README.md:2: sauce"])
+
+    def test_non_ascii_tracked_name_is_scanned(self):
+        # git quotes non-ASCII names unless ls-files runs with -z: the file must still be read
+        self.write("café.md", "the sauce\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True, capture_output=True)
+        self.assertIn("café.md:1: sauce", public_words.hits(self.repo, ["sauce"]))
+
+    def test_unreadable_tracked_file_raises_scan_error(self):
+        # a tracked file the scan cannot open must fail closed, not be skipped
+        self.write("gone.md", "sauce\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True, capture_output=True)
+        os.remove(os.path.join(self.repo, "gone.md"))
+        with self.assertRaises(public_words.ScanError):
+            public_words.hits(self.repo, ["sauce"])
+
+    def test_failed_ls_files_raises_scan_error(self):
+        # mutation check: a silent [] here would let the public-words gate pass a repo it did not scan
+        failed = unittest.mock.Mock(returncode=128, stdout="")
+        with unittest.mock.patch.object(public_words.gitx, "try_run", return_value=failed), self.assertRaises(public_words.ScanError):
+            public_words.hits(self.repo, ["sauce"])
 
 
 if __name__ == "__main__":
