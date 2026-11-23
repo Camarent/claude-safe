@@ -9,13 +9,16 @@ from .configuration import (  # noqa: F401  # AUDITORS and ROLES are re-exported
     DEV,
     DONE,
     ESCALATE,
+    FAIL,
     FIXES,
     MERGER,
     NEED,
+    REVIEWER,
     ROLES,
     UX_REVIEWER,
     WEB_TESTER,
 )
+from .configuration.verdicts import FINDING_SKIP_PATTERN, STUB_REASON
 
 WRONG_ZERO_RE = re.compile(r"^\W*wrong\W*0\b", re.I | re.M)  # the reviewer rubric counts line, `wrong 0` first on its line
 WRONG_NONZERO_RE = re.compile(
@@ -41,12 +44,13 @@ def _final_word(text):
     return m.group(1) if m else None
 
 
-UNCLEAR_REASONS = ("no clear verdict", "no report file written")  # the dev reasons the auto retry (cli_orch _auto_retry) has already run for
+UNCLEAR_REASONS = ("no clear verdict", "no report file written", STUB_REASON)  # the dev reasons the auto retry (cli_orch _auto_retry) has already run for
 KILLED_RC = "rc=-"  # a claude run ended by a signal (`wave: claude rc=-9`): as unclear as a missing verdict, retried the same way
+FINDING_SKIP_RE = re.compile(FINDING_SKIP_PATTERN, re.I)
 
 
 def is_unclear(reason):
-    """True when the report reason is one the auto retry runs for: no verdict line, no report file, or a run killed by a signal."""
+    """True when the report reason is one the auto retry runs for: no verdict line, no report file, a FAIL without findings, or a run killed by a signal."""
     return reason in UNCLEAR_REASONS or KILLED_RC in (reason or "")
 
 
@@ -56,6 +60,8 @@ def missing_note(role, reason):
     words = "|".join(allowed)
     if reason == "no report file written":
         return f"the previous run wrote no report file: write it, its first line `VERDICT: {words}`"
+    if reason == STUB_REASON:
+        return "the previous FAIL report had no finding: list each finding as file:line, scenario, severity"
     return f"the previous report had no `VERDICT:` line: put `VERDICT: {words}` on its own line in the report (the first line, as the brief says); no other word counts"
 
 
@@ -90,6 +96,16 @@ def _zero_wrong_downgrade(role, m, text):
     return bool(WRONG_ZERO_RE.search(tail)) and not WRONG_NONZERO_RE.search(text) and not ESCALATE_LINE_RE.search(text)
 
 
+def _has_finding(text):
+    """True when a report holds a non-blank line that is no VERDICT, counts or REPORT line."""
+    return any(ln.strip() and not FINDING_SKIP_RE.match(ln.strip()) for ln in text.splitlines())
+
+
+def _reviewer_stub(role, m, text):
+    """True for a reviewer FAIL with no finding line: nothing for the dev to act on, so the reviewer runs once more."""
+    return bool(m) and m.group(1) == FAIL and role == REVIEWER and not _has_finding(text)
+
+
 def verdict(role, text):
     """-> (verdict, reason). `VERDICT: X` on its own line wins; else ESCALATE:/dev heuristics; unclear = the role's safe verdict."""
     allowed, safe = ROLES[role]
@@ -108,6 +124,8 @@ def verdict(role, text):
                 "PASS",
                 "escalate_downgraded: ESCALATE with wrong 0 and no security line: PASS with notes",
             )  # nothing to fix: a second paid review would only repeat it
+        if _reviewer_stub(role, m, text):
+            return FAIL, STUB_REASON  # a FAIL with no finding line: unclear, the auto retry runs the reviewer once more
         if m.group(1) in allowed:
             return m.group(1), "report line"
         return safe, f"verdict {m.group(1)} not valid for {role}"
