@@ -26,3 +26,6 @@ CITE_FENCE_RE = re.compile(r"^\s*```")  # a fenced block opens or closes on this
 CITE_SYMBOL_BEFORE_RE = re.compile(r"`([A-Za-z_]\w*)`[\s(]*$")  # a backticked symbol right before a cite
 CITE_DEF_RE = r"\b(?:def|class|function|func|fn|const|let|var)\s+{sym}\b"  # template: a definition of the symbol
 CITE_WORD_RE = r"\b{sym}\b"  # template: any occurrence of the symbol
+CITE_CHECK_KEY = "cite_check"  # pipeline.json key: the cite check runs after the Test lines are green (testrun.py)
+CITE_CHECK_DEFAULT = True  # the key when pipeline.json does not set it
+CITE_DIFF_MAX_CHARS = 10**7  # the cite check reads the whole committed diff: a cut would hide the cites past it

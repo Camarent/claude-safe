@@ -15,12 +15,28 @@ import sys
 from pathlib import Path
 
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
-import wt  # noqa: E402
-from pipeline import gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402
-from pipeline.configuration import ADD_REPO_CMD, BLOCKED, DONE, FAIL, GATE_TIMEOUT_S, GIT_TIMEOUT_S, WORK_DIR, project, repo_dir, tool_cmd, work_branch  # noqa: E402
-from pipeline.plan_check import LEAD_MARK, is_lead_verified  # noqa: E402
-from pipeline.plan_files import task_type  # noqa: E402
-from pipeline.util import read_text, work_path  # noqa: E402
+import wt  # noqa: E402  (sys.path set above)
+from localmodel.prereview import job_diff  # noqa: E402  (sys.path set above)
+from pipeline import cite_check, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
+from pipeline.configuration import (  # noqa: E402  (sys.path set above)
+    ADD_REPO_CMD,
+    BLOCKED,
+    CITE_CHECK_DEFAULT,
+    CITE_CHECK_KEY,
+    CITE_DIFF_MAX_CHARS,
+    DONE,
+    FAIL,
+    GATE_TIMEOUT_S,
+    GIT_TIMEOUT_S,
+    WORK_DIR,
+    project,
+    repo_dir,
+    tool_cmd,
+    work_branch,
+)
+from pipeline.plan_check import LEAD_MARK, is_lead_verified  # noqa: E402  (sys.path set above)
+from pipeline.plan_files import task_type  # noqa: E402  (sys.path set above)
+from pipeline.util import read_text, work_path  # noqa: E402  (sys.path set above)
 
 TIMEOUT_S = GATE_TIMEOUT_S
 TAIL_LINES = 40
@@ -157,8 +173,22 @@ def _run_line(cwd, c, runner):
     return _red_verdict(cwd, c, p) if p.returncode != 0 else None
 
 
-def run(stage, task, d, runner=subprocess.run, scan=gate_findings):
-    """-> (verdict word, note). `runner` and `scan` are injectable for tests. A Test line already green on the identical tree is skipped, noted with its run id. A finding of the secret or path gate is FAIL before any Test line runs."""
+def _cite_findings(cwd, d, stage, task, report, diff_fn):
+    """-> (FAIL note, skip note). The FAIL note names each `path:line` cite the task adds (committed diff) or the dev report makes that does not hold, else "". The skip note says the check did not run because the job diff was unavailable, else "". Off when the `cite_check` key of pipeline.json is false; no job diff -> nothing to check."""
+    if not project(d).get(CITE_CHECK_KEY, CITE_CHECK_DEFAULT):
+        return "", ""
+    diff = diff_fn(stage, task, d, CITE_DIFF_MAX_CHARS)
+    if diff is None:  # job_diff: no manifest entry or the diff failed; never silently off
+        return "", "cite check skipped: the job diff is unavailable"
+    if not diff:
+        return "", ""
+    added = cite_check.added_lines(diff)
+    msgs = cite_check.check(cwd, added, read_text(report) if report and os.path.isfile(report) else "")
+    return ("\n".join(["FAIL cite check: a path:line cite does not hold:", *msgs]) if msgs else ""), ""
+
+
+def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_diff, report=""):
+    """-> (verdict word, note). `runner`, `scan` and `diff_fn` are injectable for tests; `report` is the dev report file. A Test line already green on the identical tree is skipped, noted with its run id. A finding of the secret or path gate is FAIL before any Test line runs. Green Test lines then run the cite check (`_cite_findings`): a wrong cite is FAIL."""
     try:
         text = Path(d, WORK_DIR, stage, f"{task}.md").read_text(encoding="utf-8", errors="replace")
     except OSError as e:
@@ -186,7 +216,10 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings):
         if red:
             return red
     lead_notes = _run_lead(cwd, leads, runner)  # a red lead-verified line is a note, never a BLOCKED or FAIL of the dev
-    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes])
+    cite, cite_note = _cite_findings(cwd, d, stage, task, report, diff_fn)
+    if cite:
+        return FAIL, cite
+    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes, *([cite_note] if cite_note else [])])
 
 
 def main(argv=None):
@@ -194,6 +227,7 @@ def main(argv=None):
     ap.add_argument("--stage", required=True)
     ap.add_argument("--task", required=True)
     ap.add_argument("--dir", default=".")
+    ap.add_argument("--report", default="", help="the dev report file: its path:line cites go through the cite check")
     ap.add_argument("--repair-env", action="store_true", help="rerun the worktree_setup commands in the job worktree instead of the Test lines")
     a = ap.parse_args(argv)
     if a.repair_env:  # an environment repair: the step that asked for it runs its test again next
@@ -204,7 +238,7 @@ def main(argv=None):
             return 0  # the rerun of the red step shows the state; a second env red goes to the lead
         print("repair done: worktree_setup reran")
         return 0
-    v, note = run(a.stage, a.task, os.path.abspath(a.dir))
+    v, note = run(a.stage, a.task, os.path.abspath(a.dir), report=a.report)
     print(f"VERDICT: {v}\n{note}")
     return 0
 

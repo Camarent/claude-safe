@@ -5,7 +5,7 @@ import os
 import re
 import shlex
 
-from .briefs import ENV_DRY_NO_CCN, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
+from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
 from .ccn import CCN_REVIEW_BRIEF, CCN_REVIEW_WHY, review_ccn_hit
 from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
@@ -262,7 +262,13 @@ def _script(task, rid, why, cmd):
 
 
 def _test_run_script(a, task, rid, why="test run (the task's Test lines in its worktree); FAIL goes back to the dev"):
-    return _script(task, rid, why, f"{tool_cmd('testrun.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}")
+    report = last_report_file(getattr(a, "orch_events", None) or [], task["id"])  # the dev report: its cites go through the cite check in testrun.py
+    return _script(
+        task,
+        rid,
+        why,
+        f"{tool_cmd('testrun.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}" + (f" --report {report}" if report else ""),
+    )
 
 
 def _after_dev(a, task, mine, rid, s, last):
