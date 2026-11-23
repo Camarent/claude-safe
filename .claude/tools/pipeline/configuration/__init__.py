@@ -10,6 +10,19 @@ from .ci_poll import (  # noqa: F401  (re-export: the facade keeps every name im
     CI_POLL_S,
     GH_CHECKS_PENDING_RC,
 )
+from .cite_check import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    CITE_COMMENT_MARKS,
+    CITE_DEF_RE,
+    CITE_EXTENSIONS,
+    CITE_FENCE_RE,
+    CITE_MD_EXTENSIONS,
+    CITE_RE,
+    CITE_REPORT_NAME,
+    CITE_SYMBOL_BEFORE_RE,
+    CITE_URL_RE,
+    CITE_WINDOW_LINES,
+    CITE_WORD_RE,
+)
 from .cleanup import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     ACCEPTANCE_TMP_PREFIX,
     CLEANUP_DRY_RUN_FLAG,
