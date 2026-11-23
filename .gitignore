@@ -33,8 +33,6 @@ scratch/
 # Chrome profile: cookies and session state, regenerated on demand
 browser-profile/
 
-# Leftover Strata models/state of the old in-image layout (tens of GB); model-host's STRATA_DATA can point here
-strata-data/
 .claude-local/
 
 # shared vector cache for local.py find (rebuildable)
@@ -59,6 +57,4 @@ __pycache__/
 .code-index/
 .notes/
 
-# Leftover Ollama state of the old in-image layout
-ollama-data/
 .claude/git/privacy.gitconfig

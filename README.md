@@ -135,8 +135,7 @@ shared network `model-net`, so other containers there can reach Ollama, which ha
 
 The pipeline can no longer start Strata (it has no access to the host): `preflight()` in `.claude/tools/search/strata.py` skips the
 local-model steps when it does not answer. `--with strata` and `--with ollama` are gone and say where to go.
-Leftover directories `strata-data/` and `ollama-data/` from the old layout are git-ignored; point model-host's `STRATA_DATA` at
-`strata-data/` to reuse the model files.
+All model files (GGUF sources, Strata data) live inside model-host (`models/`); claude-safe keeps none.
 
 ## Development workflow
 
