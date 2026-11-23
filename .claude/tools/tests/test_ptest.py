@@ -86,6 +86,16 @@ class PtestTest(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("no test files match", out)
 
+    def test_repo_path_pattern_selects_by_file_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "test_a.py"), "w", encoding="utf-8") as f:
+                f.write(OK)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = ptest.main(["--dir", d, "--jobs", "2", ".claude/tools/tests/test_a.py"])
+        self.assertEqual(rc, 0)
+        self.assertIn("1 files", buf.getvalue())
+
 
 class ClaudeChangeWarningTest(unittest.TestCase):
     def test_new_change_is_warned_and_returned(self):
