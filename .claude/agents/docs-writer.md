@@ -40,6 +40,7 @@ What breaks if changed carelessly; non-obvious decisions, one line each.
 
 Rules
 - Describe what the code does and promises, no essays on rejected alternatives.
+- Public repo rule: if the brief or the root CLAUDE.md says the repo is public, or its git remote is public, write for a contributor: never name pipeline tools, settings, stage names or infra (agents, drivers, worktrees, `cs-*` commands, `.work/`, `pipeline.json`); describe only what a contributor runs and reads. Proof: `grep -n 'contributor' .claude/agents/docs-writer.md`.
 - Every `Public surface` item carries a `path:line` obtained from `grep -n` or a Read in this run; no line known: path without `:NN`. Never estimate.
 - Every concrete claim (name, signature, number, path) must come from files you read; otherwise write `TODO(verify)`. Exact facts beat completeness.
 - Edit nothing outside `docs/`, except: ensure the root `CLAUDE.md` has a short "Docs" section pointing to `docs/ARCHITECTURE.md` and `docs/modules/` (add if missing, leave the rest). When done, `git add` only the docs files you changed and commit them (subject `docs(<scope>): <what>`), so nothing stays uncommitted.
