@@ -213,12 +213,14 @@ MAIN_GUARD_IGNORE = (
     ".wt",
     WORK_DIR,
 )  # top-level folders of the main checkout that are the pipeline's own (job worktrees, stage work files), never a dev's write
+MAIN_GUARD_IGNORE_GLOBS = ("qrun-*.log",)  # path globs of the main checkout the guard never reports; pipeline.json key main_guard_ignore_globs overrides
+MAIN_DIRT_PREFIX = "MAIN-DIRT:"  # first word of the note maincheck.check returns; the driver tells it from a dev's own failure
 MAIN_WRITE_NOTE = (
-    "FAIL: path outside this task's worktree: files in the MAIN checkout changed or appeared while you worked ({files}, +{more} more). "
-    "Nothing was deleted or reverted. The main checkout must stay clean or the merge is blocked. Copy what you need into your own job worktree, "
-    "then remove those files from the main checkout with `git -C <main checkout> checkout -- <file>` (tracked) or `rm` (new). "
-    "Always use paths relative to your worktree, never an absolute path into the main checkout."
-)  # the FAIL note maincheck.check returns
+    MAIN_DIRT_PREFIX + " files in the MAIN checkout changed or appeared while this task ran ({files}, +{more} more). "
+    "Nothing was deleted or reverted. The dev cannot fix this: the lead runs `git -C <main checkout> status`, finds who wrote the paths "
+    "(each line shows the path, its mtime and the job start), then `orch.py retry`. It clears by itself once the paths are gone. "
+    "A dev always uses paths relative to its own worktree, never an absolute path into the main checkout."
+)  # the note maincheck.check returns
 BASE_FLAKE_PREFIX = "base-flake:"  # report line for a gate failure that is not the task's (red on the stage base too, or green on an unchanged rerun): `base-flake: <failing test ids>`
 FAIL_ID_RES = (  # regexes (group 1 = test id) that read the failing test ids out of a gate's output: pytest summary, unittest header, a plain `FAIL name` line
     r"(?m)^FAILED\s+(\S+)",
