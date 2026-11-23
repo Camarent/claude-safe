@@ -9,6 +9,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import pr_ops
 from pipeline.configuration.pr_gates import PR_GATE_TIMEOUT_S
+from tests.support.gitrepo import git
 
 CI_YML = """\
 name: ci
@@ -48,6 +49,7 @@ class PrReadyGatesTest(unittest.TestCase):
         os.makedirs(wf)
         with open(os.path.join(wf, "ci.yml"), "w", encoding="utf-8") as fh:
             fh.write(CI_YML)
+        git(self.tmp.name, "init", "-q")
 
     def test_every_gate_and_uncovered_ci_line_runs_in_repo(self):
         fake = FakeRunner()
@@ -109,9 +111,37 @@ class PrReadyGatesTest(unittest.TestCase):
     def test_no_gates_and_no_workflows_runs_nothing(self):
         fake = FakeRunner()
         with tempfile.TemporaryDirectory() as empty:
+            git(empty, "init", "-q")
             note = pr_ops._gates_gate(empty, {}, "stage/x", runner=fake)
         self.assertEqual(fake.seen, [])
         self.assertIn("0 command(s) green", note)
+
+    def _ci_file_runner(self, red=()):
+        """FakeRunner that makes the CI line `scripts/dev.sh extra-ci` write requirements-ci.txt (the stray file of kata)."""
+        inner = FakeRunner(red=red)
+
+        def runner(args, cwd, timeout):
+            if args[-1] == "scripts/dev.sh extra-ci":
+                with open(os.path.join(cwd, "requirements-ci.txt"), "w", encoding="utf-8") as fh:
+                    fh.write("stray\n")
+            return inner(args, cwd, timeout)
+
+        return runner
+
+    def test_files_ci_line_creates_are_removed_and_old_untracked_kept(self):
+        with open(os.path.join(self.tmp.name, "keep.txt"), "w", encoding="utf-8") as fh:
+            fh.write("mine\n")
+        note = pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=self._ci_file_runner())
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "requirements-ci.txt")))
+        self.assertTrue(os.path.exists(os.path.join(self.tmp.name, "keep.txt")))
+        self.assertIn("5 command(s) green", note)
+
+    def test_red_result_is_kept_and_ci_files_are_still_removed(self):
+        runner = self._ci_file_runner(red={"scripts/dev.sh extra-ci"})
+        with self.assertRaises(pr_ops.Blocked) as cm:
+            pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=runner)
+        self.assertIn("ci_drift_ignore", str(cm.exception))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "requirements-ci.txt")))
 
 
 if __name__ == "__main__":

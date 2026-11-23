@@ -9,7 +9,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from . import gitx, pr_mode, webskip, worktree
+from . import ci_clean, gitx, pr_mode, webskip, worktree
 from .ci_drift import ci_commands, ignore_hint
 from .configuration import (
     BLOCKED,
@@ -236,18 +236,22 @@ def _gates_gate(repo, cfg, br, runner=None):
     run_cmd = runner or _run
     gates = [g["cmd"] for g in all_gates_of(cfg)]
     ci = ci_commands(repo, cfg)
+    before = ci_clean.snapshot(repo)
     red = []
-    for c in gates:
-        if run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S).returncode:
-            red.append(f"`{c}`")
-    for c in ci:
-        r = run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S)
-        if not r.returncode:
-            continue
-        if ENV_OUTPUT_RE.search((r.stdout or "") + (r.stderr or "")):
-            red.append(f"`{c}` -> environment, not code: set the variable or add the ignore entry")
-        else:
-            red.append(f'`{c}` -> add `ci_drift_ignore` entry "{ignore_hint(c)}"')
+    try:
+        for c in gates:
+            if run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S).returncode:
+                red.append(f"`{c}`")
+        for c in ci:
+            r = run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S)
+            if not r.returncode:
+                continue
+            if ENV_OUTPUT_RE.search((r.stdout or "") + (r.stderr or "")):
+                red.append(f"`{c}` -> environment, not code: set the variable or add the ignore entry")
+            else:
+                red.append(f'`{c}` -> add `ci_drift_ignore` entry "{ignore_hint(c)}"')
+    finally:
+        ci_clean.remove_new(repo, before)
     if red:
         raise Blocked(f"{PR_GATES_STEP} red on {br}: {'; '.join(red)}; fix them, then run pr-ready again")
     return f"{PR_GATES_STEP}: {len(gates) + len(ci)} command(s) green"
