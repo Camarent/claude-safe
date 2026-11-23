@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import itertools
 import json
 import os
 import shutil
@@ -121,12 +122,24 @@ class PrStepsHelpers(unittest.TestCase):
         for out in (R(1, "{}"), R(0, "nope"), R(0, "[1]")):
             with mock.patch.object(pr_ops, "_run", fake({"gh pr view": out})):
                 self.assertIsNone(pr_ops._view(".", "b", "state"))
-        checks = json.dumps([{"name": "a", "bucket": "fail"}, {"name": "b", "bucket": "pass"}, {"name": "c", "bucket": "cancel"}])
-        with mock.patch.object(pr_ops, "_run", fake({"gh pr checks": R(0, checks)})):
+        runs = json.dumps(
+            [
+                {"name": "a", "status": "completed", "conclusion": "failure"},
+                {"name": "b", "status": "completed", "conclusion": "success"},
+                {"name": "c", "status": "completed", "conclusion": "cancelled"},
+            ]
+        )
+        with mock.patch.object(pr_ops, "_run", fake({"gh pr view": R(0, '{"headRefOid": "sha"}'), "gh run list": R(0, runs)})):
             self.assertEqual(pr_ops._failing(".", "b"), ["a", "c"])
-        for out in ("nope", "{}", '[{"x": 1}]', "[5]"):
-            with mock.patch.object(pr_ops, "_run", fake({"gh pr checks": R(0, out)})):
+        for out in ('[{"x": 1}]', "[5]"):
+            with mock.patch.object(pr_ops, "_run", fake({"gh pr view": R(0, '{"headRefOid": "sha"}'), "gh run list": R(0, out)})):
                 self.assertEqual(pr_ops._failing(".", "b"), [])
+        for out in (R(0, "nope"), R(0, "{}"), R(1, "")):  # a failed or unreadable run list is an error, never "no failures"
+            with (
+                mock.patch.object(pr_ops, "_run", fake({"gh pr view": R(0, '{"headRefOid": "sha"}'), "gh run list": out})),
+                self.assertRaises(pr_ops.CiReadError),
+            ):
+                pr_ops._failing(".", "b")
 
     def test_landed(self):
         with mock.patch.object(pr_ops, "_view", return_value="MERGED"):
@@ -154,10 +167,15 @@ class PrStepsHelpers(unittest.TestCase):
 
     def test_ready_outcomes(self):
         cfg = {"pr_checks_timeout": 5}
-        ok = {"gh pr ready": R(0), "gh pr checks": R(0)}
+        head = {"gh pr view b --json headRefOid": R(0, '{"headRefOid": "sha"}')}
+        green = json.dumps([{"name": "ci", "status": "completed", "conclusion": "success"}])
+        ok = {"gh pr ready": R(0), "gh run list": R(0, green), **head}
         with mock.patch.object(pr_ops, "_run", fake(ok)):
             self.assertEqual(pr_ops._ready(".", cfg, "b"), "marked ready; checks green")
-        with mock.patch.object(pr_ops, "_run", fake({**ok, "gh pr ready": R(1, "", "x")})), mock.patch.object(pr_ops, "_view", return_value=False):
+        with (
+            mock.patch.object(pr_ops, "_run", fake({**ok, "gh pr ready": R(1, "", "x")})),
+            mock.patch.object(pr_ops, "_view", side_effect=lambda r, b, f: "sha" if f == "headRefOid" else False),
+        ):
             self.assertEqual(pr_ops._ready(".", cfg, "b"), "already ready; checks green")
         with (
             mock.patch.object(pr_ops, "_run", fake({**ok, "gh pr ready": R(1, "", "cannot")})),
@@ -165,26 +183,23 @@ class PrStepsHelpers(unittest.TestCase):
             self.assertRaisesRegex(pr_ops.Blocked, "still a draft: cannot"),
         ):
             pr_ops._ready(".", cfg, "b")
-        with mock.patch.object(pr_ops, "_run", fake({**ok, "gh pr checks": R(1, "no checks reported on the branch")})):
+        with mock.patch.object(pr_ops, "_run", fake({**ok, "gh run list": R(0, "[]")})):
             self.assertEqual(pr_ops._ready(".", cfg, "b"), "marked ready; no checks configured")
-        red = json.dumps([{"name": "lint", "bucket": "fail"}])
+        red = json.dumps([{"name": "lint", "status": "completed", "conclusion": "failure"}])
         with (
-            mock.patch.object(pr_ops, "_run", fake({"gh pr checks b --watch": R(1, "", "bad"), "gh pr checks b --json": R(0, red), **ok})),
+            mock.patch.object(pr_ops, "_run", fake({**ok, "gh run list": R(0, red)})),
             self.assertRaisesRegex(pr_ops.Blocked, "CI red on b: lint"),
         ):
             pr_ops._ready(".", cfg, "b")
+
+        # the workflow runs stay pending: the clock jumps 3 s per read, so the 5 s limit passes without a real sleep
+        pending = json.dumps([{"name": "ci", "status": "in_progress", "conclusion": ""}])
+        clock = SimpleNamespace(monotonic=itertools.count(0, 3).__next__, sleep=lambda s: None)
         with (
-            mock.patch.object(pr_ops, "_run", fake({"gh pr checks b --watch": R(1, "", "weird failure"), **ok})),
-            self.assertRaisesRegex(pr_ops.Blocked, "CI red on b: weird failure"),
+            mock.patch.object(pr_ops, "time", clock),
+            mock.patch.object(pr_ops, "_run", fake({**head, "gh run list": R(0, pending)})),
+            self.assertRaisesRegex(pr_ops.Blocked, "not finished after 5s"),
         ):
-            pr_ops._ready(".", cfg, "b")
-
-        def timing(args, cwd=None, timeout=120):
-            if "--watch" in args:
-                raise pr_ops.Blocked("timed out")
-            return R(0, "[]") if "--json" in args else R(0)
-
-        with mock.patch.object(pr_ops, "_run", timing), self.assertRaisesRegex(pr_ops.Blocked, "not finished after 5s"):
             pr_ops._ready(".", cfg, "b")
 
     def test_main_prints_verdict(self):

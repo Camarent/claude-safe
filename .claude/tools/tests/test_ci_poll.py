@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import pr_ops
-from pipeline.configuration import CHECKS_TIMEOUT_S, CI_POLL_S, GH_CHECKS_PENDING_RC
+from pipeline.configuration import CHECKS_TIMEOUT_S, CI_POLL_S
 
 
 def R(rc=0, out="", err=""):
@@ -61,9 +61,18 @@ def view(field, value):
 OPEN_PR = {
     "gh pr view b --json state": view("state", "OPEN"),
     "gh pr view b --json isDraft": view("isDraft", False),
+    "gh pr view b --json headRefOid": view("headRefOid", "sha-b"),
 }
-GREEN_NOW = {"gh pr checks b": R(0, "all green")}
-RED = json.dumps([{"name": "lint", "bucket": "fail"}])
+
+
+def run_rows(*rows):
+    """`gh run list` answer: one (status, conclusion) per workflow run of the PR head."""
+    return R(0, json.dumps([{"name": "ci", "status": st, "conclusion": cn} for st, cn in rows]))
+
+
+GREEN_RUNS = run_rows(("completed", "success"))
+PENDING_RUNS = run_rows(("in_progress", ""))
+RED = json.dumps([{"name": "lint", "status": "completed", "conclusion": "failure"}])
 
 
 class MergeWaitsForCi(unittest.TestCase):
@@ -81,7 +90,7 @@ class MergeWaitsForCi(unittest.TestCase):
     def test_pending_checks_and_unknown_mergeable_are_polled_then_merged(self):
         table = {
             "gh pr view b --json mergeable": [view("mergeable", "UNKNOWN"), view("mergeable", "MERGEABLE")],
-            "gh pr checks b": [R(GH_CHECKS_PENDING_RC, "pending"), R(GH_CHECKS_PENDING_RC, "pending"), R(0, "all green")],
+            "gh run list": [PENDING_RUNS, PENDING_RUNS, GREEN_RUNS],
             "gh pr merge b": R(0),
         }
         note, run = self.merge(table)
@@ -92,22 +101,32 @@ class MergeWaitsForCi(unittest.TestCase):
     def test_red_checks_block_without_merge(self):
         table = {
             "gh pr view b --json mergeable": view("mergeable", "MERGEABLE"),
-            "gh pr checks b --json": R(0, RED),
-            "gh pr checks b": R(1, "", "bad"),
+            "gh run list": R(0, RED),
         }
         with self.assertRaisesRegex(pr_ops.Blocked, "checks of b are not green \\(lint\\)"):
             self.merge(table)
         self.assertEqual(self.clock.sleeps, [])
 
+    def test_failed_run_list_blocks_merge_not_read_as_no_checks(self):
+        table = {"gh pr view b --json mergeable": view("mergeable", "MERGEABLE"), "gh run list": R(1, "", "HTTP 503")}
+        with self.assertRaisesRegex(pr_ops.Blocked, "gh run list failed"):
+            self.merge(table)
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_ready_blocks_on_failed_run_list(self):
+        run = scripted({**OPEN_PR, "gh run list": R(1, "", "HTTP 503"), "gh pr ready": R(0)})
+        with mock.patch.object(pr_ops, "_run", run), self.assertRaisesRegex(pr_ops.Blocked, "gh run list failed"):
+            pr_ops._ready(self.d, {}, "b")
+
     def test_pending_checks_past_the_timeout_block(self):
-        table = {"gh pr view b --json mergeable": view("mergeable", "MERGEABLE"), "gh pr checks b": R(GH_CHECKS_PENDING_RC, "pending")}
+        table = {"gh pr view b --json mergeable": view("mergeable", "MERGEABLE"), "gh run list": PENDING_RUNS}
         with self.assertRaisesRegex(pr_ops.Blocked, "still pending after the wait"):
             self.merge(table, {"pr_checks_timeout": 60})
         self.assertEqual(sum(self.clock.sleeps), 60)
         self.assertEqual(self.clock.sleeps[0], CI_POLL_S)
 
     def test_unknown_mergeable_past_the_timeout_blocks(self):
-        table = {"gh pr view b --json mergeable": view("mergeable", "UNKNOWN"), "gh pr checks b": R(0, "all green")}
+        table = {"gh pr view b --json mergeable": view("mergeable", "UNKNOWN"), "gh run list": GREEN_RUNS}
         with self.assertRaisesRegex(pr_ops.Blocked, "of unknown mergeability"):
             self.merge(table, {"pr_checks_timeout": 60})
         self.assertEqual(sum(self.clock.sleeps), 60)
