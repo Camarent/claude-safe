@@ -200,5 +200,31 @@ class BranchStateTest(unittest.TestCase):
         self.assertNotIn("ERROR", buf.getvalue())
 
 
+class SelectFilesTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tests = os.path.join(tmp.name, "tests")
+        os.mkdir(self.tests)
+        for name in ("test_a.py", "test_b.py"):
+            with open(os.path.join(self.tests, name), "w", encoding="utf-8") as f:
+                f.write(OK)
+        cwd = os.getcwd()
+        os.chdir(tmp.name)
+        self.addCleanup(os.chdir, cwd)
+
+    def test_bare_name_and_glob_select_by_basename(self):
+        self.assertEqual(ptest.select_files(self.tests, ["test_a.py"]), ["test_a.py"])
+        self.assertEqual(sorted(ptest.select_files(self.tests, ["test_*.py"])), ["test_a.py", "test_b.py"])
+
+    def test_repo_path_to_file_in_tests_dir_selects_it(self):
+        self.assertEqual(ptest.select_files(self.tests, [os.path.join("tests", "test_b.py")]), ["test_b.py"])
+
+    def test_path_outside_tests_dir_selects_nothing(self):
+        with open("other.py", "w", encoding="utf-8") as f:
+            f.write(OK)
+        self.assertEqual(ptest.select_files(self.tests, ["other.py"]), [])
+
+
 if __name__ == "__main__":
     unittest.main()
