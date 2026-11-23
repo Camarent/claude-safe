@@ -9,7 +9,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from . import ci_clean, gitx, pr_mode, webskip, worktree
+from . import ci_clean, cleanup, gitx, pr_mode, webskip, worktree
 from .ci_drift import ci_commands, ignore_hint
 from .configuration import (
     BLOCKED,
@@ -658,6 +658,11 @@ def _cleanup(a, repo, cfg, br):
             res += f"; [{n}] " + _clean_repo(a, sub, cfg, br, False)
         except Blocked as e:
             raise Blocked(f"nested repo {n}: {e}") from None
+    pruned, unmerged = cleanup.prune_branches(a.dir)  # orphan job/* branches of earlier stages: merged ones go, the rest is named
+    if pruned:
+        res += "; pruned job branches: " + ", ".join(b for b, _into in pruned)
+    if unmerged:
+        res += "; kept unmerged: " + ", ".join(unmerged)
     return res
 
 
