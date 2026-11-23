@@ -90,7 +90,7 @@ Out of scope: <what not to touch>
 
 ## Public-words gate (`public_forbidden_words`)
 - Setting: the `public_forbidden_words` list in the project `pipeline.json` (key `PUBLIC_FORBIDDEN_WORDS_KEY` in `pipeline/configuration/public.py`). Default: no words, so the gate finds nothing. The env var `PIPELINE_PUBLIC_FORBIDDEN_WORDS` (comma-separated) overrides the key when set.
-- Scan: every git-tracked `*.md` file (`PUBLIC_DOC_GLOB`), line by line, case-insensitive, plain text not regex. Blank words are ignored (an empty word would match every line). Code: `pipeline/public_words.py`.
+- Scan: every tracked text file (files with a NUL byte in the first `PUBLIC_BINARY_SNIFF_BYTES` are skipped), line by line, case-insensitive, plain text not regex. Blank words are ignored (an empty word would match every line). Code: `pipeline/public_words.py`.
 - Docs skip: the gate returns clean without a scan when the words list is empty or the repo is not public. A private repo never fails on its docs.
 - Public-words gate: `ops_steps.py public-words --dir D` prints `file:line: word` for every hit and exits non-zero on any hit. The dev brief tells the dev to run it before VERDICT: DONE and to fix every line it prints (`phases.py`, the docs step).
 - Tests: `.claude/tools/tests/test_ops_steps.py` holds the public-words cases.

@@ -146,7 +146,7 @@ def digest(d, stage):
 
 
 def _is_public(repo):
-    """True when the repo's CLAUDE.md says it is public, or `gh repo view` says it is not private; any gh error is False."""
+    """True when the repo's CLAUDE.md says it is public, False when `gh repo view` says it is private, None when neither answers (gh error or timeout)."""
     try:
         with open(os.path.join(repo, "CLAUDE.md"), encoding="utf-8", errors="replace") as fh:
             if any(PUBLIC_MARK_RE.search(line) for line in fh):
@@ -155,9 +155,12 @@ def _is_public(repo):
         pass
     try:
         r = subprocess.run(list(GH_VISIBILITY_ARGS), cwd=repo, capture_output=True, text=True, timeout=GIT_QUICK_TIMEOUT_S, check=False)
-        return r.returncode == 0 and json.loads(r.stdout or "{}").get("isPrivate") is False
+        if r.returncode != 0:
+            return None
+        private = json.loads(r.stdout or "{}").get("isPrivate")
+        return None if private is None else private is False
     except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
-        return False
+        return None
 
 
 def _forbidden_words(d):
@@ -168,12 +171,20 @@ def _forbidden_words(d):
 
 
 def public_words_gate(d):
-    """-> (ok, lines): on a public repo, every tracked *.md line that holds a forbidden word, as `file:line: word`; ok only when none."""
+    """-> (ok, lines): on a public repo, every tracked text line that holds a forbidden word, as `file:line: word`; ok only when none. Fails closed: a scan or visibility check that cannot finish is not ok."""
     words = _forbidden_words(d)
-    repo = repo_dir(os.path.abspath(d), project(d))
-    if not any(w.strip() for w in words) or not _is_public(repo):
+    if not any(w.strip() for w in words):
         return True, []
-    found = public_words.hits(repo, words)
+    repo = repo_dir(os.path.abspath(d), project(d))
+    public = _is_public(repo)
+    if public is None:
+        return False, ["repo visibility unknown"]
+    if not public:
+        return True, []
+    try:
+        found = public_words.hits(repo, words)
+    except public_words.ScanError as e:
+        return False, [str(e)]
     return not found, found
 
 

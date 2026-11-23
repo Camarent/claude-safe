@@ -187,6 +187,54 @@ class OpsStepsTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(lines, ["README.md:1: sauce"])
 
+    def test_public_words_failed_ls_files_fails_closed(self):
+        self._repo_with_doc("the sauce is here\n")
+        self.put_claude("This repo is public.\n")
+        failed = unittest.mock.Mock(returncode=128, stdout="")
+        with (
+            unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            unittest.mock.patch.object(ops_steps.gitx, "try_run", return_value=failed),
+        ):
+            ok, lines = ops_steps.public_words_gate(self.d)
+        self.assertFalse(ok)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("scan failed", lines[0])
+
+    def test_public_words_gh_error_with_words_fails_closed(self):
+        self._repo_with_doc("the sauce is here\n")
+        with (
+            unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            unittest.mock.patch.object(ops_steps.subprocess, "run", side_effect=OSError("gh missing")),
+        ):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (False, ["repo visibility unknown"]))
+
+    def test_public_words_gh_timeout_with_words_fails_closed(self):
+        self._repo_with_doc("the sauce is here\n")
+        timeout = subprocess.TimeoutExpired(cmd="gh", timeout=1)
+        with (
+            unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            unittest.mock.patch.object(ops_steps.subprocess, "run", side_effect=timeout),
+        ):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (False, ["repo visibility unknown"]))
+
+    def test_public_words_gh_empty_stdout_with_words_fails_closed(self):
+        # rc 0 with no isPrivate key must not read as public: visibility unknown
+        self._repo_with_doc("the sauce is here\n")
+        for out in ("", "{}"):
+            with (
+                self.subTest(stdout=out),
+                self._gh_says(out),
+                unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}),
+            ):
+                self.assertEqual(ops_steps.public_words_gate(self.d), (False, ["repo visibility unknown"]))
+
+    def test_public_words_gh_error_with_empty_words_is_done_without_gh(self):
+        self._repo_with_doc("the sauce is here\n")
+        gh = unittest.mock.Mock(side_effect=OSError("gh missing"))
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": ""}), unittest.mock.patch.object(ops_steps.subprocess, "run", gh):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, []))
+        gh.assert_not_called()
+
     def test_stage_is_required_for_the_stage_commands(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             ops_steps.main(["push", "--dir", self.d])
