@@ -2,12 +2,13 @@ import json
 import os
 import subprocess
 import sys
+import types
 import unittest
 import unittest.mock
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
-from pipeline import worktree  # noqa: E402
+from pipeline import cli_orch, worktree  # noqa: E402
 from tests.support.tmpdirs import tracked_mkdtemp  # noqa: E402
 
 
@@ -67,6 +68,35 @@ class RefreshTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(f"{root}/junk"))
         res = worktree.refresh(self.t, "s", "task-1", discard=True)
         self.assertEqual(len(res["discarded"]), 2)
+        self.assertEqual(sh(root, "status", "--porcelain"), "")
+
+    def test_retry_refreshes_before_dev(self):
+        root = self.info["root"]
+        self.put(root, "own", "1")
+        self.put(self.m, "later", "2")  # stage moved after dispatch
+        with open(f"{root}/f", "w") as f:  # leftover of the dead dev
+            f.write("changed")
+        a = types.SimpleNamespace(dir=self.t, stage="s", step="task-1", cmd="retry", note="", addendum="", from_step="", verify=False)
+        order = []
+        real_refresh, real_append = worktree.refresh, cli_orch.append_event
+
+        def refresh(*args, **kw):
+            order.append(("refresh", kw.get("discard")))
+            return real_refresh(*args, **kw)
+
+        def append(log, ev):
+            order.append(("event", ev["ev"]))
+            return real_append(log, ev)
+
+        with (
+            unittest.mock.patch.object(worktree, "refresh", side_effect=refresh),
+            unittest.mock.patch.object(cli_orch, "append_event", side_effect=append),
+            unittest.mock.patch.object(cli_orch, "jprint"),
+        ):
+            cli_orch.cmd_reset(a)  # the retry path: refresh, then the retry event the driver dispatches on
+        self.assertIn(("refresh", True), order)
+        self.assertLess(order.index(("refresh", True)), order.index(("event", "retry")))
+        self.assertTrue(os.path.isfile(f"{root}/later") and os.path.isfile(f"{root}/own"))
         self.assertEqual(sh(root, "status", "--porcelain"), "")
 
 

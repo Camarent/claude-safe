@@ -60,6 +60,24 @@ class BriefsHeaderTest(unittest.TestCase):
         self.assertIn("Your job worktree root is your current directory", prompt)
         self.assertIn("relative paths only", prompt)
 
+    def test_dev_prompt_says_work_only_in_the_job_worktrees(self):
+        a = _Run("s", self.root)
+        t = os.path.join(self.root, ".work", "s", "task-1.md")
+        os.makedirs(os.path.dirname(t))
+        with open(t, "w", encoding="utf-8") as f:
+            f.write("Predicted paths: x.py\nTest: true\n")
+        info = {"branch": "job/s-task-1", "repos": {"main": os.path.join(self.root, ".wt", "job")}, "base": "dev"}
+        with (
+            mock.patch.dict(os.environ, {"PIPELINE_NO_LEADS": "1"}),
+            mock.patch("pipeline.briefs.job_info", return_value=info),
+            mock.patch("pipeline.briefs.maincheck.snapshot"),
+            mock.patch("pipeline.briefs.linkguard.snapshot"),
+        ):
+            prompt = briefs.prompt_for(a, {"id": "task-1"}, "dev", None, "x1")
+        self.assertIn("Work ONLY in these job worktrees", prompt)
+        self.assertIn("Never edit the main checkouts", prompt)
+        self.assertIn(os.path.join(self.root, ".wt", "job"), prompt)
+
     def test_test_file_pattern_brief_has_its_import_and_sys_path_header(self):
         self._task("tests/test_fixture.py:9")
         note = briefs.pattern_header_note(self.root, self.task_file)
