@@ -20,6 +20,21 @@ def tearDownModule():
     stop_index_patch()
 
 
+class DocsBriefTest(unittest.TestCase):
+    def test_final_docs_brief_runs_public_words_gate(self):
+        import tempfile
+        from types import SimpleNamespace
+
+        from pipeline import phases
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        a = SimpleNamespace(stage="s1", dir=tmp.name)
+        st = phases._docs_step(a, {})
+        self.assertIn("ops_steps.py public-words --dir", st["prompt"])
+        self.assertIn("fix every file:line it prints", st["prompt"])
+
+
 class PhaseTest(PhaseHarness, unittest.TestCase):
     def test_tools_check_fail_asks_main_and_audits_wait(self):
         self.base()

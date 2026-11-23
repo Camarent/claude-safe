@@ -574,6 +574,7 @@ def _docs_step(a, cfg):
         f"Stage {S}: update mode. Docs root, first match wins: a `docs:` line in .work/{S}/TASKS.md, then in PROGRESS.md, then the `## Docs` section of the project CLAUDE.md in the workspace root (it names the repo and its docs/ folder; find the repo there, do not search the tree); `docs: skip` -> nothing to do, VERDICT: DONE; no `docs:` line and the CLAUDE.md names no docs folder -> VERDICT: DONE with a one-line note, write nothing. Changed files: git diff of the stage on `{_wb(a, cfg)}`; collect the DOCS-STALE lines of .work/{S}/report-*.md. When the docs are done, commit them on `{_wb(a, cfg)}`: `git add` only the files you changed (docs/ and the CLAUDE.md Docs section), subject `docs(<scope>): <what>`, TZ=UTC, `-F msgfile`; leave nothing uncommitted."
         + _index_modules_note(a, cfg)
         + " Before VERDICT: DONE run `cs-docs-index --root <repo root> --check` and fix what it reports, including `describes no existing module`."
+        + f" Before VERDICT: DONE run `{tool_cmd('ops_steps.py')} public-words --dir {shlex.quote(os.path.abspath(a.dir))}` and fix every file:line it prints (a clean run prints nothing to fix)."
         + tail(a, "{rid}", allowed(DONE, BLOCKED)),
         {DONE},
     )
