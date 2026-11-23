@@ -33,7 +33,7 @@ scratch/
 # Chrome profile: cookies and session state, regenerated on demand
 browser-profile/
 
-# Strata models/state (tens of GB)
+# Leftover Strata models/state of the old in-image layout (tens of GB); model-host's STRATA_DATA can point here
 strata-data/
 .claude-local/
 
@@ -59,6 +59,6 @@ __pycache__/
 .code-index/
 .notes/
 
-# Ollama models/state
+# Leftover Ollama state of the old in-image layout
 ollama-data/
 .claude/git/privacy.gitconfig

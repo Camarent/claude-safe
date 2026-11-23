@@ -74,35 +74,5 @@ class StrataEnvTests(unittest.TestCase):
                 self.assertEqual(os.environ["STRATA"], "0")
 
 
-class StartOnDemandTests(unittest.TestCase):
-    def test_preflight_starts_strata_with_modelctl_when_down(self):
-        ups = iter([False, True])
-        with (
-            mock.patch.dict(os.environ, {}, clear=False),
-            mock.patch.object(strata, "strata_up", side_effect=lambda: next(ups)),
-            mock.patch.object(strata.shutil, "which", return_value="/usr/local/bin/modelctl"),
-            mock.patch.object(strata.Path, "exists", return_value=True),
-            mock.patch.object(strata.subprocess, "run", return_value=mock.Mock(returncode=0)) as run,
-        ):
-            for k in ("STRATA", "STRATA_URL", "STRATA_NO_START"):
-                os.environ.pop(k, None)
-            self.assertTrue(strata.preflight())
-            self.assertEqual(run.call_args[0][0], ["/usr/local/bin/modelctl", "strata", "start"])
-
-    def test_no_start_when_modelctl_refuses(self):
-        with (
-            mock.patch.dict(os.environ, {}, clear=False),
-            mock.patch.object(strata, "strata_up", return_value=False),
-            mock.patch.object(strata.shutil, "which", return_value="/usr/local/bin/modelctl"),
-            mock.patch.object(strata.Path, "exists", return_value=True),
-            mock.patch.object(strata.subprocess, "run", return_value=mock.Mock(returncode=1)),
-        ):
-            for k in ("STRATA", "STRATA_URL", "STRATA_NO_START"):
-                os.environ.pop(k, None)
-            self.assertFalse(strata.preflight())
-            self.assertEqual(os.environ["STRATA"], "0")
-            os.environ.pop("STRATA", None)
-
-
 if __name__ == "__main__":
     unittest.main()

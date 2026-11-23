@@ -76,8 +76,6 @@ gitleaks, claude-code. Heavier toolchains are separate layers in `profiles/`
 | `rust`   | gcc, rustup (stable), clippy, rust-analyzer, `wasm32-unknown-unknown`, wasm-pack, cargo-audit, cargo-deny, cargo-machete, cargo-llvm-cov, ruff |
 | `office` | LibreOffice, pandoc, typst, tesseract (eng+fra), poppler, Office fonts |
 | `audio`  | ffmpeg, yt-dlp, faster-whisper (`/opt/audio-venv`; models download on first use) |
-| `strata` | Strata local-LLM engine (CUDA 13), data in `/data` (mounted from `strata-data/`); added by `--with strata` |
-| `ollama` | Ollama server (CUDA 13 libs), data in `/ollama-data` (`ollama-data/`), GGUF files from `~/kata-models` (or `$KATA_MODELS`) read-only at `/models`; added by `--with ollama`, implies gpu |
 | `cluster` | docker (own dockerd), act, kubectl, kind, helm, one-node Slurm + munge (+0.6 GB); added by `--with cluster` |
 | `postgres` | PostgreSQL 17 (`initdb`, `pg_ctl`, `postgres`, `psql` on PATH, service not started), pgvector, `/opt/pg-venv` with FastAPI, uvicorn, SQLAlchemy, psycopg[binary], httpx |
 
@@ -107,7 +105,7 @@ container does not allow user namespaces.
 
 ## Pipeline modes
     ./run.sh --here                 Claude Code on your subscription
-    ./run.sh --here --with strata        the same + Strata (Qwen3.8 IQ3_XXS, ~50 GB RAM) beside it: /run-stage <stage>
+    ./run.sh --here                 the same, plus the local models of the model-host project when they are running (see "Local models")
 Details and status of the thin pipeline: `.claude/practices/orch-pipeline.md`. Tests of the tools: run them inside the container.
 
 Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<stage>/reports/report-<id>.md`) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
@@ -118,33 +116,25 @@ Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<st
 (docker-in-docker; the host Docker socket is NOT mounted) and a one-node Slurm (`munged`, `slurmctld`, `slurmd`,
 node detected with `slurmd -C`). The container runs `--privileged`, which loosens isolation: use it only for this work.
 Images pulled by Docker/kind/act are kept in the volume `claude-safe-docker` (`docker volume rm` to reset).
-kind needs about 2-4 GB RAM, so stop Strata first (or use `--with strata,cluster` only with enough RAM). Checked: `docker run`, `sbatch -W`/`srun`, `kind create cluster`.
+kind needs about 2-4 GB RAM, so stop the local model first (`modelctl use none` in model-host) unless you have enough RAM. Checked: `docker run`, `sbatch -W`/`srun`, `kind create cluster`.
 Logs: `/tmp/dockerd.log`, `/var/log/slurm/`.
 
-## Strata (local model)
+## Local models (model-host)
 
-Pinned by digest in `profiles/strata.Dockerfile` (`STRATA_IMAGE`; get a new digest with
-`docker buildx imagetools inspect`), copied in, never compiled. Models, presets and its API key
-live in `strata-data/` (git-ignored, tens of GB). The port is not published. `--with strata` defaults to
-`qwen` / `IQ3_XXS`; override with `STRATA_FAMILY`, `STRATA_MODEL`,
-`STRATA_CONTEXT`, `STRATA_VISION` in the host environment. Existing images are not rebuilt
-automatically: remove the tag to rebuild.
+Ollama and Strata no longer live in this image. They run from the separate project
+[model-host](https://github.com/Camarent/model-host) (a Compose project with its own `modelctl`, `~/workspace/model-host` by
+default, or `MODEL_HOST_DIR`). Start an engine there (`bin/modelctl up` for Ollama, `bin/modelctl use strata` for Strata); one engine
+holds the GPU at a time.
 
-## Switching models (`modelctl`)
+`run.sh` connects by itself, nothing to flag: when the Docker network `model-net` exists, the container joins it, and for each engine
+running at that moment it sets `OLLAMA_URL=http://model-host-ollama:11434` and `STRATA_URL=http://model-host-strata:8080` plus
+`STRATA_KEY` (read from model-host's generated `data/strata.key`). Without model-host the container starts as before.
+An engine started after the container has no variables in it: restart the container.
 
-Strata is **not** started at container boot. The pipeline starts it when it needs it: `preflight()` in
-`.claude/tools/search/strata.py` runs `modelctl strata start` when the local model is down (set `STRATA_NO_START=1`
-to disable; it never starts it when `STRATA_URL` points elsewhere). By hand, inside the container:
-
-    modelctl status
-    modelctl use ollama            # stop Strata, start Ollama
-    modelctl ollama load e4b gemma4-e4b/gemma-4-E4B_q4_0-it.gguf 17000
-    modelctl use strata            # stop Ollama, start Strata, wait until it answers
-    modelctl stop
-
-One engine holds the GPU at a time: starting one while the other runs is refused unless you pass `--coexist`
-(and the pipeline then continues without the local model). Stopping Strata waits for the engine itself (not just its
-entrypoint) and prints the VRAM left. Ollama needs `--with ollama`, Strata `--with strata`.
+The pipeline can no longer start Strata (it has no access to the host): `preflight()` in `.claude/tools/search/strata.py` skips the
+local-model steps when it does not answer. `--with strata` and `--with ollama` are gone and say where to go.
+Leftover directories `strata-data/` and `ollama-data/` from the old layout are git-ignored; point model-host's `STRATA_DATA` at
+`strata-data/` to reuse the model files.
 
 ## Development workflow
 
@@ -169,10 +159,10 @@ Decisions of the pipeline-hardening stage, one section per problem: `docs/decisi
 ## Setting up a new machine
 
 1. Clone the repo, then `scripts/dev.sh sync` (needs `uv` and a system Python 3.11+).
-2. Docker host (the PC with a GPU): `./run.sh --rebuild`, add `--with strata`, `ollama` or `cluster` as needed.
+2. Docker host (the PC with a GPU): `./run.sh --rebuild`, add `--with cluster` as needed; the local models come from model-host.
 3. No-container host (a VM): install the toolchains directly with `scripts/provision-dev-vm.sh` (`--list` shows the steps, `--dry-run`
    shows what would change without sudo). The
-   `strata`, `ollama` and `cluster` profiles are PC-only: they need a CUDA GPU or a privileged container.
+   `cluster` profile is PC-only: it needs a privileged container.
 4. Per-machine values stay out of git: host paths come from `~` or `$HOME` in `.claude/paths.json`, tokens from the
    environment or an untracked `~/.config/secrets.env` (`chmod 600`), never from the repo.
 5. Privacy blocklist: copy `.claude/git/privacy.gitconfig.example` to `.claude/git/privacy.gitconfig` (untracked) and set

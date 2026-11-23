@@ -35,12 +35,9 @@ gpuOn=false
 noSecrets=false
 claudeArgs=()
 compactWindow=""
-strataSide=false
 clusterOn=false
-ollamaOn=false
 runCmd=""
 publishPorts=()
-strataDataDir="$scriptDir/strata-data"
 usage() {
     local f p desc
     cat <<HELP
@@ -48,7 +45,6 @@ Usage: claude-safe [--here] [--with PROFILES] [--rebuild] [--compact N] [--no-sn
 
   --here           mount the current folder (default: empty scratch dir)
   --cmd STRING     run STRING with bash instead of the agent TUI 
-                   STRATA_FAMILY / STRATA_MODEL env pick the local model (default: qwen / IQ3_XXS)
   --no-secrets     don't pass GH/Cloudflare tokens or mount the browser profile
   --                everything after is passed to claude (e.g. -- -p "prompt");
                    without a terminal the container runs non-interactively
@@ -69,14 +65,15 @@ HELP
     done
     cat <<HELP
   gpu      (feature, no image) pass all NVIDIA GPUs into the container (needs nvidia-container-toolkit)
-  strata   also: normal Claude PLUS Strata beside it (started on demand by the pipeline) for tools/orch.py (/run-stage); implies gpu
-  ollama   also: Ollama beside Claude, started/stopped with modelctl (data in ollama-data/, GGUF from \$KATA_MODELS or ~/kata-models at /models); implies gpu
   cluster  also: PRIVILEGED container with its own dockerd and one-node Slurm (Docker-in-Docker; images in volume claude-safe-docker)
+
+Local model servers (Ollama, Strata) are not part of this image: they run from the model-host project (MODEL_HOST_DIR, default ../model-host).
+When its Docker network model-net exists, the container joins it and gets OLLAMA_URL / STRATA_URL for the engines that are running.
 
 Examples:
   claude-safe --here --with rust
   claude-safe --here --with rust,cpp
-  claude-safe --here --with strata,cluster
+  claude-safe --here --with rust,cluster
 HELP
 }
 
@@ -107,13 +104,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Run features chosen through --with: `gpu` has no image, `strata` and `cluster` have one and also change how the container runs.
+# Run features chosen through --with: `gpu` has no image, `cluster` has one and also changes how the container runs.
 imageProfiles=()
 for p in "${profiles[@]}"; do
     case "$p" in
         gpu) gpuOn=true ;;
-        strata) strataSide=true; gpuOn=true; imageProfiles+=("$p") ;;
-        ollama) gpuOn=true; ollamaOn=true; imageProfiles+=("$p") ;;
+        strata|ollama)
+            echo -e "\033[31m'--with $p' is gone: local model servers moved to the model-host project (modelctl use $p). Start them there; this container connects by itself.\033[0m"
+            exit 1 ;;
         cluster) clusterOn=true; imageProfiles+=("$p") ;;
         *) imageProfiles+=("$p") ;;
     esac
@@ -361,37 +359,25 @@ if [[ "$clusterOn" == true ]]; then
     echo -e "\033[33mcluster: container is privileged (own Docker + Slurm inside).\033[0m"
 fi
 
-# Per-mode mounts. Strata's port is never published; Claude reaches it inside the container.
-# memlock/shm are what Strata's own docs ask for.
+# Per-mode mounts.
 shmSize="1g"
 homeArgs=(-v "$claudeDockerDir:/root/.claude" -v "$claudeDockerDir/.claude.json:/root/.claude.json")
-if [[ "$strataSide" == true ]]; then
-    # Claude stays the cloud session. Strata runs beside it; orch.py calls it for the local lead and the
-    # verdict judge, with the key shared through STRATA_KEY (never given to Claude as its own credential).
-    mkdir -p "$strataDataDir"
-    shmSize="2g"
-    strataKey="$(openssl rand -hex 24)"
-    availGb=$(awk '/MemAvailable/ {print int($2/1048576)}' /proc/meminfo)
-    if [[ "${STRATA_MODEL:-IQ3_XXS}" == "IQ3_XXS" && "$availGb" -lt 50 ]]; then
-        echo -e "\033[33mOnly ${availGb} GB RAM available; IQ3_XXS wants about 50 GB. Close big apps.\033[0m"
+# Local model servers run from the separate model-host project (Ollama, Strata). Nothing to start here: when its Docker
+# network exists the container joins it, and each engine that is running right now is announced through OLLAMA_URL /
+# STRATA_URL (STRATA_KEY from model-host's generated key file). Without model-host the container starts as before.
+modelHostDir="${MODEL_HOST_DIR:-$scriptDir/../model-host}"
+modelNetArgs=()
+if docker network inspect model-net >/dev/null 2>&1; then
+    modelNetArgs=(--network model-net)
+    engineUp() { [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == true ]]; }
+    if engineUp model-host-ollama; then
+        modelNetArgs+=(-e "OLLAMA_URL=http://model-host-ollama:11434")
+        echo -e "\033[32mmodel-host: Ollama is up (OLLAMA_URL=http://model-host-ollama:11434).\033[0m"
     fi
-    homeArgs+=(-v "$strataDataDir:/data" --ulimit memlock=-1:-1 --stop-timeout 120
-               -e STRATA_SIDE=1 -e "API_KEY=$strataKey" -e "STRATA_KEY=$strataKey" -e ORCH_LEAD=1
-               -e "FAMILY=${STRATA_FAMILY:-qwen}" -e "MODEL=${STRATA_MODEL:-IQ3_XXS}"
-               -e "CONTEXT=${STRATA_CONTEXT:-128k}" -e "VISION=${STRATA_VISION:-off}" -e "PARALLEL=${STRATA_PARALLEL:-}"
-               # 12 GB NVIDIA cards answer faster with the STRATA_ROUTE_PRIOR routing (0.2.8 notes); it is off
-               # in the engine by default because it was tied to repeated text in long sessions, which
-               # the strata feature does not run.
-               -e "STRATA_SET=STRATA_ROUTE_PRIOR=${STRATA_ROUTE_PRIOR:-1.5} vram-reserve-mib=${STRATA_VRAM_RESERVE_MIB:-832}")
-fi
-# Local model servers are switched inside the container with `modelctl` (scripts/modelctl): one engine on the GPU at a time.
-# Strata is not started at boot: the pipeline starts it when it needs it (modelctl strata start).
-homeArgs+=(-v "$scriptDir/scripts/modelctl:/usr/local/bin/modelctl:ro")
-if [[ "$ollamaOn" == true ]]; then
-    ollamaDataDir="$scriptDir/ollama-data"; mkdir -p "$ollamaDataDir"
-    homeArgs+=(-v "$ollamaDataDir:/ollama-data")
-    modelsDir="${KATA_MODELS:-$HOME/kata-models}"
-    [[ -d "$modelsDir" ]] && homeArgs+=(-v "$modelsDir:/models:ro")
+    if engineUp model-host-strata && [[ -s "$modelHostDir/data/strata.key" ]]; then
+        modelNetArgs+=(-e "STRATA_URL=http://model-host-strata:8080" -e "STRATA_KEY=$(cat "$modelHostDir/data/strata.key")" -e ORCH_LEAD=1)
+        echo -e "\033[32mmodel-host: Strata is up (STRATA_URL=http://model-host-strata:8080).\033[0m"
+    fi
 fi
 echo -e "\033[32mStarting sandboxed Claude...\033[0m"
 
@@ -416,6 +402,7 @@ docker run "${ttyArgs[@]}" --rm --init \
     "${gpuArgs[@]}" \
     "${publishPorts[@]}" \
     "${clusterArgs[@]}" \
+    "${modelNetArgs[@]}" \
     "${homeArgs[@]}" \
     "${browserProfileArgs[@]}" \
     -v "$scriptDir/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro" \

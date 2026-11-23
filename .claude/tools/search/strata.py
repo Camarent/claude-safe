@@ -4,8 +4,6 @@
 import http.client
 import json
 import os
-import shutil
-import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -101,30 +99,11 @@ def _loading():
         return False
 
 
-def _start_strata():
-    """Strata is not started at container boot: start it here through `modelctl strata start` (blocks until it answers; the first start may
-    download the model). Skipped when modelctl or the Strata image is missing, STRATA_URL points elsewhere, or STRATA_NO_START=1.
-    Refused by modelctl while Ollama holds the GPU: the run then goes on without the local model. -> True when the server answers."""
-    if os.environ.get("STRATA_NO_START") == "1" or "STRATA_URL" in os.environ:
-        return False
-    ctl = shutil.which("modelctl")
-    if not ctl or not Path("/opt/strata/entrypoint.sh").exists():
-        return False
-    print("preflight: local model (Strata) is down: starting it with modelctl (waits until it answers)", flush=True)
-    try:
-        r = subprocess.run([ctl, "strata", "start"], timeout=float(os.environ.get("STRATA_START_TIMEOUT", "1000")), check=False)  # nosec B603  # fixed command
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return r.returncode == 0 and strata_up()
-
-
 def preflight():
     """Run once before planning: if the local model is down, set STRATA=0 (child processes inherit it; STRATA=1 or unset = probe the server) so every local-model step skips. -> True when up."""
     if os.environ.get("STRATA") == "0":
         return False
     if strata_up():
-        return True
-    if _start_strata():
         return True
     if _loading():
         deadline = time.time() + float(os.environ.get("STRATA_LOAD_WAIT", "90"))  # the entrypoint says the model is still loading (about 50 s): wait for it
@@ -135,5 +114,7 @@ def preflight():
         if strata_up():
             return True
     os.environ["STRATA"] = "0"
-    print("preflight: local model (Strata) down: local-model steps are skipped for this run")
+    print(
+        "preflight: local model (Strata) down: local-model steps are skipped for this run (start it on the host: modelctl use strata, in the model-host project)"
+    )
     return False
