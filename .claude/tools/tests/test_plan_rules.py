@@ -10,6 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import plan_check, plan_rules
 from pipeline.tasks import parse_tasks
 
+# task ids: asserts use these names, not literals (path-dependent check)
+T1, T2 = "task-1", "task-2"
+
 
 def git(repo, *a):
     subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
@@ -30,7 +33,7 @@ class T(unittest.TestCase):
 
     def test_size_warn_and_fail(self):
         self.task("task-1.md", self.paths(15))
-        self.assertEqual(plan_rules.check_task_size(self.d, "task-1"), [])
+        self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
         self.task("task-1.md", self.paths(25))  # at the fail cap: warning only
         self.assertTrue(plan_rules.check_task_size(self.d, "task-1")[0].startswith("size:"))
         self.task("task-1.md", self.paths(16))
@@ -46,7 +49,7 @@ class T(unittest.TestCase):
         self.task("task-1.md", self.paths(16))
         self.task("task-2.md", self.paths(3))
         got = {t["id"]: t["owner_sonnet"] for t in parse_tasks(os.path.join(self.d, "TASKS.md"))}
-        self.assertEqual(got, {"task-1": True, "task-2": False})
+        self.assertEqual(got, {T1: True, T2: False})
 
     def test_gate_mention_warns_only_when_unnamed(self):
         gates = [("insert-only", ["data/*.json"])]
@@ -55,7 +58,7 @@ class T(unittest.TestCase):
         self.assertTrue(got and got[0].startswith("gate:"))
         self.assertEqual(plan_check.errors_of(got), [])
         self.task("task-1.md", "Predicted paths: data/a.json\nGoal: x; gate insert-only now allows edits\n")
-        self.assertEqual(plan_rules.check_gate_mentions(self.d, "task-1", gates), [])
+        self.assertEqual(plan_rules.check_gate_mentions(self.d, T1, gates), [])
 
     def test_protected_gates_from_config_and_audit(self):
         with open(os.path.join(self.d, "AUDIT.md"), "w", encoding="utf-8") as f:
@@ -134,9 +137,9 @@ class T(unittest.TestCase):
 
     def test_size_counts_unique_and_dir_weight(self):
         self.task("task-1.md", "Predicted paths: " + ", ".join(["a.py"] * 30) + "\n")
-        self.assertEqual(plan_rules.check_task_size(self.d, "task-1"), [])
+        self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
         self.task("task-1.md", "Predicted paths: src/, lib/*.py, a.py\n")  # 5 + 5 + 1
-        self.assertEqual(plan_rules.check_task_size(self.d, "task-1"), [])
+        self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
         self.task("task-1.md", "Predicted paths: a/, b/, c/, d.py\n")  # 16
         self.assertTrue(plan_rules.check_task_size(self.d, "task-1")[0].startswith("size:"))
 
@@ -199,21 +202,21 @@ class T(unittest.TestCase):
         self.assertEqual(len(got), 2, got)
         self.assertIn("ignored", got[0])
         self.assertIn("untracked", got[1])
-        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "task-1", repo, "workspace/"), [])
+        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, T1, repo, "workspace/"), [])
 
     def test_nested_repo_missing_or_decoy_prefix(self):
         repo = self._nested_fixture()
         os.makedirs(os.path.join(repo, "workspace", "course-ax"))  # decoy: shares the prefix, holds no repo
         self.task("task-1.md", "Predicted paths: workspace/course-ax/a.jsonl\n")
-        self.assertEqual(len(plan_rules.check_nested_repo_paths(self.d, "task-1", repo, "workspace/")), 1)
+        self.assertEqual(len(plan_rules.check_nested_repo_paths(self.d, T1, repo, "workspace/")), 1)
         self.task("task-2.md", "Predicted paths: workspace/none/a.jsonl\n")
-        self.assertEqual(len(plan_rules.check_nested_repo_paths(self.d, "task-2", repo, "workspace/")), 1)
+        self.assertEqual(len(plan_rules.check_nested_repo_paths(self.d, T2, repo, "workspace/")), 1)
 
     def test_nested_repo_rule_off_without_prefix(self):
         repo = self._nested_fixture()
         self.task("task-1.md", "Predicted paths: workspace/none/a.jsonl\n")
-        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "task-1", repo), [])  # default "" = rule off
-        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "task-1", repo, ""), [])
+        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, T1, repo), [])  # default "" = rule off
+        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, T1, repo, ""), [])
 
     def test_nested_repo_git_calls_per_repo(self):
         from unittest import mock
@@ -272,3 +275,30 @@ class PhaseDependsTest(unittest.TestCase):
             probs = _phase_link_problems(mk(bad), earlier)
             self.assertEqual(len(probs), 1, bad)
             self.assertIn("unknown or later phase", probs[0])
+
+
+class SkipGateTest(unittest.TestCase):
+    def setUp(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        self.d = td.name
+
+    def check(self, text):
+        with open(os.path.join(self.d, "task-1.md"), "w", encoding="utf-8") as f:
+            f.write(text)
+        return plan_rules.check_skip_gate(self.d, "task-1")
+
+    def test_skipif_and_pytest_skip_warn(self):
+        for line in ("@pytest.mark.skipif(True, reason='x')", "    pytest.skip('no db')"):
+            got = self.check(f"Done: {line}\n")
+            self.assertEqual(len(got), 1, line)
+            self.assertTrue(got[0].startswith("skip-gate: task-1 says skipif/pytest.skip:"), got[0])
+            self.assertIn("exits 3", got[0])
+
+    def test_plain_words_and_marker_fix_do_not_warn(self):
+        for text in ("Done: the test is skipped in CI\n", "Done: use a deselect marker the conftest honours\n", ""):
+            self.assertEqual(self.check(text), [], text)
+
+    def test_negative_sentence_with_skip_gate_word_still_warns_only_on_the_call(self):
+        self.assertEqual(self.check("Done: no skip-gate word here\n"), [])
+        self.assertEqual(len(self.check("Done: skip-gate word, but pytest.skip( is used\n")), 1)
