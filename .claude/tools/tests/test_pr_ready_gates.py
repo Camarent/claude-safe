@@ -30,14 +30,14 @@ CFG = {
 
 
 class FakeRunner:
-    """Records each command; returns `red` as its exit code, 0 otherwise."""
+    """Records each command; returns `red` as its exit code, 0 otherwise, and `out[cmd]` as its stderr."""
 
-    def __init__(self, red=()):
-        self.red, self.seen = set(red), []
+    def __init__(self, red=(), out=None):
+        self.red, self.out, self.seen = set(red), out or {}, []
 
     def __call__(self, args, cwd, timeout):
         self.seen.append((args[-1], cwd, timeout))
-        return SimpleNamespace(returncode=1 if args[-1] in self.red else 0)
+        return SimpleNamespace(returncode=1 if args[-1] in self.red else 0, stdout="", stderr=self.out.get(args[-1], ""))
 
 
 class PrReadyGatesTest(unittest.TestCase):
@@ -70,6 +70,41 @@ class PrReadyGatesTest(unittest.TestCase):
         cfg = {**CFG, "ci_drift_ignore": ["scripts/dev.sh extra-ci"]}
         pr_ops._gates_gate(self.tmp.name, cfg, "stage/x", runner=fake)
         self.assertNotIn("scripts/dev.sh extra-ci", [c for c, _d, _t in fake.seen])
+
+    def test_red_ci_only_line_gets_ignore_hint(self):
+        with self.assertRaises(pr_ops.Blocked) as cm:
+            pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=FakeRunner(red={"scripts/dev.sh extra-ci"}))
+        self.assertIn('`scripts/dev.sh extra-ci` -> add `ci_drift_ignore` entry "scripts/dev.sh extra-ci"', str(cm.exception))
+        self.assertNotIn("environment, not code", str(cm.exception))
+
+    def test_red_ci_only_line_with_config_error_is_environment(self):
+        runner = FakeRunner(red={"scripts/dev.sh extra-ci"}, out={"scripts/dev.sh extra-ci": "ConfigError: no config path"})
+        with self.assertRaises(pr_ops.Blocked) as cm:
+            pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=runner)
+        self.assertIn("`scripts/dev.sh extra-ci` -> environment, not code: set the variable or add the ignore entry", str(cm.exception))
+        self.assertNotIn("ci_drift_ignore", str(cm.exception))
+
+    def test_red_ci_only_line_with_unset_variable_is_environment(self):
+        runner = FakeRunner(red={"scripts/dev.sh extra-ci"}, out={"scripts/dev.sh extra-ci": "KATA_TOKEN is not set"})
+        with self.assertRaises(pr_ops.Blocked) as cm:
+            pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=runner)
+        self.assertIn("environment, not code", str(cm.exception))
+
+    def test_ordinary_assertion_in_ci_line_gets_hint_not_environment(self):
+        runner = FakeRunner(red={"scripts/dev.sh extra-ci"}, out={"scripts/dev.sh extra-ci": "AssertionError: 3 != 4"})
+        with self.assertRaises(pr_ops.Blocked) as cm:
+            pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=runner)
+        self.assertIn("ci_drift_ignore", str(cm.exception))
+        self.assertNotIn("environment, not code", str(cm.exception))
+
+    def test_red_gate_keeps_plain_text_even_with_config_error(self):
+        runner = FakeRunner(red={"scripts/dev.sh ccn"}, out={"scripts/dev.sh ccn": "ConfigError: no config path"})
+        with self.assertRaises(pr_ops.Blocked) as cm:
+            pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=runner)
+        msg = str(cm.exception)
+        self.assertIn("pr-ready gates red on stage/x: `scripts/dev.sh ccn`;", msg)
+        self.assertNotIn("ci_drift_ignore", msg)
+        self.assertNotIn("environment, not code", msg)
 
     def test_no_gates_and_no_workflows_runs_nothing(self):
         fake = FakeRunner()

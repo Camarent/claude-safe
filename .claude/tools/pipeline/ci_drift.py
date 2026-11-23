@@ -7,7 +7,7 @@ import os
 import re
 
 from .configuration import all_gates_of, repo_dir
-from .configuration.pr_gates import CI_ONLY_RE, CI_SHELL_SETTING_RE
+from .configuration.pr_gates import CI_HINT_WORDS, CI_ONLY_RE, CI_SHELL_SETTING_RE
 
 RUN_RE = re.compile(r"^\s*(?:-\s+)?run:\s*(.*?)\s*$")
 SETUP_ONLY = ("npm ci", "npm install")
@@ -112,6 +112,11 @@ def _uncovered(files, gates, cfg):
                     continue
                 out.append((f, n))
     return out
+
+
+def ignore_hint(cmd):
+    """-> the `ci_drift_ignore` entry for CMD: its leading CI_HINT_WORDS words (the prefix rule of _uncovered names it)."""
+    return " ".join(cmd.split()[:CI_HINT_WORDS])
 
 
 def ci_commands(repo, cfg):

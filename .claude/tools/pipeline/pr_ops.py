@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 
 from . import gitx, pr_mode, webskip, worktree
-from .ci_drift import ci_commands
+from .ci_drift import ci_commands, ignore_hint
 from .configuration import (
     BLOCKED,
     CHECKS_TIMEOUT_S,
@@ -34,7 +34,7 @@ from .configuration import (
     release_branch,
     repo_path,
 )
-from .configuration.pr_gates import PR_GATE_TIMEOUT_S, PR_GATES_STEP
+from .configuration.pr_gates import ENV_OUTPUT_RE, PR_GATE_TIMEOUT_S, PR_GATES_STEP
 from .plan_files import section_body
 from .run import Run
 from .util import TOOLS
@@ -234,14 +234,23 @@ def append_body(repo, br, note):
 def _gates_gate(repo, cfg, br, runner=None):
     """Runs every project gate (`all_gates_of`) and each CI run line no gate covers, in REPO, before the push; a red one raises Blocked naming it. `runner(args, cwd, timeout)` -> returncode holder, default `_run`."""
     run_cmd = runner or _run
-    cmds = [g["cmd"] for g in all_gates_of(cfg)] + ci_commands(repo, cfg)
+    gates = [g["cmd"] for g in all_gates_of(cfg)]
+    ci = ci_commands(repo, cfg)
     red = []
-    for c in cmds:
+    for c in gates:
         if run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S).returncode:
-            red.append(c)
+            red.append(f"`{c}`")
+    for c in ci:
+        r = run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S)
+        if not r.returncode:
+            continue
+        if ENV_OUTPUT_RE.search((r.stdout or "") + (r.stderr or "")):
+            red.append(f"`{c}` -> environment, not code: set the variable or add the ignore entry")
+        else:
+            red.append(f'`{c}` -> add `ci_drift_ignore` entry "{ignore_hint(c)}"')
     if red:
-        raise Blocked(f"{PR_GATES_STEP} red on {br}: {', '.join(f'`{c}`' for c in red)}; fix them, then run pr-ready again")
-    return f"{PR_GATES_STEP}: {len(cmds)} command(s) green"
+        raise Blocked(f"{PR_GATES_STEP} red on {br}: {'; '.join(red)}; fix them, then run pr-ready again")
+    return f"{PR_GATES_STEP}: {len(gates) + len(ci)} command(s) green"
 
 
 def _ready(repo, cfg, br):
