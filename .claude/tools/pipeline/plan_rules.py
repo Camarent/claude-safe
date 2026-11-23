@@ -22,6 +22,9 @@ from .configuration import (
     BARE_TAG_RE,
     CMD_REF_PREFIX,
     DEFAULT_WORKSPACE,
+    DOC_PATHS,
+    DOCS_WAVE_DIR,
+    DOCS_WAVE_WARN_PREFIX,
     DONE_WHEN_EXTS,
     DRYRUN_FIELD,
     DRYRUN_FLAGS,
@@ -249,6 +252,37 @@ def check_unlisted_prereq(d, e, ents):
             f"{PREREQ_WARN_PREFIX} {tid}: names {', '.join(late)} (same or later wave) but does not depend on it: if it needs that work, `cs-plan edit-task --id {tid[5:]} --depends {late[0][5:]}` (moves {tid} to the wave after it)"
         ]
         if late
+        else []
+    )
+
+
+def _is_docs_path(path):
+    return any(fnmatch.fnmatch(path, g) for g in (*DOC_PATHS, DOCS_WAVE_DIR + "*"))
+
+
+def check_docs_wave(d, e, ents):
+    """`docs-wave:` warning (never fails a check): every Predicted path of the task is a docs path (`*.md` or under `docs/`) and a code task of the same wave is not among its dependencies, direct or through others. The docs then run beside the code they describe and may read it before it lands; add the dependency with `cs-plan edit-task --id N --depends M`, which moves the docs task to the wave after M."""
+    tid, wave = e["id"], e["wave"]
+    own = paths_in(read_text(os.path.join(d, tid + ".md")))
+    if not own or not all(_is_docs_path(p) for p in own):
+        return []
+    held = _transitive_deps(ents, tid)
+    code = sorted(
+        (
+            x["id"]
+            for x in ents
+            if x["wave"] == wave
+            and x["id"] != tid
+            and x["id"] not in held
+            and any(not _is_docs_path(p) for p in paths_in(read_text(os.path.join(d, x["id"] + ".md"))))
+        ),
+        key=lambda t: int(t[5:]),
+    )
+    return (
+        [
+            f"{DOCS_WAVE_WARN_PREFIX} {tid}: all Predicted paths are docs but {', '.join(code)} (same wave, code) is not a dependency: if the docs need that work, `cs-plan edit-task --id {tid[5:]} --depends {code[0][5:]}` (moves {tid} to the wave after it)"
+        ]
+        if code
         else []
     )
 

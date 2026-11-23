@@ -15,6 +15,7 @@ from .configuration import (
     AFFECTED_WARN_PREFIX,
     CARRIED_NOT_NEEDED,
     CARRIED_SECTION,
+    DOCS_WAVE_WARN_PREFIX,
     FINAL_GATES_KEY,
     GATE_LABELS,
     GATES_KEY,
@@ -79,6 +80,7 @@ from .plan_rules import (
     acceptance_problems,
     check_affected_tests,
     check_docs_target,
+    check_docs_wave,
     check_gate_mentions,
     check_generated_paths,
     check_negative_tag,
@@ -481,6 +483,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_generated_paths(d, e["id"], repo)
         + check_affected_tests(d, e["id"], repo)
         + check_unlisted_prereq(d, e, ents)
+        + check_docs_wave(d, e, ents)
         + check_open_edit(d, e["id"], project(_workspace(d)).get("nested_repo_dir_prefix") or "")
         + check_gate_mentions(d, e["id"], gates)
         + per_file_problems(d, e["id"])
@@ -727,6 +730,7 @@ def errors_of(probs):
                 NEG_WARN_PREFIX,
                 SKIP_GATE_WARN_PREFIX,
                 PREREQ_WARN_PREFIX,
+                DOCS_WAVE_WARN_PREFIX,
                 WEBTEST_WARN_PREFIX,
                 GENERATED_WARN_PREFIX,
                 TESTCMD_WARN_PREFIX,

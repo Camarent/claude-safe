@@ -128,6 +128,8 @@ BARE_TAG_RE = (
 )  # a markup tag fragment that ends at the closing quote, escaped or not: `"<script"`, `\"<div\"` (no attribute, no `>`)
 WEBTEST_WARN_PREFIX = "webtest:"  # warning prefix of plan_rules.check_webtest_type; plan_check.errors_of never fails on it
 PREREQ_WARN_PREFIX = "prereq:"  # warning prefix of plan_rules.check_unlisted_prereq; plan_check.errors_of never fails on it
+DOCS_WAVE_WARN_PREFIX = "docs-wave:"  # warning prefix of plan_rules.check_docs_wave; plan_check.errors_of never fails on it
+DOCS_WAVE_DIR = "docs/"  # a Predicted path under this folder is a docs path (plan_rules.check_docs_wave)
 AFFECTED_WARN_PREFIX = "tests-use:"  # warning prefix of plan_rules.check_affected_tests; plan_check.errors_of never fails on it
 SCOPE_MODES = (
     "off",
