@@ -221,6 +221,10 @@ MAIN_WRITE_NOTE = (
     "(each line shows the path, its mtime and the job start), then `orch.py retry`. It clears by itself once the paths are gone. "
     "A dev always uses paths relative to its own worktree, never an absolute path into the main checkout."
 )  # the note maincheck.check returns
+MAIN_DIRT_REWORK_NOTE = (  # dev rework line when the rework file holds a MAIN-DIRT note: the dev writes only in its own worktree
+    " MAIN-DIRT was reported for this task: the main checkout changed while it ran. Your worktree paths are relative to your job worktree root "
+    "(your current directory, shown as `.`); write only there, never an absolute path into the main checkout."
+)
 BASE_FLAKE_PREFIX = "base-flake:"  # report line for a gate failure that is not the task's (red on the stage base too, or green on an unchanged rerun): `base-flake: <failing test ids>`
 FAIL_ID_RES = (  # regexes (group 1 = test id) that read the failing test ids out of a gate's output: pytest summary, unittest header, a plain `FAIL name` line
     r"(?m)^FAILED\s+(\S+)",

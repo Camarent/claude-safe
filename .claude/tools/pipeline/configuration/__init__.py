@@ -338,6 +338,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     LONG_CMD_TIMEOUT_S,
     MAIN_BASE_FILE,
     MAIN_DIRT_PREFIX,
+    MAIN_DIRT_REWORK_NOTE,
     MAIN_GUARD_IGNORE,
     MAIN_GUARD_IGNORE_GLOBS,
     MAIN_WRITE_NOTE,

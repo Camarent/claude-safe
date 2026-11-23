@@ -20,6 +20,7 @@ from .configuration import (
     LEAD_SLICE_CHARS,
     LEAD_SLICE_CHARS_WITH_PATTERN,
     LOCAL_FIND_TIMEOUT_S,
+    MAIN_DIRT_REWORK_NOTE,
     PRACTICES_DIR,
     PRE_EXISTING_RED,
     QRUN_CHAIN_READ_ONLY,
@@ -460,13 +461,20 @@ def lead_note_line(note, report_file):
     return f"Lead note (read first): the findings of the last try are in {report_file}; read that file, they are not pasted here. {note.splitlines()[0][:LEAD_NOTE_CHARS]}"
 
 
-def rework_note(rework_file):
-    """Dev brief lines for a rework: the findings of the rework file verbatim, with the rule to fix all of them in one pass. "" without a rework file."""
+def rework_note(rework_file, main_dirt=False):
+    """Dev brief lines for a rework: the findings of the rework file verbatim, with the rule to fix all of them in one pass. "" without a rework file.
+    MAIN_DIRT (main_dirt True) adds the worktree-relative path rule."""
     if not rework_file:
         return ""
+    dirt_line = MAIN_DIRT_REWORK_NOTE if main_dirt else ""
     if not os.path.isfile(rework_file):  # the file is gone: the path alone still names the findings
-        return f" Rework: fix the findings in {rework_file} first. Fix ALL of them in one pass."
-    return f" Rework: fix the findings in {rework_file} first. Fix ALL of them in one pass; they are verbatim below:\n{read_text(rework_file)}\n"
+        return f" Rework: fix the findings in {rework_file} first. Fix ALL of them in one pass.{dirt_line}"
+    return f" Rework: fix the findings in {rework_file} first. Fix ALL of them in one pass; they are verbatim below:\n{read_text(rework_file)}\n{dirt_line}"
+
+
+def _main_dirt_report(rework_file):
+    """True when the rework file holds a MAIN-DIRT note (the main checkout changed while the task ran)."""
+    return bool(rework_file) and os.path.isfile(rework_file) and any(maincheck.dirt(line) for line in read_text(rework_file).splitlines())
 
 
 def prompt_for(a, task, role, rework_file, rid):
@@ -480,7 +488,7 @@ def prompt_for(a, task, role, rework_file, rid):
     )
     if role == "dev":
         extra = (
-            rework_note(rework_file)
+            rework_note(rework_file, _main_dirt_report(rework_file))
             + NO_CHECKOUT_NOTE
             + DEV_SCOPE_NOTE
             + WORKTREE_NOTE

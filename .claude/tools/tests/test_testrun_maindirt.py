@@ -10,8 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import testrun
 import wt
 from audit import taskgates
+from pipeline import briefs
 from pipeline.configuration import BLOCKED, FAIL
-from pipeline.configuration.limits import MAIN_WRITE_NOTE
+from pipeline.configuration.limits import MAIN_DIRT_REWORK_NOTE, MAIN_WRITE_NOTE
 from tests.support.tmpdirs import tracked_mkdtemp
 
 MAIN_NOTE = MAIN_WRITE_NOTE.format(files="f (mtime t, job start t)", more=0)
@@ -83,6 +84,34 @@ class TaskgatesMainDirtTest(unittest.TestCase):
         self.assertEqual(v, BLOCKED)
         self.assertIn("MAIN-DIRT:", text)
         runner.assert_not_called()
+
+
+class ReworkNoteMainDirtTest(unittest.TestCase):
+    def rework_file(self, text):
+        d = tracked_mkdtemp()
+        path = os.path.join(d, "report.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_main_dirt_report_adds_worktree_rule(self):
+        path = self.rework_file(MAIN_NOTE + "\n")
+        self.assertTrue(briefs._main_dirt_report(path))
+        note = briefs.rework_note(path, briefs._main_dirt_report(path))
+        self.assertIn(MAIN_DIRT_REWORK_NOTE, note)
+        self.assertTrue(note.endswith(MAIN_DIRT_REWORK_NOTE))
+
+    def test_no_main_dirt_is_byte_identical(self):
+        path = self.rework_file("FAIL: a test broke\n")
+        self.assertFalse(briefs._main_dirt_report(path))
+        plain = briefs.rework_note(path)
+        self.assertEqual(plain, briefs.rework_note(path, False))
+        self.assertNotIn(MAIN_DIRT_REWORK_NOTE, plain)
+        self.assertEqual(plain, f" Rework: fix the findings in {path} first. Fix ALL of them in one pass; they are verbatim below:\nFAIL: a test broke\n\n")
+
+    def test_missing_file_no_flag_unchanged(self):
+        self.assertEqual(briefs._main_dirt_report(""), False)
+        self.assertEqual(briefs.rework_note(""), "")
 
 
 if __name__ == "__main__":
