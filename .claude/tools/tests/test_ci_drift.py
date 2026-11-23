@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import plan_check
-from pipeline.ci_drift import drift
+from pipeline.ci_drift import ci_commands, drift
 from pipeline.configuration import project
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -41,6 +41,34 @@ class CiDriftIsErrorTest(unittest.TestCase):
         self.assertEqual(len(probs), 1)
         self.assertTrue(probs[0].startswith("ci-drift: CI runs `npm test`"))
         self.assertEqual(plan_check.errors_of(probs), probs)
+
+
+CI_ONLY = (
+    "set -euo pipefail",
+    "cd web",
+    "export FOO=bar",
+    "NODE_ENV=production",
+    "./scripts/deploy ${{ secrets.TOKEN }}",
+    'test -n "$RUNNER_TEMP"',
+    'test -n "$GITHUB_SHA"',
+    "./scripts/collect.sh $RUNNER_OS",
+)
+
+
+class CiOnlyLinesTest(unittest.TestCase):
+    def test_ci_only_lines_are_not_drift(self):
+        # Each line is never run locally: GitHub-only vars, secrets, shell settings.
+        ci = "jobs:\n  t:\n    steps:\n" + "".join(f"      - run: {c}\n" for c in CI_ONLY)
+        d = make({"gates": G}, ci)
+        self.assertEqual(ci_commands(d, {"gates": G}), [])
+        self.assertEqual(drift(d, project(d)), [])
+
+    def test_decoy_line_is_still_reported(self):
+        # Not never-local: no GitHub var, no secret, and a shell setting followed by a separator is a real command.
+        decoys = ["./dojo build", "cd web && pytest tests", "set -e; ./scripts/deploy", "export X=1 && npm test", "./dojo test $MY_RUNNER_X"]
+        ci = "jobs:\n  t:\n    steps:\n" + "".join(f"      - run: {c}\n" for c in decoys)
+        d = make({"gates": G}, ci)
+        self.assertEqual(ci_commands(d, {"gates": G}), decoys)
 
 
 class RepoGatesCoverCiTest(unittest.TestCase):

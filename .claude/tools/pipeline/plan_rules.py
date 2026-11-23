@@ -33,6 +33,9 @@ from .configuration import (
     PER_FILE_PHRASES,
     PREREQ_WARN_PREFIX,
     SCRIPT_EXTS,
+    SKIP_GATE_MSG,
+    SKIP_GATE_RE,
+    SKIP_GATE_WARN_PREFIX,
     TASK_DIR_WEIGHT,
     TASK_FILES_FAIL,
     TASK_FILES_WARN,
@@ -204,6 +207,13 @@ def check_negative_tag(d, tid):
                 f"{NEG_WARN_PREFIX} {tid}: {ln.strip()[:80]!r} bans the bare tag {tag!r}: narrow it (an attribute such as `<script src=` or a path), a later fix may need the tag"
             )
     return out
+
+
+def check_skip_gate(d, tid):
+    """`skip-gate:` warning (never fails a check): the task file says a test is skipped (`pytest.mark.skipif`, `pytest.skip(`). cs-qrun exits 3 on a skipped test, so a skip gate reads as not green; a registered marker the conftest deselects is the fix."""
+    if re.search(SKIP_GATE_RE, read_text(os.path.join(d, tid + ".md"))):
+        return [f"{SKIP_GATE_WARN_PREFIX} {tid} says skipif/pytest.skip: {SKIP_GATE_MSG}"]
+    return []
 
 
 TASK_MENTION_RE = re.compile(r"(?<![\w./-])task-(\d+)(?![\w/-])")  # a path part such as /x/task-1/repo (job worktree folder) is not a mention

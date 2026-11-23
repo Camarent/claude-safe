@@ -1,10 +1,13 @@
-"""CI drift check: commands the project's CI runs that no `gates` entry in pipeline.json covers. Line-based, no YAML parser."""
+"""CI drift check: commands the project's CI runs that no `gates` entry in pipeline.json covers. Line-based, no YAML parser.
+
+Rule: a CI run line is drift unless a gate covers it, `ci_drift_ignore` names it, or it is never run locally: a line that references a GitHub-only variable (RUNNER_*, GITHUB_*), a secret or a `${{ }}` expression, or a bare shell setting (`set ...`, `cd X`, `export X`, `VAR=value`). The patterns are in configuration/pr_gates.py."""
 
 import glob
 import os
 import re
 
 from .configuration import all_gates_of, repo_dir
+from .configuration.pr_gates import CI_HINT_WORDS, CI_ONLY_RE, CI_SHELL_SETTING_RE
 
 RUN_RE = re.compile(r"^\s*(?:-\s+)?run:\s*(.*?)\s*$")
 SETUP_ONLY = ("npm ci", "npm install")
@@ -83,6 +86,16 @@ def drift(project_dir, cfg):
     return [f"CI runs `{n}` ({os.path.basename(f)}) but no gate covers it" for f, n in _uncovered(files, gates, cfg)]
 
 
+def _covered(n, known):
+    """-> True when the normalised CI command N is a gate command, a part of one, a setup step or an echo."""
+    return n.startswith("echo ") or n in SETUP_ONLY or n in known or all(_norm(q) in known for q in n.split("&&"))
+
+
+def _never_local(n):
+    """-> True when the normalised CI command N only runs on GitHub (GitHub-only variables, secrets) or is a bare shell setting."""
+    return bool(CI_ONLY_RE.search(n) or CI_SHELL_SETTING_RE.fullmatch(n))
+
+
 def _uncovered(files, gates, cfg):
     """-> [(workflow file, command)] of the CI run lines in FILES that no gate in GATES covers and `ci_drift_ignore` does not name."""
     ignore = [_norm(i) for i in cfg.get("ci_drift_ignore", [])]
@@ -95,12 +108,15 @@ def _uncovered(files, gates, cfg):
         with open(f, encoding="utf-8") as fh:
             for cmd in ci_run_lines(fh.read()):
                 n = _norm(cmd)
-                if n.startswith("echo ") or n in SETUP_ONLY or n in known or all(_norm(q) in known for q in n.split("&&")):
-                    continue
-                if any(n == i or n.startswith(i + " ") for i in ignore):
+                if _covered(n, known) or _never_local(n) or any(n == i or n.startswith(i + " ") for i in ignore):
                     continue
                 out.append((f, n))
     return out
+
+
+def ignore_hint(cmd):
+    """-> the `ci_drift_ignore` entry for CMD: its leading CI_HINT_WORDS words (the prefix rule of _uncovered names it)."""
+    return " ".join(cmd.split()[:CI_HINT_WORDS])
 
 
 def ci_commands(repo, cfg):

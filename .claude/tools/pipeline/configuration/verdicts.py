@@ -67,3 +67,7 @@ SEVERE_PATTERN = r"\b(FAIL|blocker|should-fix|should fix|critical|high|medium|mu
 
 # verdicts that count as a finished step in `wave.py status`
 STEP_OK = (PASS, DONE, CLEAN)
+
+# reviewer FAIL with no finding line: unclear, the auto retry runs the reviewer once more (verdicts.verdict, cli_orch _auto_retry)
+STUB_REASON = "reviewer FAIL without findings"
+FINDING_SKIP_PATTERN = r"^\W*(?:VERDICT\s*:|REPORT\s+a\d+|wrong\W*\d+)"  # lines that are no finding: the VERDICT line, the counts line `wrong N, risky N, nit N`, the `REPORT aNN` line; verdicts.py compiles it (re.I)

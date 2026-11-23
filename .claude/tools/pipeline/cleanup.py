@@ -102,31 +102,39 @@ def _checked_out(repo):
     return {ln[len("branch ") :].removeprefix(CLEANUP_HEADS_REF) for ln in lines if ln.startswith("branch ")}
 
 
-def _prune_branches(a_dir, dry_run):
-    """Local job branches merged into the release branch or a work branch, checked out nowhere -> [(branch, into)]. Deletes unless dry_run.
+def _folder_branches(a_dir):
+    """Branches named by a .wt/<stage>/<task> folder, with or without a worktree: such a branch is live, not an orphan."""
+    return {worktree.layout(a_dir, s, t)[3] for s in _stages(a_dir) for t in worktree.list_wt(a_dir, s)}
+
+
+def prune_branches(a_dir, dry_run=False):
+    """Orphan local job branches: merged into the release branch or a work branch, with no .wt folder and checked out nowhere.
+    -> ([(branch, into)] deleted, [branch] kept because not merged anywhere). Deletes unless dry_run.
     A worktree removed by this run takes its branch with it (worktree.remove), so its branch is already held here."""
     cfg = project(a_dir)
     repo = os.path.abspath(repo_dir(a_dir, cfg))
     # a constant branch_work is the work branch of every stage; with {feature} each stage names its own
     bases = [release_branch(repo, cfg), work_branch(cfg, ""), *(work_branch(cfg, s) for s in _stages(a_dir))]
     targets = [b for b in dict.fromkeys(bases) if gitx.try_out(repo, "rev-parse", "--verify", "--quiet", b)]
-    held = _checked_out(repo)
+    held = _checked_out(repo) | _folder_branches(a_dir)
     refs = gitx.try_out(repo, "for-each-ref", "--format=%(refname:short)", CLEANUP_HEADS_REF + JOB_BRANCH_PREFIX) or ""
-    out = []
+    pruned, unmerged = [], []
     for branch in refs.split():
         if branch in held:
             continue
         into = next((b for b in targets if gitx.try_out(repo, "merge-base", "--is-ancestor", branch, b) is not None), None)
         if into is None:
-            continue  # not merged anywhere: its commits may be the only copy
+            unmerged.append(branch)  # not merged anywhere: its commits may be the only copy
+            continue
         if not dry_run and gitx.try_out(repo, "branch", "-D", branch) is None:
             continue  # git refused the delete: keep it and report nothing
-        out.append((branch, into))
-    return out
+        pruned.append((branch, into))
+    return pruned, unmerged
 
 
 def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
-    """-> {"worktrees": [(stage, task, why)], "kept": [(stage, task)], "tmp": [paths], "branches": [(branch, into)], "dry_run": bool}. Removes unless dry_run."""
+    """-> {"worktrees": [(stage, task, why)], "kept": [(stage, task)], "tmp": [paths], "branches": [(branch, into)],
+    "unmerged": [branch] (orphan job branches merged nowhere, kept), "dry_run": bool}. Removes unless dry_run."""
     tmp_root = tmp_root or tempfile.gettempdir()
     now = time.time() if now is None else now
     done, kept = [], []
@@ -143,8 +151,8 @@ def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
     if not dry_run:
         for p in tmp:
             shutil.rmtree(p, ignore_errors=True)
-    branches = _prune_branches(a_dir, dry_run)
-    return {"worktrees": done, "kept": kept, "tmp": tmp, "branches": branches, "dry_run": dry_run}
+    branches, unmerged = prune_branches(a_dir, dry_run)
+    return {"worktrees": done, "kept": kept, "tmp": tmp, "branches": branches, "unmerged": unmerged, "dry_run": dry_run}
 
 
 def main(argv=None):
@@ -163,6 +171,8 @@ def main(argv=None):
         print(f"{verb} temp dir {path}")
     for branch, into in res["branches"]:
         print(f"{verb} branch {branch} (merged into {into})")
+    for branch in res["unmerged"]:
+        print(f"kept unmerged branch {branch}")
     return 0
 
 

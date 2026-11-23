@@ -1,0 +1,119 @@
+"""Cite check: `path:line` cites in added doc and comment lines, and the dev report text, must point at real lines and symbols."""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from pipeline import cite_check
+
+DIFF = """diff --git a/docs/core.md b/docs/core.md
+--- a/docs/core.md
++++ b/docs/core.md
+@@ -0,0 +1,4 @@
++```
++see progress.py:82
++```
++plain progress.py:82
+diff --git a/pipeline/x.py b/pipeline/x.py
+--- a/pipeline/x.py
++++ b/pipeline/x.py
+@@ -0,0 +1,2 @@
++y = 1
++z = 2  # see progress.py:82
+"""
+
+
+def progress_py(def_line=136):
+    """progress.py with `save_progress` defined at def_line (filler comments before it)."""
+    return "\n".join(["# filler"] * (def_line - 1) + ["def save_progress(state):", "    pass"]) + "\n"
+
+
+class CiteCheck(unittest.TestCase):
+    def tree(self, files):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        for name, text in files.items():
+            (d / name).parent.mkdir(parents=True, exist_ok=True)
+            (d / name).write_text(text, encoding="utf-8")
+        return str(d)
+
+    def test_wrong_cite_names_real_place(self):
+        wt = self.tree({"progress.py": progress_py(136)})
+        added = [("core.md", 153, "`save_progress` (progress.py:82) runs the save")]
+        self.assertEqual(cite_check.check(wt, added, ""), ["core.md:153 cites progress.py:82 but save_progress is at 136"])
+
+    def test_correct_cite_no_message(self):
+        wt = self.tree({"progress.py": progress_py(136)})
+        added = [("core.md", 153, "`save_progress` (progress.py:136) runs the save")]
+        self.assertEqual(cite_check.check(wt, added, ""), [])
+
+    def test_symbol_outside_window_is_flagged(self):
+        # the symbol sits 10 lines from the cite: outside the window of 3 (fixed here, not read from the constant), so flagged
+        wt = self.tree({"progress.py": progress_py(92)})
+        added = [("core.md", 5, "`save_progress` (progress.py:82)")]
+        self.assertEqual(cite_check.check(wt, added, ""), ["core.md:5 cites progress.py:82 but save_progress is at 92"])
+
+    def test_symbol_not_found(self):
+        wt = self.tree({"progress.py": progress_py(136)})
+        added = [("core.md", 7, "`ghost` (progress.py:82)")]
+        self.assertEqual(cite_check.check(wt, added, ""), ["core.md:7 cites progress.py:82: symbol not found in progress.py"])
+
+    def test_fenced_block_ignored(self):
+        self.assertEqual(
+            [(f, ln) for f, ln, _ in cite_check.added_lines(DIFF)],
+            [("docs/core.md", 1), ("docs/core.md", 2), ("docs/core.md", 3), ("docs/core.md", 4), ("pipeline/x.py", 2)],
+        )
+        # the fenced block is already in the file (not added by this diff): its added row is ignored, the prose row after it is checked
+        wt = self.tree(
+            {"progress.py": progress_py(136), "docs/core.md": "```\n`save_progress` (progress.py:82)\n```\nplain `save_progress` (progress.py:82)\n"}
+        )
+        added = [("docs/core.md", 2, "`save_progress` (progress.py:82)"), ("docs/core.md", 4, "plain `save_progress` (progress.py:82)")]
+        self.assertEqual(cite_check.check(wt, added, ""), ["docs/core.md:4 cites progress.py:82 but save_progress is at 136"])
+        self.assertEqual(cite_check.check(wt, [], "```\n`save_progress` (progress.py:82)\n```\n"), [])
+
+    def test_cite_outside_worktree_not_read(self):
+        base = self.tree({"secret.py": "# x\n", "wt/keep.py": ""})
+        wt = os.path.join(base, "wt")
+        self.assertEqual(
+            cite_check.check(wt, [("core.md", 1, "see ../secret.py:1")], ""),
+            ["core.md:1 cites ../secret.py:1 but ../secret.py is outside the worktree"],
+        )
+
+    def test_url_ignored(self):
+        self.assertEqual(cite_check.cites("see https://host:80/x now"), [])
+        wt = self.tree({"progress.py": progress_py(136)})
+        self.assertEqual(cite_check.check(wt, [("core.md", 1, "see https://host:80/x")], ""), [])
+
+    def test_comment_tail_only(self):
+        self.assertEqual(cite_check.added_lines(DIFF)[-1], ("pipeline/x.py", 2, "see progress.py:82"))
+
+    def test_line_beyond_eof(self):
+        wt = self.tree({"progress.py": progress_py(136)})
+        added = [("core.md", 9, "see progress.py:500")]
+        self.assertEqual(cite_check.check(wt, added, ""), ["core.md:9 cites progress.py:500 but progress.py has 137 lines"])
+
+    def test_missing_file(self):
+        wt = self.tree({})
+        self.assertEqual(cite_check.check(wt, [("core.md", 3, "see nope.py:4")], ""), ["core.md:3 cites nope.py:4 but nope.py is missing"])
+
+    def test_report_text_cites_checked(self):
+        wt = self.tree({"progress.py": progress_py(136)})
+        self.assertEqual(
+            cite_check.check(wt, [], "ok\n`save_progress` (progress.py:82)\n"),
+            ["report:2 cites progress.py:82 but save_progress is at 136"],
+        )
+
+    def test_range_end_checked(self):
+        wt = self.tree({"progress.py": progress_py(136)})
+        self.assertEqual(
+            cite_check.check(wt, [("core.md", 1, "see progress.py:130-200")], ""),
+            ["core.md:1 cites progress.py:130-200 but progress.py has 137 lines"],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

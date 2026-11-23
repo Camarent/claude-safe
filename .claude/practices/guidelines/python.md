@@ -48,6 +48,7 @@ Digest of PEP 8, PEP 20, PEP 484/526 typing, and the ruff/mypy rule sets. Gates 
 - Time: inject a clock (callable or `Protocol`) and pass a fixed value. Patch the clock only for code you cannot change.
 - Mock only at the boundary (network, clock, process, third-party). Use `unittest.mock.patch` where the name is looked up, with `autospec=True` so a wrong signature fails. Never mock your own code; use a small fake.
 - No `time.sleep`, no network, no real home directory. Wait on an event or poll with a deadline. Mark slow tests `@pytest.mark.slow` (register the marker) so `-m "not slow"` gives a fast loop.
+- Opt-in tests (a browser, network, an optional binary) use a registered marker that the project conftest deselects when the precondition is missing. Never `skipif` or `pytest.skip`: a skipped test makes `cs-qrun` exit 3 (not green).
 - Database: scratch database per test (in-memory SQLite or a temp schema), created in a fixture and dropped at teardown. Roll back or drop even on failure.
 - Async tests: use the project's plugin (`pytest-asyncio` or `anyio`); do not call `asyncio.run` inside a test body under a running loop.
 - Property tests with `hypothesis` (`@given`) where a parser, serializer or invariant exists (round trip, idempotence, ordering). Pin a found failure as a plain example test.

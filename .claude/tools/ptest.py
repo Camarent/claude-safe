@@ -103,7 +103,8 @@ def keep_failure_log(name, text):
 
 def select_files(tests_dir, patterns):
     """Test file names matching the patterns, largest first: they tend to be the slowest, so the longest job starts early instead of last."""
-    names = sorted({f.name for pat in patterns for f in Path(tests_dir).glob(pat)})
+    # A pattern given as a repo path (.claude/tools/tests/test_x.py) selects by its file name: the tests dir is flat.
+    names = sorted({f.name for pat in patterns for f in Path(tests_dir).glob(Path(pat).name)})
     names.sort(key=lambda n: -os.path.getsize(os.path.join(tests_dir, n)))
     return names
 

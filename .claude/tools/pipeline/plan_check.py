@@ -33,6 +33,7 @@ from .configuration import (
     REQUEST_FILE,
     SCOPE_TEST_RE,
     SHARED_MIN,
+    SKIP_GATE_WARN_PREFIX,
     TASKS_FILE,
     TESTCMD_WARN_PREFIX,
     WEBTEST_WARN_PREFIX,
@@ -83,6 +84,7 @@ from .plan_rules import (
     check_negative_tag,
     check_nested_repo_paths,
     check_open_edit,
+    check_skip_gate,
     check_task_size,
     check_unlisted_prereq,
     check_webtest_type,
@@ -474,6 +476,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_report_validator(d, e["id"])
         + check_nested_repo_paths(d, e["id"], repo, project(_workspace(d)).get("nested_repo_dir_prefix") or "")
         + check_negative_tag(d, e["id"])
+        + check_skip_gate(d, e["id"])
         + check_webtest_type(d, e["id"])
         + check_generated_paths(d, e["id"], repo)
         + check_affected_tests(d, e["id"], repo)
@@ -722,6 +725,7 @@ def errors_of(probs):
                 PARALLEL_WARN_PREFIX,
                 AFFECTED_WARN_PREFIX,
                 NEG_WARN_PREFIX,
+                SKIP_GATE_WARN_PREFIX,
                 PREREQ_WARN_PREFIX,
                 WEBTEST_WARN_PREFIX,
                 GENERATED_WARN_PREFIX,

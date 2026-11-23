@@ -16,7 +16,7 @@ Read only when starting pipeline work (planning or running stages). Agents and o
 **Pipeline errors: fix the root cause.** On any BLOCKED step or pipeline error, do not stop at patching the task file and retrying: find why the pipeline allowed it (plan check, agent brief, tool, docs) and fix that in the same pass, with a test, so the same error cannot recur in any project. Then retry the step. Report both the symptom fix and the root fix.
 **Wakeup fallback:** while a driver runs, also schedule `ScheduleWakeup` at 1200 s or more, so a hung driver is noticed.
 **Webtest of a private artifact:** the browser is not signed in, so `web-tester` cannot open it. Test a local build served on 127.0.0.1 (the project's build and serve commands, from its TEAM.md or README); `scout` has no browser. A request that ends in a republish carries a `PUBLISH:` line, and the planner copies it into TASKS.md.
-**Skip and retry notes:** `orch.py skip --step X --note "why"` and `orch.py retry --step X --note "what I changed"` take `--note`.
+**Skip and retry notes:** `orch.py skip --step X --note "why"` and `orch.py retry --step X --note "what I changed"` take `--note`. A retry note names the file, the line and the replacement text; an intent-only note ("make it pass") is ignored by the dev.
 
 Local-model (Strata) steps are optional: preflight sets `STRATA=0` when it is down and they skip, see `practices/localdev.md`.
 Planner and audit context step (Strata naming, digest, Haiku brief, eval, retro signals): `practices/planner-context.md`; open pipeline items: `practices/pipeline-backlog.md`.

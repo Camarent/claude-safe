@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -108,6 +110,48 @@ class CleanupBranchesTest(unittest.TestCase):
         self.assertEqual(res["branches"], [])
         self.assertFalse(os.path.exists(root))
         self.assertEqual(local_branches(self.m), [])
+
+    def test_prune_branches_deletes_merged_orphans_and_names_unmerged(self):
+        self._branch_without_worktree(job_branch(T1), commits=0)  # merged orphan
+        self._branch_without_worktree(job_branch(T2), commits=1)  # unmerged orphan
+
+        pruned, unmerged = cleanup.prune_branches(self.t)
+
+        self.assertEqual(pruned, [(job_branch(T1), "dev")])
+        self.assertEqual(unmerged, [job_branch(T2)])
+        self.assertEqual(local_branches(self.m), [job_branch(T2)])
+
+    def test_cleanup_reports_unmerged_branch_and_main_prints_it(self):
+        self._branch_without_worktree(job_branch(T2), commits=1)  # unmerged orphan
+
+        res = cleanup.cleanup(self.t, tmp_root=self.t)
+
+        self.assertEqual(res["unmerged"], [job_branch(T2)])
+        self.assertEqual(local_branches(self.m), [job_branch(T2)])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cleanup.main(["--dir", self.t, "--tmp-root", self.t]), 0)
+        self.assertIn(f"kept unmerged branch {job_branch(T2)}", out.getvalue().splitlines())
+
+    def test_prune_branches_keeps_branch_of_folder_without_worktree(self):
+        self._branch_without_worktree(job_branch(T3), commits=0)  # merged, but its .wt folder is live
+        os.makedirs(f"{self.t}/.wt/{STAGE}/{T3}")
+        open(f"{self.t}/.wt/{STAGE}/{T3}/.branch", "w").write(job_branch(T3) + "\n")
+
+        pruned, unmerged = cleanup.prune_branches(self.t)
+
+        self.assertEqual((pruned, unmerged), ([], []))
+        self.assertEqual(local_branches(self.m), [job_branch(T3)])
+
+    def test_prune_branches_keeps_branch_checked_out_in_a_worktree(self):
+        self._branch_without_worktree(job_branch(T1), commits=0)  # merged
+        sh("-C", self.m, "worktree", "add", "-q", f"{self.t}/elsewhere", job_branch(T1))
+        self.addCleanup(sh, "-C", self.m, "worktree", "remove", "--force", f"{self.t}/elsewhere")
+
+        pruned, unmerged = cleanup.prune_branches(self.t)
+
+        self.assertEqual((pruned, unmerged), ([], []))
+        self.assertEqual(local_branches(self.m), [job_branch(T1)])
 
     def test_unmerged_worktree_branch_is_kept(self):
         root = self._job(2)

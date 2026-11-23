@@ -272,7 +272,7 @@ class OrchTest(unittest.TestCase):
         self.rep(a["id"], "VERDICT: DONE")
         r = self.nxt()
         self.assertEqual(r["agent"], "reviewer")
-        self.rep(r["id"], "VERDICT: FAIL")
+        self.rep(r["id"], "VERDICT: FAIL\n- wrong: a.py:1 off-by-one")  # a FAIL without a finding line would be retried first
         d = self.nxt()
         self.assertEqual(d["agent"], "dev")
         self.assertTrue(self.rep(d["id"], "dunno").get("retry"))  # unclear dev report: auto retry
