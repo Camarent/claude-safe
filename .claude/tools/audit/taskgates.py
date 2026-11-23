@@ -221,7 +221,7 @@ def run(stage, task, d, runner=None, git=gitx.try_out, run_id=None):
         return BLOCKED, "no `gates` in pipeline.json: nothing to run"
     outside = testrun.outside_writes(d, stage, task)  # a project without the test-run step is still guarded
     if outside:
-        return FAIL, outside
+        return testrun.outside_verdict(outside)
     skip, sha = _skip_reason(cfg, d, stage, task, git)
     if skip:
         return DONE, skip
