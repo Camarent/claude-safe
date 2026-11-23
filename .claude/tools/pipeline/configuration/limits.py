@@ -217,10 +217,22 @@ MAIN_GUARD_IGNORE_GLOBS = ("qrun-*.log",)  # path globs of the main checkout the
 MAIN_DIRT_PREFIX = "MAIN-DIRT:"  # first word of the note maincheck.check returns; the driver tells it from a dev's own failure
 MAIN_WRITE_NOTE = (
     MAIN_DIRT_PREFIX + " files in the MAIN checkout changed or appeared while this task ran ({files}, +{more} more). "
-    "Nothing was deleted or reverted. The dev cannot fix this: the lead runs `git -C <main checkout> status`, finds who wrote the paths "
+    "The dev cannot fix this: the lead runs `git -C <main checkout> status`, finds who wrote the paths "
     "(each line shows the path, its mtime and the job start), then `orch.py retry`. It clears by itself once the paths are gone. "
     "A dev always uses paths relative to its own worktree, never an absolute path into the main checkout."
 )  # the note maincheck.check returns
+MAIN_KEPT_STATE = "Nothing was deleted or reverted."  # appended to MAIN_WRITE_NOTE when no tracked change was reverted
+MAIN_REVERTED_STATE = (  # appended when the dev's tracked changes were reverted to HEAD after their diff was saved at {patch}
+    "The dev's tracked changes were reverted to HEAD; their diff is saved at {patch} (`git -C <main checkout> apply {patch}` restores them)."
+)
+MAIN_UNSAVED_STATE = (  # appended when the diff could not be saved: nothing is reverted, so the main checkout keeps the writes
+    "Tracked changes were NOT reverted: their diff could not be saved to {patch}, so the main checkout keeps them."
+)
+MAIN_REVERT_KEY = "main_guard_revert"  # pipeline.json key: false keeps the dev's tracked main-checkout writes (named only, nothing reverted)
+MAIN_REVERT_DEFAULT = True  # the guard reverts the dev's tracked main-checkout writes after saving them to a patch
+MAIN_WRITE_PATCH = (
+    "mainwrite-{task}-{stamp}.patch"  # the reverted main-checkout write, kept in the stage's work folder (a retry never overwrites an earlier one)
+)
 MAIN_DIRT_REWORK_NOTE = (  # dev rework line when the rework file holds a MAIN-DIRT note: the dev writes only in its own worktree
     " MAIN-DIRT was reported for this task: the main checkout changed while it ran. Your worktree paths are relative to your job worktree root "
     "(your current directory, shown as `.`); write only there, never an absolute path into the main checkout."

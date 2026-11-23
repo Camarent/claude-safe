@@ -29,7 +29,19 @@ from .run import Run
 from .util import TOOLS, read_text, swallowed, write_text
 
 PLAN = tool_cmd("plan.py")
+PLAN_FIX = "plan-fix"  # plan-step name and session tag of one plan-fix architect round; the summary counts them
 EFFORT = {MODEL_SONNET: "medium", MODEL_OPUS: "high"}
+# Checklist of the rules `plan.py check` enforces, in the architect brief: the architect fixes these before the check runs.
+BRIEF_CHECKLIST = (
+    "CHECKLIST (the rules `plan.py check` enforces; fix each before you reply):\n"
+    "- Test line: one command that runs the task's own test file(s) from the project root; no bare absolute main-checkout paths.\n"
+    "- Affected tests line: every existing test file the change could break, named by file.\n"
+    "- Predicted paths: every file the task edits, relative to the project root.\n"
+    "- Wave and depends: a task that uses code another task adds goes in a later wave, with `--depends` on that task.\n"
+    "- Docs tasks: a docs task that cites new code runs in a later wave than that code, with depends on it; a docs task never shares a wave with the code it documents.\n"
+    "- Size: each task fits one agent turn budget (about 25 turns); split a larger task.\n"
+    f"- Run `{PLAN} check` on the plan and fix every problem it prints before you reply.\n"
+)
 
 
 def build_prompt(a, model, goal, extra=""):
@@ -51,7 +63,7 @@ def build_prompt(a, model, goal, extra=""):
         f"Decide the size yourself, then take exactly ONE route. {small} {big}\n"
         f"Write the plan ONLY through plan.py commands; reply VERDICT: DONE|BLOCKED|ESCALATE (ESCALATE with a reason only on Sonnet, when the request touches a contract, data format, schema, migration, save/progress format or scheduling logic: Opus then plans it). "
         f"Before replying ESCALATE write .work/{F}/ESCALATE.md for Opus: why you escalate, the files and facts you found (path and one line each), the decisions you already made, what is still open. Opus will not repeat your exploration. "
-        f"Never hand-write TASKS.md, Plan.md or task-N.md.\n{extra}\nREQUEST:\n{goal}"
+        f"Never hand-write TASKS.md, Plan.md or task-N.md.\n{BRIEF_CHECKLIST}{extra}\nREQUEST:\n{goal}"
     )
 
 
@@ -193,7 +205,7 @@ def testrun_fix(a, c, model, goal, tr):
             fix_goal(a, goal),
             "The plan you wrote passed `check`, but `testrun` rejects these Test lines; fix them through plan.py commands:\n" + "\n".join(tr),
         ),
-        "plan-fix",
+        PLAN_FIX,
     )
     n, probs = check_now(a, goal)
     return n, ([*probs, *testrun_problems(a)] if not errors_of(probs) else probs)
@@ -209,7 +221,7 @@ def testrun_check(a, c, model, goal, n, probs):
 def review_fix(a, c, model, goal, report_path):
     """Plan-fix session for the GAP lines the plan review wrote to report_path."""
     extra = f"The plan review wrote {report_path}: fix every GAP line in it through plan.py commands.\n"
-    session(a, c, model, build_prompt(a, model, fix_goal(a, goal), extra), "plan-fix")
+    session(a, c, model, build_prompt(a, model, fix_goal(a, goal), extra), PLAN_FIX)
 
 
 def review_plan(a, c, model, goal, n, probs):
@@ -226,6 +238,7 @@ def review_plan(a, c, model, goal, n, probs):
     def fix(_report):
         review_fix(a, c, model, goal, report_path)
 
+    step(c, "plan-review", "start", kind=kind)
     res = plan_review.run_review(kind, dispatch, fix, n_tasks=n)
     step(c, "plan-review", "done", kind=kind, verdict=res.verdict, gaps=len(res.gaps), rounds=res.rounds, model=res.model)
     if res.rounds:
@@ -248,16 +261,18 @@ def escalation_note(a):
 def run(a):
     """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
     goal = read_text(a.prompt_file)
-    if not a.dry_run:
-        write_text(os.path.join(feature_dir(a), REQUEST_FILE), goal)
-    extra = "" if a.dry_run else code_context(a, goal)
     model = getattr(a, "model", MODEL_SONNET) or MODEL_SONNET  # --model opus: known ahead to need Opus, skip the Sonnet pass
-    prompt = build_prompt(a, model, goal, extra)
     if a.dry_run:
+        prompt = build_prompt(a, model, goal, "")
         cmd = ["claude", *claude.claude_args("architect", model, EFFORT[model], prompt)]
         print(f"model: {model}\n" + prompt + "\n\n" + " ".join(shlex.quote(x) for x in cmd[:-1]) + " <prompt>")
         return 0
+    write_text(os.path.join(feature_dir(a), REQUEST_FILE), goal)
     c = Ctx(Run(stage=a.feature, dir=a.dir))
+    step(c, "startup", "start")
+    extra = code_context(a, goal)
+    step(c, "startup", "done")
+    prompt = build_prompt(a, model, goal, extra)
     v = session(a, c, model, prompt, "plan-opus" if model == MODEL_OPUS else "plan")
     if v == "ESCALATE" and model == MODEL_SONNET:
         model = MODEL_OPUS
@@ -270,6 +285,7 @@ def run(a):
     if v == "BLOCKED":
         print(blocked_report(a))
         return 2
+    step(c, "check", "start")
     n, probs = check_now(a, goal)
     step(c, "check", "done", tasks=n, errors=len(errors_of(probs)))
     if errors_of(probs):
@@ -278,7 +294,7 @@ def run(a):
             c,
             model,
             build_prompt(a, model, fix_goal(a, goal), "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)),
-            "plan-fix",
+            PLAN_FIX,
         )
         n, probs = check_now(a, goal)
     n, probs = testrun_check(a, c, model, goal, n, probs)
@@ -289,5 +305,6 @@ def run(a):
     if errors_of(probs):
         print("\n".join(probs))
         return 2
-    print("\n".join([*probs, *gaps, f"OK {n} tasks"]))
+    rounds = sum(1 for s in c.sess if s["id"] == PLAN_FIX)
+    print("\n".join([*probs, *gaps, f"OK {n} tasks (plan-fix rounds: {rounds})"]))
     return 0

@@ -67,7 +67,7 @@ class MainCheckTest(unittest.TestCase):
         self.assertIn("draft.py", note)
         self.assertIn(", f", note)
         self.assertEqual(open(f"{self.m}/draft.py").read(), "first draft")  # report and block, never delete
-        self.assertEqual(open(f"{self.m}/f").read(), "edited")
+        self.assertEqual(open(f"{self.m}/f").read(), "x")  # the dev's tracked edit is reverted to HEAD (its patch is kept: test_maincheck_revert)
         self.assertIn("draft.py", self.check())  # still reported until the files are gone
 
     def test_dirt_that_was_there_at_the_start_is_not_the_devs(self):

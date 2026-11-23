@@ -2,6 +2,7 @@
 
 import collections
 import os
+import time
 
 from .configuration import EV_REPORT, EV_SKIP, PLAN_FILE, TASKS_FILE
 from .plan_files import parse_phase_rows
@@ -51,14 +52,26 @@ def status_line(c, ds):
     )
 
 
+PLAN_STEPS = ("startup", "context", "plan", "plan-opus", "check", "plan-fix", "plan-review")  # planning order; unknown step names sort last
+
+
 def planning_lines(c):
-    """One line per planning step of a feature from its metrics.jsonl (`plan-step` events): context, brief, architect, check; a started step with no done line shows as running."""
-    last = {}
+    """One line per planning step of a feature from its metrics.jsonl (`plan-step` events), in PLAN_STEPS order: the start time, and secs (the event's own, else done minus start); a started step with no done line shows as running."""
+    last, started = {}, {}
     for e in read_jsonl(c.metrics):
         if e.get("ev") == "plan-step":
             last[e["step"]] = e
+            if e["state"] == "start":
+                started[e["step"]] = e["ts"]
     out = []
-    for name, e in last.items():
-        extra = " ".join(f"{k}={e[k]}" for k in ("model", "verdict", "secs", "local_model_secs", "code_files", "tasks", "errors", "usd") if k in e)
+    for name in sorted(last, key=lambda n: PLAN_STEPS.index(n) if n in PLAN_STEPS else len(PLAN_STEPS)):
+        e = last[name]
+        fields = {}
+        if name in started:
+            fields["started"] = time.strftime("%H:%M:%S", time.localtime(started[name]))
+        if e["state"] == "done" and name in started and "secs" not in e:
+            fields["secs"] = round(e["ts"] - started[name])
+        fields.update({k: e[k] for k in ("model", "verdict", "secs", "local_model_secs", "code_files", "tasks", "errors", "usd") if k in e})
+        extra = " ".join(f"{k}={v}" for k, v in fields.items())
         out.append(f"   plan/{name}: {'running' if e['state'] == 'start' else 'done'}" + (f" ({extra})" if extra else ""))
     return out

@@ -94,8 +94,12 @@ def _useless_escalation_signals(evs):
     return [("useless-escalations", "Haiku ESCALATE then Sonnet not DONE, investigate: " + "; ".join(out))] if out else []
 
 
+def _audit_fix_tasks(evs):
+    return [e["task"] for e in evs if e["ev"] == EV_REPORT and e.get("task") in ("audit-sec", "audit-arch") and e["verdict"] == "FIXES"]
+
+
 def _audit_fix_signals(evs):
-    deep = [e["task"] for e in evs if e["ev"] == EV_REPORT and e.get("task") in ("audit-sec", "audit-arch") and e["verdict"] == "FIXES"]
+    deep = _audit_fix_tasks(evs)
     return [("audit-fixes", "sec/arch audits asked for fixes: " + ", ".join(deep))] if deep else []
 
 
@@ -108,7 +112,9 @@ def _fix_share_signals(evs, tasks):
 
 
 def _stuck_signals(evs):
-    stuck = sum(1 for e in evs if e["ev"] == "ask")
+    # an ask about a sec/arch audit's FIXES is already counted by audit-fixes: not stuck (asks are "<task id>: ..." messages)
+    audit_fix = set(_audit_fix_tasks(evs))
+    stuck = sum(1 for e in evs if e["ev"] == "ask" and e.get("message", "").partition(": ")[0] not in audit_fix)
     manual = sum(1 for e in evs if e["ev"] in ("retry", "skip") and e.get("task") != "master-merged" and not e.get("auto"))
     if stuck >= 3 or manual:
         return [("stuck", f"{stuck} ask_main stop(s), {manual} retry/skip")]
