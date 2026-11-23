@@ -67,6 +67,13 @@ class T(unittest.TestCase):
         self.assertFalse(any("glob" in m for m in brieflint.lint(base + "Test: cs-qrun -- python3 -m pytest tests/core\n")))
         self.assertFalse(any("glob" in m for m in brieflint.lint(base + 'Test: cs-qrun -- python3 -m pytest -k "a or b*"\n')))
 
+    def test_qrun_chain_with_and_names_bash_c(self):
+        base = GOOD + "Test: python3 -I /root/.claude/tools/qrun.py -- "
+        bad = brieflint.lint(base + "node --test a.js && node --test b.js\n")
+        self.assertTrue(any("bash -c" in m for m in bad), bad)
+        decoy = brieflint.lint(base + "bash -c 'node --test a.js && node --test b.js'\n")
+        self.assertEqual(decoy, [])
+
     def test_abs_cd(self):
         self.assertTrue(any("absolute cd" in m for m in brieflint.lint(GOOD + "cd /workspace/x")))
 
@@ -184,12 +191,12 @@ class TestLeadVerifiedBrief(unittest.TestCase):
 
     def test_docs_index_line_needs_marker(self):
         d = tracked_mkdtemp()
-        with open(os.path.join(d, "task-1.md"), "w") as h:
+        with open(os.path.join(d, "brief-a.md"), "w") as h:
             h.write("Test: python3 .claude/tools/docs_index.py\n")
-        with open(os.path.join(d, "task-2.md"), "w") as h:
+        with open(os.path.join(d, "brief-b.md"), "w") as h:
             h.write("Test: cs-docs-index --check  # lead-verified\n")
-        self.assertEqual(len(plan_check.check_lead_verified(d, "task-1")), 1)
-        self.assertEqual(plan_check.check_lead_verified(d, "task-2"), [])
+        self.assertEqual(len(plan_check.check_lead_verified(d, "brief-a")), 1)
+        self.assertEqual(plan_check.check_lead_verified(d, "brief-b"), [])
 
 
 if __name__ == "__main__":

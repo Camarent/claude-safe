@@ -71,12 +71,16 @@ def _untracked_problems(text, repo, git):
 def _test_prefix_problems(text, repo):
     p = []
     for m in re.finditer(r"(?m)^Test:\s*(.*)$", text):
-        t = m[1]
+        # quoted text is a shell script or one literal argument, not a chain here: strip it once for the checks below
+        t = re.sub(r"'[^']*'|\"[^\"]*\"", "", m[1])
         if re.match(r"[A-Z_][A-Z0-9_]*=", t) or re.search(r"(?:^|\s)env\s|&&|;|\bcd\s", t):
             p.append("Test line has a VAR= prefix, env, cd, && or ; (the agents' sandbox denies it): one command through qrun, qrun applies test_env")
+        # qrun runs no shell: a chain after qrun needs bash -c '...' (the quoted script is then not checked)
+        if re.search(r"qrun(\.py)?\s+--\s.*&&", t):
+            p.append("Test line chains with && after qrun (qrun runs no shell): wrap the chain as qrun -- bash -c '...'")
         if any(re.fullmatch(r"[\w./-]*\*[\w./*-]*", tok) for tok in t.split()):
             p.append("Test line has an unquoted glob (qrun runs no shell, so it is never expanded): name the directory or file")
-        p += main_checkout_problems(t, repo)
+        p += main_checkout_problems(m[1], repo)
     return p
 
 
