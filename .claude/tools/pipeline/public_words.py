@@ -24,6 +24,9 @@ def hits(repo, words):
         raise ScanError("scan failed: git could not list the tracked files")
     found = []
     for rel in filter(None, listed.stdout.split("\0")):
+        # a tracked symlink names a target outside the repo: it is not repo text, so it is not scanned
+        if os.path.islink(os.path.join(repo, rel)):
+            continue
         try:
             with open(os.path.join(repo, rel), "rb") as f:
                 head = f.read(PUBLIC_BINARY_SNIFF_BYTES)

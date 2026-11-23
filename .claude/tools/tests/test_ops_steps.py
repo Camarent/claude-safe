@@ -153,6 +153,20 @@ class OpsStepsTest(unittest.TestCase):
         self.assertEqual(out.getvalue().splitlines()[0], "VERDICT: FAIL")
         self.assertIn("README.md:2: sauce", out.getvalue())
 
+    def test_public_words_tracked_symlink_to_outside_file_is_not_a_hit(self):
+        self._repo_with_doc("intro\n")
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        secret = os.path.join(os.path.realpath(outside.name), "secret.txt")
+        with open(secret, "w", encoding="utf-8") as fh:
+            fh.write("the sauce is here\n")
+        os.symlink(secret, os.path.join(self.d, "link.txt"))
+        git(self.d, "add", "link.txt")
+        git(self.d, "commit", "-q", "-m", "link")
+        self.put_claude("This repo is public.\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, []))
+
     def test_public_words_empty_setting_is_done_and_silent(self):
         self._repo_with_doc("the sauce is here\n")
         self.put_claude("This repo is public.\n")
