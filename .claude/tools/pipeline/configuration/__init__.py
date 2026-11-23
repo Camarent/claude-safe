@@ -254,6 +254,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     EV_DISPATCH,
     EV_FORCED_REMOVE,
     EV_GATE_CMD,
+    EV_MAIN_DIRT_CLEARED,
     EV_MAIN_RESTORED,
     EV_REPORT,
     EV_RETRY,

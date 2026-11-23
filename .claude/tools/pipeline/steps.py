@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 
+from . import maincheck
 from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
 from .ccn import CCN_REVIEW_BRIEF, CCN_REVIEW_WHY, review_ccn_hit
 from .classify import STOP, classify_test_run, env_failure
@@ -16,6 +17,7 @@ from .configuration import (
     ENV_PREREVIEW_SKIP,
     ESCALATE,
     EV_DISPATCH,
+    EV_MAIN_DIRT_CLEARED,
     EV_REPORT,
     EV_RETRY,
     EV_SKIP,
@@ -57,7 +59,7 @@ from .steps_docfix import DOCFIX_WHY, repeated_pair
 from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
 from .steps_verify import VERIFY_WHY, blocked_for_checks
 from .steps_verify import command as verify_command
-from .util import append_jsonl, now, paths, read_text, work_path, write_text
+from .util import append_event, append_jsonl, now, paths, read_text, work_path, write_text
 from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
@@ -566,8 +568,21 @@ def _env_red(a, task, mine, rid, last, kind):
     return {"action": "ask_main", "message": f"{task['id']}: environment still red after the repair ({kind}); output {last['file']}" + hint(a, task["id"])}
 
 
+def _main_dirt_cleared(a, task, mine, last, rerun):
+    """A BLOCKED run that named main-checkout dirt: once the main checkout is clean again (maincheck.check empty against the job's baseline) the `rerun` dispatch runs and the log names the clear. None while the dirt stays: the lead decides."""
+    if not any(maincheck.dirt(line) for line in read_text(last["file"]).splitlines()):
+        return None
+    if maincheck.check(getattr(a, "dir", "."), a.stage, task["id"]):
+        return None
+    if not any(e["ev"] == EV_MAIN_DIRT_CLEARED and e.get("step") == last["id"] for e in mine):  # decide() runs again before the dispatch is logged
+        append_event(paths(a)[1], {"ev": EV_MAIN_DIRT_CLEARED, "task": task["id"], "step": last["id"]})
+    return rerun
+
+
 def _after_test(a, task, mine, rid, s, last):
     if last["verdict"] == BLOCKED:
+        if (clear := _main_dirt_cleared(a, task, mine, last, _test_run_script(a, task, rid))) is not None:
+            return clear
         return {"action": "ask_main", "message": f"{task['id']}: Test lines cannot run (infrastructure); output {last['file']}" + hint(a, task["id"])}
     if last["verdict"] == FAIL:
         if (env := _env_red(a, task, mine, rid, last, TEST_KIND)) is not None:
@@ -599,6 +614,8 @@ def _taskgates_all(a, task, rid, fails):
 
 def _after_taskgates(a, task, mine, rid, s, last):
     if last["verdict"] == BLOCKED:
+        if (clear := _main_dirt_cleared(a, task, mine, last, _taskgates_script(a, task, rid))) is not None:
+            return clear
         return {"action": "ask_main", "message": f"{task['id']}: task gates cannot run; output {last['file']}" + hint(a, task["id"])}
     if last["verdict"] != FAIL:
         return _quality_or_review(a, task, mine, rid, s)
