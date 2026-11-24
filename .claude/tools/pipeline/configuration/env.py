@@ -8,6 +8,7 @@ ENV_CLAUDE_FLAGS = "WAVE_CLAUDE_FLAGS"  # replaces DEFAULT_FLAGS for headless se
 HOST_AGENT_PREFIX = "pl-"  # scripts/host_agents.py installs the container agents on the host as `<prefix><name>` (its --prefix default)
 ENV_REVIEW_DIR = "PIPELINE_REVIEW_DIR"  # set for the reviewer session only: the one directory it may edit (tools/review_guard.py)
 ENV_SCRATCH_DIR = "PIPELINE_SCRATCH_DIR"  # set for every agent session: the stage scratch dir WORK_DIR/<stage>/SCRATCH_DIR (also TMPDIR unless pipeline.json test_env sets it); review_guard lets the reviewer write there
+ENV_AGENT_KIND = "PIPELINE_AGENT_KIND"  # set for every agent session: its dispatch agent name (denial_log.py records it per denial)
 ENV_GUARD_WORKTREE = "PIPELINE_GUARD_WORKTREE"  # set for a dev session: its job worktree root, the one tree its writes may go to (tools/write_guard.py)
 ENV_GUARD_MAIN = "PIPELINE_GUARD_MAIN"  # set for a dev session: the main checkout root, which write_guard denies (unless under ENV_GUARD_ALLOW)
 ENV_GUARD_ALLOW = "PIPELINE_GUARD_ALLOW"  # os.pathsep list: extra dirs under the main checkout that write_guard allows

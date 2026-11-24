@@ -14,6 +14,7 @@ from .audit_phases import save_audit_reply
 from .configuration import (
     AUDIT_ESCALATE_SUFFIX,
     AUDITORS,
+    ENV_AGENT_KIND,
     ENV_GUARD_ALLOW,
     ENV_GUARD_JOB,
     ENV_GUARD_LOG,
@@ -199,7 +200,11 @@ def run_one(c, d):
         )
         if d["agent"] != REVIEWER:  # dev runs in its job worktree with the write guard env; the read-only roles keep the project dir
             u = claude.session(
-                args, session_cwd(c, d), done_file=f, env_extra={**scratch_env(c), **guard_env(c, d)}, pgid_file=os.path.join(c.w, PGID_FILE_NAME)
+                args,
+                session_cwd(c, d),
+                done_file=f,
+                env_extra={**scratch_env(c), ENV_AGENT_KIND: d["agent"], **guard_env(c, d)},
+                pgid_file=os.path.join(c.w, PGID_FILE_NAME),
             )
         else:  # mutation checks run in the job worktree; the script puts it back whatever the session does
             task = dispatch_task(c, d)
@@ -212,7 +217,7 @@ def run_one(c, d):
                         args,
                         c.dir,
                         done_file=f,
-                        env_extra={**scratch_env(c), ENV_REVIEW_DIR: review_root(c, task)},
+                        env_extra={**scratch_env(c), ENV_AGENT_KIND: d["agent"], ENV_REVIEW_DIR: review_root(c, task)},
                         pgid_file=os.path.join(c.w, PGID_FILE_NAME),
                     )
                 finally:

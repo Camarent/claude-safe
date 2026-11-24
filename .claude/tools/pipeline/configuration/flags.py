@@ -42,7 +42,8 @@ PY_STDIN = "python3 -I -"  # python read from stdin (a heredoc body)
 SED_PRINT_ALLOW = (
     "sed -n *"  # `sed -n 'A,Bp' file` only: cmd_guard denies every other sed form (-i, -e, -f, w/e/r commands) before it runs; owner decision 2026-11-17
 )
-SED_PRINT_SCRIPT = r"\d+(?:,(?:\d+|\$))?p"  # the one sed script allowed: print one line or a line range
+SED_ADDR = r"(?:\d+(?:~\d+)?|\$|/[^/$`\\*?\[\]{}()|&;<>'\"\n]*/)"  # one sed address: line N, step N~M, last line $, or /regex/ (no shell-expanded or glob or newline characters in the regex: a `$(...)` or backtick would run before sed)
+SED_PRINT_CMD = rf"(?:{SED_ADDR}(?:,{SED_ADDR})?)?p"  # one sed command allowed: print the addressed lines (no address = all lines)
 BASH_ALLOW = (  # `Bash(<pattern>)` entries of the headless allowlist; a compound command needs every part allowed; pipeline.json `bash_allow` replaces it
     f"python3 -I {TOOLS_DIR}/*",
     f"{PY_INLINE} *",

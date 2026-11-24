@@ -19,10 +19,19 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pipeline.configuration import ENV_GUARD_ALLOW, ENV_GUARD_JOB, ENV_GUARD_LOG, ENV_GUARD_MAIN, ENV_GUARD_WORKTREE, GUARD_TOOLS
+from pipeline.configuration import (
+    ENV_GUARD_ALLOW,
+    ENV_GUARD_JOB,
+    ENV_GUARD_LOG,
+    ENV_GUARD_MAIN,
+    ENV_GUARD_WORKTREE,
+    ENV_SCRATCH_DIR,
+    GUARD_TOOLS,
+)
 from review_guard import under
 
 PATH_KEYS = ("file_path", "notebook_path")  # the tool_input key that names the written file
+SCRATCH_PARTS = frozenset(("tmp", "scratch"))  # path parts that mark a scratch write (the deny names ENV_SCRATCH_DIR)
 
 
 def real(path, cwd):
@@ -52,10 +61,15 @@ def deny_reason(path, main, worktree):
         return ""
     if any(under(path, d) for d in allowed_dirs()):
         return ""
-    return (
+    rel = os.path.relpath(path, main)
+    retry = os.path.join(worktree, rel)
+    text = (
         f"write_guard: {path} is in the main checkout {main}; this dev session works in the job worktree {worktree}. "
-        f"Write only: use a path under the worktree root {worktree}."
+        f"Retry once with the same relative path under the worktree: {retry}."
     )
+    if SCRATCH_PARTS.intersection(rel.split(os.sep)):
+        text += f" Scratch files go to the ${ENV_SCRATCH_DIR} dir, not the repo."
+    return text
 
 
 def log_denial(tool, path):
