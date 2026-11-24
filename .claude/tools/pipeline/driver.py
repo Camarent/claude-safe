@@ -14,22 +14,31 @@ from .audit_phases import save_audit_reply
 from .configuration import (
     AUDIT_ESCALATE_SUFFIX,
     AUDITORS,
+    ENV_GUARD_ALLOW,
+    ENV_GUARD_JOB,
+    ENV_GUARD_LOG,
+    ENV_GUARD_MAIN,
+    ENV_GUARD_WORKTREE,
     ENV_REVIEW_DIR,
     ENV_SCRATCH_DIR,
     EV_DISPATCH,
+    GUARD_LOG_FILE,
     PGID_FILE_NAME,
+    REPORTS_DIR,
     REVIEWER,
     SCRATCH_DIR,
     SCRATCH_ENV,
     SCRIPT_OUTPUT_MAX,
     TOOLS_DIR,
     VERDICT_PREFIX,
+    WORK_DIR,
+    WORKTREE_CWD_AGENTS,
     project,
     test_env,
 )
 from .pr_ops import checks_timeout
 from .util import read_jsonl, read_text, run_py, work_path, write_text
-from .worktrees import review_begin, review_reset, review_root
+from .worktrees import job_info, review_begin, review_reset, review_root
 
 
 def orch(cmd, stage, dir, *extra):
@@ -135,6 +144,34 @@ def scratch_env(c):
     return env
 
 
+def _dev_job(c, d):
+    """-> the job worktree info of dev dispatch D (WORKTREE_CWD_AGENTS only), or None when there is none."""
+    if d["agent"] not in WORKTREE_CWD_AGENTS or not project(c.dir).get("worktrees"):
+        return None
+    return job_info(c, dispatch_task(c, d), create=False)
+
+
+def session_cwd(c, d):
+    """-> the dir the session of dispatch D runs in: the job worktree root for the dev roles when worktrees are on, else the project dir. Reviewer and read-only roles keep the project dir."""
+    info = _dev_job(c, d)
+    return info["root"] if info else c.dir
+
+
+def guard_env(c, d):
+    """-> env that binds a dev session to its job worktree (write_guard): the one tree it may write, the main checkout denied, the reports and scratch dirs allowed. {} when there is no job worktree."""
+    info = _dev_job(c, d)
+    if not info:
+        return {}
+    task = dispatch_task(c, d) or ""
+    return {
+        ENV_GUARD_WORKTREE: info["root"],
+        ENV_GUARD_MAIN: os.path.abspath(c.dir),
+        ENV_GUARD_ALLOW: os.pathsep.join([os.path.join(c.w, REPORTS_DIR), os.path.join(c.w, SCRATCH_DIR)]),
+        ENV_GUARD_JOB: task,
+        ENV_GUARD_LOG: os.path.join(c.w, GUARD_LOG_FILE),
+    }
+
+
 def safe_run_one(c, d):
     """run_one for the wave pool: an exception becomes a BLOCKED result and the report is still recorded, so one crashing dispatch does not abort the wave."""
     try:
@@ -154,9 +191,16 @@ def run_one(c, d):
         u = run_script(d["prompt"], c.dir, timeout=script_step_limit(project(c.dir)))
     else:
         turns = _auditor_turns(c, d) if d["agent"] in AUDITORS else None
-        args = claude.claude_args(d["agent"], d["model"], d.get("effort"), d["prompt"], dir=c.dir, max_turns=turns, scratch=scratch_env(c)[ENV_SCRATCH_DIR])
-        if d["agent"] != REVIEWER:
-            u = claude.session(args, c.dir, done_file=f, env_extra=scratch_env(c), pgid_file=os.path.join(c.w, PGID_FILE_NAME))
+        dev_dirs = (
+            (os.path.join(c.dir, WORK_DIR),) if d["agent"] in WORKTREE_CWD_AGENTS else ()
+        )  # dev reads the stage reports and scratch under the project .work
+        args = claude.claude_args(
+            d["agent"], d["model"], d.get("effort"), d["prompt"], dir=c.dir, max_turns=turns, scratch=scratch_env(c)[ENV_SCRATCH_DIR], add_dirs=dev_dirs
+        )
+        if d["agent"] != REVIEWER:  # dev runs in its job worktree with the write guard env; the read-only roles keep the project dir
+            u = claude.session(
+                args, session_cwd(c, d), done_file=f, env_extra={**scratch_env(c), **guard_env(c, d)}, pgid_file=os.path.join(c.w, PGID_FILE_NAME)
+            )
         else:  # mutation checks run in the job worktree; the script puts it back whatever the session does
             task = dispatch_task(c, d)
             why = review_begin(c, task)
