@@ -170,9 +170,9 @@ def log_rows(path):
 
 
 def by_rule(rows):
-    """-> [{rule, count}] of the log rows, most denials first."""
-    counts = collections.Counter(str(r["rule"]) for r in rows)
-    return [{"rule": rule, "count": n} for rule, n in counts.most_common()]
+    """-> [{agent, rule, count}] of the log rows, most denials first; rows without an agent (older logs) count under agent ""."""
+    counts = collections.Counter((str(r.get("agent", "")), str(r["rule"])) for r in rows)
+    return [{"agent": agent, "rule": rule, "count": n} for (agent, rule), n in counts.most_common()]
 
 
 def main(argv=None):
@@ -188,7 +188,7 @@ def main(argv=None):
         if a.json:
             print(json.dumps(rules, indent=1))
         else:
-            print("\n".join(f"  {r['count']:5d}  {r['rule']}" for r in rules) or "no denials logged")
+            print("\n".join(f"  {r['count']:5d}  {r['agent'] or '-'}  {r['rule']}" for r in rules) or "no denials logged")
         return 0
     calls, denials = collect(a.projects or default_projects(), a.days)
     s = summarize(calls, denials)

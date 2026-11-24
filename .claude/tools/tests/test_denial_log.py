@@ -8,7 +8,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import denial_log
-from pipeline.configuration import ENV_SCRATCH_DIR
+from pipeline.configuration import ENV_AGENT_KIND, ENV_SCRATCH_DIR
 
 
 class DenialLogTest(unittest.TestCase):
@@ -29,10 +29,15 @@ class DenialLogTest(unittest.TestCase):
         self.assertEqual(
             self.read_lines(),
             [
-                {"ts": 12.5, "rule": "guard", "command": "rm -rf /x", "cwd": "/w/job"},
-                {"ts": 13.0, "rule": "main_checkout", "command": "/main/a.py", "cwd": "/w/job"},
+                {"ts": 12.5, "rule": "guard", "command": "rm -rf /x", "cwd": "/w/job", "agent": ""},
+                {"ts": 13.0, "rule": "main_checkout", "command": "/main/a.py", "cwd": "/w/job", "agent": ""},
             ],
         )
+
+    def test_agent_kind_from_env(self):
+        with mock.patch.dict(os.environ, {ENV_SCRATCH_DIR: self.scratch, ENV_AGENT_KIND: "dev"}):
+            denial_log.append("guard", "ls", "/w", now=1.0)
+        self.assertEqual(self.read_lines()[0]["agent"], "dev")
 
     def test_command_cut_to_200_chars(self):
         with mock.patch.dict(os.environ, {ENV_SCRATCH_DIR: self.scratch}):
