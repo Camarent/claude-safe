@@ -297,33 +297,80 @@ def _cd_target(words):
     return "" if in_cwd(words[1]) else words[1]
 
 
-def rewrite_cd_git(cmd):
-    """-> CMD with every `cd DIR` dropped and each git command after it changed to `git -C DIR ...`, or '' when that is not provably equivalent."""
+def _segment_rows(cmd):
+    """-> (segment text, original text, operator, piped) per command segment of CMD, or None when CMD has a shape the rewrite skips."""
     text = strip_quotes(cmd)
     pieces = OPERATORS.split(text)
     # heredoc / continuation strip changes offsets; groups are not split; a background command is not rewritten
     if len(text) != len(cmd) or re.search(r"[(){}]|<<", text) or "&" in pieces[1::2]:
-        return ""
-    out, pos, cd_dir, rewrote, cd_seen = [], 0, "", False, False
+        return None
+    rows, pos = [], 0
     for i in range(0, len(pieces), 2):
-        seg_text, orig = pieces[i], cmd[pos : pos + len(pieces[i])]
+        seg_text = pieces[i]
+        orig = cmd[pos : pos + len(seg_text)]
         op = pieces[i + 1] if i + 1 < len(pieces) else ""
         pos += len(seg_text) + len(op)
+        rows.append((seg_text, orig, op, i > 0 and pieces[i - 1] == "|"))
+    return rows
+
+
+class _CdScope:
+    """The `cd DIR` in effect for the rest of a command line; GROUP is set when a cwd-dependent command needs the cd kept in a subshell."""
+
+    def __init__(self):
+        self.dir, self.seen, self.group = "", False, False
+        self.at, self.entry = 0, ("", "")  # the cd's index in the output pairs and its (text, operator) pair
+
+    def enter(self, words, orig, op, at):
+        self.dir = _cd_target(words)  # a cd into the cwd is dropped: the cwd does not change
+        self.seen, self.at, self.entry = True, at, (orig, op)
+
+    def keep_cd(self, seg_text, piped, rewrote):
+        """-> False when SEG needs the cd but a git command already ran (no rewrite); else True. A cwd-dependent SEG sets GROUP."""
+        if not self.dir or git_words(seg_text) or not cwd_dependent(seg_text, piped):
+            return True
+        self.group = True  # the cd stays with this command: a subshell, not a dropped cd
+        return not rewrote
+
+    def git_seg(self, out, seg_text, orig, rewrote):
+        """-> the git segment ORIG with `-C DIR` (closing the pending subshell first), or '' when it cannot be rewritten."""
+        if self.group:
+            joiner = out[-1][1]  # the operator between the last cwd command and git
+            if rewrote or joiner == "|":
+                return ""
+            out[self.at :] = [(" (" + _group_body([self.entry, *out[self.at :]]) + ") ", joiner)]
+            self.group = False
+        return git_seg_with_dir(seg_text, orig, self.dir)
+
+
+def rewrite_cd_git(cmd):
+    """-> CMD with every `cd DIR` dropped and each git command after it changed to `git -C DIR ...`, or '' when that is not provably equivalent.
+    A cwd-dependent command (`ls`) before the first git keeps its cd in a subshell: `(cd DIR && ls) && git -C DIR ...`."""
+    rows = _segment_rows(cmd)
+    if rows is None:
+        return ""
+    out: list[tuple[str, str]] = []  # (segment text, operator) pairs
+    scope, rewrote = _CdScope(), False
+    for seg_text, orig, op, piped in rows:
         words = seg_text.split()
-        prev = pieces[i - 1] if i else ""
         if words[:1] == ["cd"]:
-            if not plain_cd(words, op):
+            if not plain_cd(words, op) or scope.group:
                 return ""
-            cd_dir = _cd_target(words)  # a cd into the cwd is dropped: the cwd does not change
-            cd_seen = True
+            scope.enter(words, orig, op, len(out))
             continue
-        if cd_dir:
-            orig = after_cd_segment(seg_text, orig, cd_dir, prev == "|")
-            if not orig:
-                return ""
-        rewrote = rewrote or (cd_seen and bool(git_words(seg_text)))
-        out.append(orig + op)
-    return "".join(out).strip() if rewrote else ""
+        new = scope.git_seg(out, seg_text, orig, rewrote) if scope.dir and git_words(seg_text) else orig
+        if not new or not scope.keep_cd(seg_text, piped, rewrote):
+            return ""
+        rewrote = rewrote or (scope.seen and bool(git_words(seg_text)))
+        out.append((new, op))
+    if scope.group:
+        return ""  # no git command after the cd: nothing to rewrite
+    return "".join(o + p for o, p in out).strip() if rewrote else ""
+
+
+def _group_body(pairs):
+    """-> the commands of PAIRS (text, operator) joined as one line, for a `( ... )` subshell."""
+    return " ".join(f"{o.strip()} {p}".strip() for o, p in pairs[:-1]) + " " + pairs[-1][0].strip()
 
 
 def sed_why(segs):

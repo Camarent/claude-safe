@@ -33,6 +33,27 @@ class CdGitTest(unittest.TestCase):
     def test_suggestion_fallback_without_args(self):
         self.assertIn("`git -C /wt/x <args>`", cmd_guard.verdict("cd /wt/x && git"))
 
+    def test_cwd_command_before_git_keeps_cd_in_subshell(self):  # C1: `ls -a` needs the cd, so the cd stays in a subshell
+        cmd = "cd /wt/x && ls -a && git status --short | head"
+        rewritten = "(cd /wt/x && ls -a) && git -C /wt/x status --short | head"
+        self.assertEqual(cmd_guard.rewrite_cd_git(cmd), rewritten)
+        self.assertEqual(cmd_guard.verdict(rewritten), "")
+
+    def test_rewrite_stays_denied_for_unsafe_shapes(self):  # C2: no rewrite, so the cd-git deny stands
+        for cmd in (
+            "cd /wt/x && git commit -F - <<EOF\nmsg\nEOF",  # heredoc
+            "cd /wt/x && (git status)",  # existing subshell
+            "cd /wt/x && { git status; }",  # existing group
+            "cd /wt/x && ls -a && (git status)",  # group after a subshell wrap
+            "cd /wt/x && git status &",  # background
+            "cd $HOME && git status",  # dollar in the cd target
+            "cd ~/x && git status",  # tilde in the cd target
+            "cd /wt/*x && git status",  # glob in the cd target
+            "cd /wt/x && git status && ls -a",  # cwd command after git cannot be kept
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(cmd_guard.rewrite_cd_git(cmd), "")
+
     def test_worktree_sentence_only_under_dot_wt(self):  # C2: cwd under .wt/ only
         with mock.patch("os.getcwd", return_value=WT_CWD):
             self.assertIn(WT_SENTENCE, cmd_guard.verdict("cd /wt/x && git status"))
