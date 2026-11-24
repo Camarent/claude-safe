@@ -13,6 +13,7 @@ from .configuration import (
     CITE_MD_EXTENSIONS,
     CITE_RE,
     CITE_REPORT_NAME,
+    CITE_SKIP_DIRS,
     CITE_SYMBOL_BEFORE_RE,
     CITE_URL_RE,
     CITE_WINDOW_LINES,
@@ -70,6 +71,18 @@ def _inside(worktree, path):
     return full if os.path.commonpath([root, full]) == root else None
 
 
+def _resolve_bare(worktree, path):
+    """-> the worktree-relative path of the one file named path when path has no directory and exactly one such file exists outside CITE_SKIP_DIRS; else path unchanged."""
+    if os.sep in path or "/" in path:
+        return path
+    found = []
+    for root, dirs, files in os.walk(worktree):
+        dirs[:] = [d for d in dirs if d not in CITE_SKIP_DIRS]
+        if path in files:
+            found.append(os.path.relpath(os.path.join(root, path), worktree))
+    return found[0] if len(found) == 1 else path
+
+
 def _lines(full):
     """-> the lines of the file at full, None when it is not a file."""
     if not os.path.isfile(full):
@@ -109,6 +122,10 @@ def _cite_msg(worktree, where, path, line, end, before):
     if full is None:
         return f"{where} but {path} is outside the worktree"
     lines = _lines(full)
+    if lines is None:
+        resolved = _resolve_bare(worktree, path)
+        full = _inside(worktree, resolved)
+        lines = _lines(full) if full else None
     if lines is None:
         return f"{where} but {path} is missing"
     if (end or line) > len(lines):
