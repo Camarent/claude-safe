@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pipeline.configuration import ENV_GUARD_ALLOW, ENV_GUARD_JOB, ENV_GUARD_LOG, ENV_GUARD_MAIN, ENV_GUARD_WORKTREE
+from pipeline.configuration import ENV_GUARD_ALLOW, ENV_GUARD_JOB, ENV_GUARD_LOG, ENV_GUARD_MAIN, ENV_GUARD_WORKTREE, ENV_SCRATCH_DIR
 from tests.support.tmpdirs import tracked_mkdtemp
 
 GUARD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "write_guard.py")
@@ -61,7 +61,13 @@ class WriteGuardTest(unittest.TestCase):
     def test_main_path_denied(self):
         why = self.denied(run_hook(self.payload(f"{self.main}/README.md"), self.env))["permissionDecisionReason"]
         self.assertIn(self.wt, why)
-        self.assertIn("use a path under the worktree root", why)
+        self.assertIn(f"Retry once with the same relative path under the worktree: {self.wt}/README.md.", why)
+        self.assertNotIn(ENV_SCRATCH_DIR, why)
+
+    def test_main_scratch_path_names_scratch_dir(self):
+        why = self.denied(run_hook(self.payload(f"{self.main}/.work/dev-cwd/tmp/x.txt"), self.env))["permissionDecisionReason"]
+        self.assertIn(f"{self.wt}/.work/dev-cwd/tmp/x.txt", why)
+        self.assertIn(f"${ENV_SCRATCH_DIR}", why)
 
     def test_dotdot_escape_denied(self):
         self.denied(run_hook(self.payload(f"{self.wt}/../../../README.md"), self.env))
