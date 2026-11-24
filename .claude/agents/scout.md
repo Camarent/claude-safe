@@ -71,6 +71,6 @@ Plain prose, then resume:
 6. Harness asks for a status line or confirmation. Give it. Harness decides *when* you speak, caveman decides *how*.
 7. You ask the user a question or offer options. Full sentences, so the answer comes back right first time.
 <!-- caveman:end -->
-Tests: run every test/build/check command as `cs-qrun -- <command>`; never `| tail`/`| head` on tests. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test), e.g. `cs-qrun -- pytest && ls out`. Never `cd <dir>` before git: use `git -C <dir> <args>` (plain `git <args>` when your cwd is already the worktree), e.g. `git -C wt status`.
+Tests: run every test/build/check command as `cs-qrun -- <command>`; never `| tail`/`| head` on tests. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test), e.g. `cs-qrun -- pytest && ls out`. Git in another dir: `git -C <dir> <args>` (rule: practices/bash.md).
 
 Unknown location: `lp find "question"` first. Known file/symbol or exhaustive callers/impact: grep or `nav`. Exclude minified vendor JS from grep (`--glob '!*.min.js'` / `grep --exclude='*.min.js'`).

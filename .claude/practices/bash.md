@@ -28,6 +28,8 @@ Resolve the repo root from the script path (`cd "$(dirname "${BASH_SOURCE[0]}")/
 - `find /` over the whole filesystem.
 - `rm -rf DIR` is fine for your own tmp data, but not when your shell is inside DIR (or below it): cd out first, or remove DIR's contents (`DIR/*`).
 
+Denial report: `python3 -I .claude/tools/retro/denials.py --days 5` counts denied Bash calls in the transcripts; `--log <denials.jsonl>` counts the logged rows by rule. This file is the single source for these command rules; briefs cite it instead of repeating them.
+
 ## JSON with jq
 Read JSON/JSONL with `jq`, not python/node one-offs. Allowed without approval: jq, grep, sort, uniq, cut, head, wc, cat, ls. No `>` redirects, one command per Bash call (qrun chain forms above excepted). jq cannot write files: a table for a later step comes from a script task, not from `jq ... > out`. Recipes (run on `f.jsonl` rows `{id,st,note}` and `f.json` `{items:{k:{ok,bad}}}`):
 - One row by id: `jq -c 'select(.id=="sd-170")' f.jsonl`
