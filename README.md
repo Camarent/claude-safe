@@ -103,11 +103,6 @@ mapped to your host uid/gid (`HOME` stays `/root`, owned by that user). Files cr
 mounted folders belong to you on the host. Chrome runs with `--no-sandbox` because the
 container does not allow user namespaces.
 
-## Pipeline modes
-    ./run.sh --here                 Claude Code on your subscription
-    ./run.sh --here                 the same, plus the local models of the model-host project when they are running (see "Local models")
-Details and status of the thin pipeline: `.claude/practices/orch-pipeline.md`. Tests of the tools: run them inside the container.
-
 Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<stage>/reports/report-<id>.md`) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
 
 ## Local cluster (`--with cluster`)
@@ -146,7 +141,7 @@ checks locally with `scripts/dev.sh` (`check`, `cov`, `dead`, `sec`, `ccn`); `sc
 container suite, which CI does not run (it needs the `claude-safe:rust` image).
 
 Deferred (decided, not done):
-- Devs using `lp nav` more: the audit finds file rereads in 2 of 303 sessions, too little value; revisit after phases 1 to 3.
+- Devs using `lp nav` more: the audit finds file rereads too rarely to be worth the push; revisit after phases 1 to 3.
 - Removing the local-model gate judge step when the model is down: it costs 0 s and only adds log noise; not worth a code path.
 
 ## Pipeline hardening notes
