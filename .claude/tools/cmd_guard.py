@@ -28,6 +28,7 @@ import contextlib
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -39,7 +40,7 @@ try:
         CLEANUP_WT_DIR,
         QRUN_CHAIN_READ_ONLY,
         QRUN_PATTERN,
-        SED_PRINT_SCRIPT,
+        SED_PRINT_CMD,
         SERVE_HOST,
         SERVE_SCRIPT,
         SERVE_SUBCOMMANDS,
@@ -373,17 +374,47 @@ def _group_body(pairs):
     return " ".join(f"{o.strip()} {p}".strip() for o, p in pairs[:-1]) + " " + pairs[-1][0].strip()
 
 
+def _quiet_flag(w):
+    """-> True when word W is a quiet option (`-n`, `--quiet`, `--silent`) or a short cluster holding n (`-ne`): such a sed call is checked here."""
+    return w in ("-n", "--quiet", "--silent") or (w.startswith("-") and not w.startswith("--") and "n" in w)
+
+
+def _sed_scripts(args):
+    """-> the script texts of `sed -n ARGS`: each `-e SCRIPT`, else the first operand; None when ARGS holds an option other than -e or the quiet flag."""
+    scripts, operands, it = [], [], iter(args)
+    for w in it:
+        if w == "-e":
+            scripts.append(next(it, ""))
+        elif w in ("-n", "--quiet", "--silent"):
+            continue
+        elif w.startswith("-"):
+            return None
+        else:
+            operands.append(w)
+    if not scripts:
+        if not operands:
+            return None
+        scripts = [operands.pop(0)]
+    return scripts
+
+
 def sed_why(segs):
-    """-> deny reason for a `sed -n` call that is not `sed -n 'A,Bp' [file...]` (print lines): no extra options, no w/e/r commands, no other script. `sed -n` is the only form the default allowlist opens (SED_PRINT_ALLOW), so only it is checked here; any other sed form is left to the project's own allow rules. Else ''."""
+    """-> deny reason for a `sed -n` call whose script is not one print command (`N`, `N,M`, `$`, `/re/`, `N~M` addresses with `p`; several print scripts go in several -e) or that has an option other than -e (-i, -f, -s, ...): no w/e/r/s commands. `sed -n` is the only form the default allowlist opens (SED_PRINT_ALLOW), so only it is checked here; any other sed form is left to the project's own allow rules. Else ''."""
+    deny = "`sed -n` is allowed only to print lines (`sed -n 'A,Bp' <file>`, addresses N, N,M, $, /re/, N~M with p). Read a slice with the Read tool (offset, limit) and change files with the Edit tool."
     for seg in segs:
-        words = [w.strip("\"'") if i < 3 else w for i, w in enumerate(parse(seg)[1].split())]
+        try:  # shell words, quotes removed: a quoted `;` or space stays inside one script word
+            words = shlex.split(parse(seg)[1])
+        except ValueError:  # unbalanced quotes: a sed call like that is denied, any other segment is left alone
+            if "sed" in seg:
+                return deny
+            continue
         if len(words) > 2 and os.path.basename(words[0]) == "snip" and words[1] == "run":
             words = words[3:] if words[2] == "--" else words[2:]
-        if not words or os.path.basename(words[0]) != "sed" or words[1:2] != ["-n"]:
+        if not words or os.path.basename(words[0]) != "sed" or not any(_quiet_flag(w) for w in words[1:]):
             continue
-        script = words[2].strip("\"'") if len(words) > 2 else ""
-        if not re.fullmatch(SED_PRINT_SCRIPT, script) or any(w.startswith("-") for w in words[3:]):
-            return "`sed -n` is allowed only as `sed -n 'A,Bp' <file>` (print lines A to B). Read a slice with the Read tool (offset, limit) and change files with the Edit tool."
+        scripts = _sed_scripts(words[1:])
+        if scripts is None or not all(re.fullmatch(SED_PRINT_CMD, s) for s in scripts):  # one print command per script; several go in several -e
+            return deny
     return ""
 
 

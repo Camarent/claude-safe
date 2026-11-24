@@ -127,7 +127,7 @@ from .flags import (  # noqa: F401  (re-export: the facade keeps every name impo
     QRUN_CHAIN_READ_ONLY,
     SCRATCH_ENV,
     SED_PRINT_ALLOW,
-    SED_PRINT_SCRIPT,
+    SED_PRINT_CMD,
     SERVE_ALLOW,
     SERVE_HOST,
     SNIP_WRAPPER,

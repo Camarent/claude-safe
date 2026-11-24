@@ -11,9 +11,9 @@ Q = "python3 -I /root/.claude/tools/qrun.py --"
 class CmdGuardTest(unittest.TestCase):
     def test_sed_is_allowed_only_to_print_lines(self):
         snip = '"/usr/local/bin/snip" run -- '
-        for ok in ("sed -n '1,5p' f", "sed -n '10p' a b", "sed -n '3,$p' f | head", "ls | sed -n '1p'", snip + "sed -n '1,5p' f"):
+        for ok in ("sed -n '1,5p' f", "sed -n '10p' a b", "sed -n '3,$p' f | head", "ls | sed -n '1p'", snip + "sed -n '1,5p' f", "sed -n '/a/p' f"):
             self.assertEqual(cmd_guard.verdict(ok), "", ok)
-        for bad in ("sed -n -e '1w x' f", "sed -n '1,5p;w x' f", "sed -n '1,5p' -i f", "sed -n '/a/p' f", "sed -n 'w x' f", snip + "sed -n '1w x' f"):
+        for bad in ("sed -n -e '1w x' f", "sed -n '1,5p;w x' f", "sed -n '1,5p' -i f", "sed -n 'w x' f", snip + "sed -n '1w x' f"):
             self.assertIn("`sed -n` is allowed only", cmd_guard.verdict(bad), bad)
         self.assertEqual(cmd_guard.verdict("sed -i 's/a/b/' f"), "")  # not opened by the default allowlist; a project's own `sed *` rule decides
 
