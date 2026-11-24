@@ -289,7 +289,7 @@ def _where(a, task):
     paths = "; ".join(f"`{p}`" + ("" if r == next(iter(info["repos"])) else f" (repo {r})") for r, p in info["repos"].items())
     first = next(iter(info["repos"].values()))
     return (
-        f"Work ONLY in these job worktrees, already created on branch `{info['branch']}`: {paths}. Never edit the main checkouts: use paths relative to your worktree, never an absolute path into the main checkout. Run every command from `{first}` "
+        f"Work ONLY in these job worktrees, already created on branch `{info['branch']}`: {paths}. Never edit the main checkouts: edit files only with paths relative to your worktree or absolute paths under it, never a path into the main checkout. Run every command from `{first}` "
         f"(paths in the task file are relative to it; a repo listed after it sits inside it at its relative path). After the tests pass, commit ALL your work with one command (it commits in every worktree you changed, nested repos too): "
         f'`{tool_cmd("wt.py")} commit --stage {a.stage} --task {task["id"]} --subject "<type>(<area>): <what>" --dir {os.path.abspath(getattr(a, "dir", "."))}` '
         f"(type feat|fix|test|docs|refactor|chore; one line). Do not run `git commit` yourself. Do not merge, do not remove worktrees. "
@@ -372,9 +372,7 @@ DEV_SCOPE_NOTE = (
 
 
 # dev brief: the job worktree root is the cwd; every path the dev writes stays relative to it
-WORKTREE_NOTE = (
-    " Your job worktree root is your current directory: use paths relative to it, relative paths only; never an absolute path into the main checkout."
-)
+WORKTREE_NOTE = " Your job worktree root is your current directory: edit files only with paths relative to it or absolute paths under it; never a path into the main checkout."
 
 PATTERN_RE = re.compile(r"(?m)^Pattern:[ \t]*([^\s,:]+)")
 
