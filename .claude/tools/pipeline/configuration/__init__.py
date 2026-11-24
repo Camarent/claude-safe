@@ -20,6 +20,7 @@ from .cite_check import (  # noqa: F401  (re-export: the facade keeps every name
     CITE_FENCE_RE,
     CITE_MD_EXTENSIONS,
     CITE_RE,
+    CITE_SKIP_DIRS,
     CITE_REPORT_NAME,
     CITE_SYMBOL_BEFORE_RE,
     CITE_URL_RE,

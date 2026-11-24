@@ -100,6 +100,16 @@ class CiteCheck(unittest.TestCase):
         wt = self.tree({})
         self.assertEqual(cite_check.check(wt, [("core.md", 3, "see nope.py:4")], ""), ["core.md:3 cites nope.py:4 but nope.py is missing"])
 
+    def test_bare_name_resolves_to_unique_file(self):
+        wt = self.tree({"scripts/smoke/progress.py": progress_py(136)})
+        added = [("core.md", 9, "see progress.py:100")]
+        self.assertEqual(cite_check.check(wt, added, ""), [])
+
+    def test_bare_name_with_two_files_stays_missing(self):
+        wt = self.tree({"a/progress.py": progress_py(136), "b/progress.py": progress_py(136)})
+        added = [("core.md", 9, "see progress.py:100")]
+        self.assertEqual(cite_check.check(wt, added, ""), ["core.md:9 cites progress.py:100 but progress.py is missing"])
+
     def test_report_text_cites_checked(self):
         wt = self.tree({"progress.py": progress_py(136)})
         self.assertEqual(

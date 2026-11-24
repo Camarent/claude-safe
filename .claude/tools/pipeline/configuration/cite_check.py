@@ -3,6 +3,7 @@
 import re
 
 CITE_WINDOW_LINES = 3  # lines either side of a cited line where the symbol named just before the cite must occur
+CITE_SKIP_DIRS = frozenset({".git", ".venv", "node_modules", ".wt", ".work", "__pycache__"})  # folders not searched when a bare file name in a cite is resolved to its one tracked file
 CITE_REPORT_NAME = "report"  # label of the dev report text in messages (it is not a file of the worktree)
 CITE_MD_EXTENSIONS = (".md",)  # added lines of these files are read whole, outside fenced blocks
 CITE_COMMENT_MARKS = {  # code files: the comment marker; only the tail after it is read
