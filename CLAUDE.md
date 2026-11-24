@@ -1,6 +1,6 @@
 ## Docs
 
-No docs folder yet. Start with `README.md`. The pipeline lives in `.claude/` (tools, agents, practices); tests run through `scripts/dev.sh`.
+Decisions of the pipeline-hardening stage: `docs/decisions.md`. Start with `README.md`. The pipeline lives in `.claude/` (tools, agents, practices); tests run through `scripts/dev.sh`.
 
 ## Guidelines
 
