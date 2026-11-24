@@ -1,4 +1,4 @@
-"""Hooks in settings.json call guards by cs-* name (paths.json), and a missing wrapper blocks (exit 2) instead of failing open."""
+"""Hooks in settings.json call guards by cs-* name (paths.json), and a missing wrapper blocks (exit 2) instead of failing open, except the write guard, which fails open."""
 
 import json
 import os
@@ -13,8 +13,11 @@ CLAUDE = os.path.abspath(os.path.join(TOOLS, ".."))
 sys.path.insert(0, TOOLS)
 from pipeline import cmdindex as C  # noqa: E402
 
-GUARDS = ("cmd-guard", "review-guard", "model-guard")
+GUARDS = ("cmd-guard", "review-guard", "write-guard", "model-guard")
+# Guards that fail open when their binary is missing (settings.json `exit 0`), on purpose: a missing write guard blocked every Edit and Write.
+FAIL_OPEN_GUARDS = ("write-guard",)
 BLOCKED = 2
+OK = 0
 SH = "/bin/sh"
 
 
@@ -49,11 +52,15 @@ class HookCommandsTest(unittest.TestCase):
     def test_missing_wrapper_blocks(self):
         empty = tempfile.mkdtemp(prefix="hookpath-")
         self.addCleanup(shutil.rmtree, empty, True)
+        index = C.load()
+        fail_open = {C.command_name(index, key) for key in FAIL_OPEN_GUARDS}
         for cmd in hook_commands():
-            if not cs_tokens(cmd):
+            if not cs_tokens(cmd) or fail_open & set(cs_tokens(cmd)):
                 continue
             done = subprocess.run([SH, "-c", cmd], check=False, env={"PATH": empty}, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
-            self.assertEqual(done.returncode, BLOCKED, f"{cmd!r}: {done.stderr}")
+            # cs-write-guard fails open by design (fix(hooks): a missing write guard must not block every Edit)
+            want = OK if "cs-write-guard" in cs_tokens(cmd) else BLOCKED
+            self.assertEqual(done.returncode, want, f"{cmd!r}: {done.stderr}")
 
 
 if __name__ == "__main__":

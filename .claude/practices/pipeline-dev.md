@@ -105,6 +105,11 @@ Out of scope: <what not to touch>
 ## Mechanical changes
 Moves, renames and rewrites go through a script with a dry run first (print the plan, `--apply` to execute), then the tests decide.
 
+## Lesson: agent cwd must be the tree it edits
+- What happened: a dev session started with cwd = the main checkout, so its relative paths and Edit calls wrote into main; MAIN-DIRT then blamed the job and blocked every other job.
+- Rule: a dev agent's cwd is its job worktree. The reviewer and read-only roles keep the project cwd. The lesson applies to any role that edits: give it the tree it edits as cwd, and reach the rest through `--add-dir`.
+- Fix: dev cwd = worktree (`claude.py`); `write_guard` (`tools/write_guard.py`) denies main-checkout writes from a dev session; the guard log names the writer for MAIN-DIRT.
+
 ## Lesson: red base gates and nested course repos
 - A job worktree holds a nested repo (`workspace/<course>`) as a link to the main copy unless the task lists its files. A link is not read-only: a dev that edits through it changes the shared repo, and the merge step fails later. Snapshot the link at dev start, compare after (`linkguard.py`), revert tracked changes with a patch kept, report the rest, and give the dev `wt.py add-repo` for the real need; never ask the lead.
 - Parallel task gates share the linked repo: a test that writes a fixed file in its own folder collides with the same test in another task (ENOENT on `tools/test-*.jsonl`). The base check cannot clear it (the base run is alone and green). A task that changed nothing skips the gates, which removes most of these runs.

@@ -82,8 +82,8 @@ def scratch_allow_args(scratch, d=None):
     return ["--allowedTools", *(f"Bash({a})" for a in allow)] if allow else []
 
 
-def claude_args(agent, model, effort, prompt, dir=None, max_turns=None, scratch=None):
-    """Args for `claude -p`. dir: the run dir whose pipeline.json and .work/ apply (default: the cwd). max_turns: `--max-turns` when > 0. scratch: the stage scratch dir whose script files the agent may run (see scratch_allow)."""
+def claude_args(agent, model, effort, prompt, dir=None, max_turns=None, scratch=None, add_dirs=()):
+    """Args for `claude -p`. dir: the run dir whose pipeline.json and .work/ apply (default: the cwd). max_turns: `--max-turns` when > 0. scratch: the stage scratch dir whose script files the agent may run (see scratch_allow). add_dirs: extra dirs the session may read, each as ADD_DIR_FLAG."""
     return [
         "-p",
         *(["--agent", agent] if agent else []),
@@ -93,6 +93,7 @@ def claude_args(agent, model, effort, prompt, dir=None, max_turns=None, scratch=
         "--output-format",
         "json",
         *flags(agent),
+        *(x for d in add_dirs for x in (ADD_DIR_FLAG, d)),
         *((ops_flags(dir) if dir else OPS_FLAGS) if agent == "ops" else []),
         *project_allow(dir),
         *scratch_allow_args(scratch, dir),

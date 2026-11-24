@@ -1,4 +1,4 @@
-"""The dev brief names the job worktree root (relative paths only) and copies the import/sys.path header of a test file in the task's Pattern."""
+"""The dev brief names the job worktree root (current directory, paths under it) and copies the import/sys.path header of a test file in the task's Pattern."""
 
 import os
 import sys
@@ -49,7 +49,7 @@ class BriefsHeaderTest(unittest.TestCase):
         with open(self.task_file, "w", encoding="utf-8") as f:
             f.write(f"Predicted paths: x.py\nPattern: {pattern}\nTest: true\n")
 
-    def test_dev_prompt_names_worktree_root_and_relative_paths_only(self):
+    def test_dev_prompt_names_worktree_root_as_current_directory(self):
         a = _Run("s", self.root)
         t = os.path.join(self.root, ".work", "s", "task-1.md")
         os.makedirs(os.path.dirname(t))
@@ -58,7 +58,8 @@ class BriefsHeaderTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PIPELINE_NO_LEADS": "1"}), mock.patch("pipeline.briefs.job_info", return_value=None):
             prompt = briefs.prompt_for(a, {"id": "task-1"}, "dev", None, "x1")
         self.assertIn("Your job worktree root is your current directory", prompt)
-        self.assertIn("relative paths only", prompt)
+        self.assertIn("edit files only with paths relative to it or absolute paths under it", prompt)
+        self.assertNotIn("relative paths only", prompt)
 
     def test_dev_prompt_says_work_only_in_the_job_worktrees(self):
         a = _Run("s", self.root)

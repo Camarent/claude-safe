@@ -12,6 +12,7 @@ import time
 
 from . import gitx, util
 from .configuration import (
+    GUARD_LOG_FILE,
     LINK_WRITE_SHOWN,
     MAIN_BASE_FILE,
     MAIN_DIRT_PREFIX,
@@ -32,6 +33,8 @@ from .worktree import git, layout
 RENAME_CODES = ("R", "C")  # a porcelain rename/copy entry is followed by the source path as its own entry
 GUARD_GLOBS_KEY = "main_guard_ignore_globs"  # pipeline.json key that replaces MAIN_GUARD_IGNORE_GLOBS (read like cfg "gate_watch" in audit/taskgates.py)
 GONE = "gone"  # the mtime shown for a path the main checkout no longer has
+# appended to a note entry when the guard log names the job that wrote the path (the writer, not the task that found it)
+WRITER_NOTE = ", written by job {job}"
 
 
 def _entries(text):
@@ -117,8 +120,40 @@ def _revert_state(a_dir, stage, task, repo, cfg, files):
     return MAIN_UNSAVED_STATE.format(patch=patch or WORK_DIR)
 
 
+def read_writers(a_dir, stage):
+    """-> {path: job} of the guard log of STAGE (the first job denied a write to that path). A missing or unreadable log, or a bad line, gives no entry ({} for none)."""
+    try:
+        with open(os.path.join(os.path.abspath(a_dir), WORK_DIR, stage, GUARD_LOG_FILE), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return {}
+    out: dict[str, str] = {}
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str) and isinstance(entry.get("job"), str) and entry["job"]:
+            out.setdefault(entry["path"], entry["job"])
+    return out
+
+
+def _owners(a_dir, stage, task, repo, changed):
+    """-> {path: writer job or None} of the CHANGED paths this task owns: a path the guard log gives to another job is left out."""
+    writers = read_writers(a_dir, stage)
+    owner = {p: writers.get(p) or writers.get(os.path.join(repo, p)) for p in changed}  # a log path may be absolute
+    return {p: job for p, job in owner.items() if job in (None, task)}
+
+
+def _listing(repo, changed, owner, started):
+    """-> the note's file list: the first LINK_WRITE_SHOWN paths with their mtime, the job start and the writer job when known."""
+    return ", ".join(
+        f"{p} (mtime {_stamp(repo, p)}, job start {started}{WRITER_NOTE.format(job=owner[p]) if owner[p] else ''})" for p in changed[:LINK_WRITE_SHOWN]
+    )
+
+
 def check(a_dir, stage, task):
-    """-> "" or the MAIN-DIRT note naming the files that are new or changed in the main checkout since the snapshot. The dev's own tracked writes are saved to a patch and reverted; the rest is only named. No snapshot: no verdict."""
+    """-> "" or the MAIN-DIRT note naming the files that are new or changed in the main checkout since the snapshot. The dev's own tracked writes are saved to a patch and reverted; the rest is only named. A path the guard log attributes to another job is left to that job's check. No snapshot: no verdict."""
     try:
         path = _base_path(a_dir, stage, task)
         cfg, repo, _root, _branch = layout(a_dir, stage, task)
@@ -130,10 +165,13 @@ def check(a_dir, stage, task):
     except ERRORS:
         return ""
     changed = sorted(p for p, h in cur.items() if base.get(p) != h)
+    owner = _owners(a_dir, stage, task, repo, changed) if changed else {}
+    changed = [p for p in changed if p in owner]
     if not changed:
         return ""
-    shown = ", ".join(f"{p} (mtime {_stamp(repo, p)}, job start {started})" for p in changed[:LINK_WRITE_SHOWN])
-    note = MAIN_WRITE_NOTE.format(files=shown, more=max(0, len(changed) - LINK_WRITE_SHOWN))  # the stamps are read before any revert
+    note = MAIN_WRITE_NOTE.format(
+        files=_listing(repo, changed, owner, started), more=max(0, len(changed) - LINK_WRITE_SHOWN)
+    )  # the stamps are read before any revert
     mine = [p for p in changed if p not in base and _tracked(repo, p)]  # clean at the snapshot, in HEAD: the dev's own edit
     return note + " " + _revert_state(a_dir, stage, task, repo, cfg, mine)
 

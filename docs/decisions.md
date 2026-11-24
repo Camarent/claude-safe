@@ -12,7 +12,7 @@ Reason: A guard in ptest records the main checkout branch before and after a run
 
 ## Problem 3
 
-Reason: The brief names the worktree root and says relative paths only. The Edit/Write hook denies a main-checkout path while a job worktree is active.
+Reason: The `write_guard` PreToolUse hook denies a Write/Edit to a main-checkout path while the guard env is set for the session. The dev session's cwd is its job worktree (see Problem 15).
 
 ## Problem 4
 
@@ -57,6 +57,10 @@ Reason: `scripts/sync-claude-config.sh` syncs `~/.claude` in one command. It ref
 ## Problem 14
 
 Reason: main-dirt (a dev's write into the main checkout) is BLOCKED, not FAIL, because the dev cannot fix it from its worktree and a FAIL retry would only repeat the write. The driver names the paths, deletes nothing and clears by itself once the paths are gone; the lead decides after `git -C <main> status` and runs `orch.py retry`.
+
+## Problem 15
+
+Reason: A dev agent runs with cwd = its job worktree, so its edits land in the tree it reviews. The main checkout and the scratch folder are added with `--add-dir`; reviewer and read-only roles keep the project cwd. The `write_guard` hook (`cs-write-guard`) reads the five `PIPELINE_GUARD_*` env names, and every denied write is recorded in the guard log, which is how attribution is checked.
 
 ## Pipeline tuning
 

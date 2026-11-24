@@ -219,7 +219,7 @@ MAIN_WRITE_NOTE = (
     MAIN_DIRT_PREFIX + " files in the MAIN checkout changed or appeared while this task ran ({files}, +{more} more). "
     "The dev cannot fix this: the lead runs `git -C <main checkout> status`, finds who wrote the paths "
     "(each line shows the path, its mtime and the job start), then `orch.py retry`. It clears by itself once the paths are gone. "
-    "A dev always uses paths relative to its own worktree, never an absolute path into the main checkout."
+    "A dev's job worktree root is its current directory: it writes there, by paths relative to it or absolute under it, never into the main checkout."
 )  # the note maincheck.check returns
 MAIN_KEPT_STATE = "Nothing was deleted or reverted."  # appended to MAIN_WRITE_NOTE when no tracked change was reverted
 MAIN_REVERTED_STATE = (  # appended when the dev's tracked changes were reverted to HEAD after their diff was saved at {patch}
@@ -234,8 +234,8 @@ MAIN_WRITE_PATCH = (
     "mainwrite-{task}-{stamp}.patch"  # the reverted main-checkout write, kept in the stage's work folder (a retry never overwrites an earlier one)
 )
 MAIN_DIRT_REWORK_NOTE = (  # dev rework line when the rework file holds a MAIN-DIRT note: the dev writes only in its own worktree
-    " MAIN-DIRT was reported for this task: the main checkout changed while it ran. Your worktree paths are relative to your job worktree root "
-    "(your current directory, shown as `.`); write only there, never an absolute path into the main checkout."
+    " MAIN-DIRT was reported for this task: the main checkout changed while it ran. Your job worktree root is your current directory "
+    "(shown as `.`); write only there, by paths relative to it or absolute under it, never into the main checkout."
 )
 BASE_FLAKE_PREFIX = "base-flake:"  # report line for a gate failure that is not the task's (red on the stage base too, or green on an unchanged rerun): `base-flake: <failing test ids>`
 FAIL_ID_RES = (  # regexes (group 1 = test id) that read the failing test ids out of a gate's output: pytest summary, unittest header, a plain `FAIL name` line
