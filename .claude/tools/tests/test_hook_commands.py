@@ -17,6 +17,7 @@ GUARDS = ("cmd-guard", "review-guard", "write-guard", "model-guard")
 # Guards that fail open when their binary is missing (settings.json `exit 0`), on purpose: a missing write guard blocked every Edit and Write.
 FAIL_OPEN_GUARDS = ("write-guard",)
 BLOCKED = 2
+OK = 0
 SH = "/bin/sh"
 
 
@@ -57,7 +58,9 @@ class HookCommandsTest(unittest.TestCase):
             if not cs_tokens(cmd) or fail_open & set(cs_tokens(cmd)):
                 continue
             done = subprocess.run([SH, "-c", cmd], check=False, env={"PATH": empty}, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
-            self.assertEqual(done.returncode, BLOCKED, f"{cmd!r}: {done.stderr}")
+            # cs-write-guard fails open by design (fix(hooks): a missing write guard must not block every Edit)
+            want = OK if "cs-write-guard" in cs_tokens(cmd) else BLOCKED
+            self.assertEqual(done.returncode, want, f"{cmd!r}: {done.stderr}")
 
 
 if __name__ == "__main__":
