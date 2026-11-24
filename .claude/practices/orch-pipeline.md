@@ -97,7 +97,7 @@ after the planned ones. The planner is responsible that tasks in one wave share 
 `cs-wave --dry-run` writes dispatch events.
 
 ## Guardrails (env overrides)
-ORCH_MAX_DISPATCH=40 | ORCH_MAX_OPUS=3 | ORCH_GATED=publisher (outward-facing agents need the owner via the main session).
+ORCH_MAX_DISPATCH (example value 40; unset: the task-based formula in `pipeline/limits.py` `heavy_limit`: a fixed part from the stage flags plus a per-task share, Sonnet-owned and Haiku-owned tasks weighted differently) | ORCH_MAX_OPUS=3 | ORCH_GATED=publisher (outward-facing agents need the owner via the main session).
 
 ## Running the pipeline's own tests (ptest)
 `cs-ptest [--jobs N] [--dir D] [PATTERN...]`. It runs the test files in parallel and prints the slowest files and a summary line (`N files, F failed, T s`). Exit 0 means every file passes. Patterns select files by name.
@@ -105,7 +105,7 @@ ORCH_MAX_DISPATCH=40 | ORCH_MAX_OPUS=3 | ORCH_GATED=publisher (outward-facing ag
 ## Caveman (terse output)
 Only the full skill text saves tokens; a compact paragraph did not. ON for all agents except docs-writer and publisher: the skill text is inlined in the agent files between `<!-- caveman:begin/end -->` (frontmatter `skills:` does not preload here). Edit `skills/caveman/SKILL.md`, then run `python3 tools/sync_caveman.py`. To turn one agent off, delete its caveman block and remove it from `sync_caveman.py`.
 
-orch.py behaviors (warnings-1 fixes):
+Orchestrator behaviours (warnings-1 fixes):
 - Usage limit: a session whose result is the short notice `You've hit your 5-hour limit · resets 8pm (UTC)` is not a failed task. `claude.session` waits until the printed reset time plus `LIMIT_MARGIN_S` (no parsable time: `LIMIT_FALLBACK_S`), then runs the same session again without using a retry; total wait per session is capped by `LIMIT_WAIT_MAX_S`, after which the notice is the result as before. A line `wave: usage limit hit ...` goes to stderr.
 - No grace: `cs-wave` is the only runner and takes `.work/<stage>/wave.lock`, so a dispatch with no report at `next` means its session died: `ask_main` "never reported" at once, lead runs `retry`. `cs-wave` closes a session `REPORT_GRACE_S` (60 s) after its report has a `VERDICT:` line.
 - Unclear verdict: the first missing/unclear VERDICT per task logs an `auto` retry in orch.jsonl and re-runs the agent; a second one maps to the role's safe verdict (BLOCKED/FAIL).
