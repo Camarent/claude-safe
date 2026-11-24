@@ -80,6 +80,15 @@
       {
         "hooks": [
           {
+            "command": "command -v cs-write-guard >/dev/null 2>&1 && exec cs-write-guard || exit 2",
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit"
+      },
+      {
+        "hooks": [
+          {
             "command": "command -v cs-model-guard \u003e/dev/null 2\u003e\u00261 \u0026\u0026 exec cs-model-guard || exit 2",
             "type": "command"
           }

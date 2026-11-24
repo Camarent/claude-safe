@@ -13,7 +13,7 @@ CLAUDE = os.path.abspath(os.path.join(TOOLS, ".."))
 sys.path.insert(0, TOOLS)
 from pipeline import cmdindex as C  # noqa: E402
 
-GUARDS = ("cmd-guard", "review-guard", "model-guard")
+GUARDS = ("cmd-guard", "review-guard", "write-guard", "model-guard")
 BLOCKED = 2
 SH = "/bin/sh"
 

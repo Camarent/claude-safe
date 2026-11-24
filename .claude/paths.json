@@ -166,6 +166,10 @@
       "script": "tools/review_guard.py",
       "side": "container"
     },
+    "write-guard": {
+      "script": "tools/write_guard.py",
+      "side": "container"
+    },
     "model-guard": {
       "script": "tools/model_guard.py",
       "side": "container"
