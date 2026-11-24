@@ -158,7 +158,7 @@ class CmdGuardTest(unittest.TestCase):
         self.assertIn("pipe", cmd_guard.verdict("/w/tools/qrun.py -- x | tail"))
 
     def test_denies_export_then_test(self):
-        self.assertIn("export", cmd_guard.verdict("export X=1 && pytest"))
+        self.assertIn("Set the variable inside the test script", cmd_guard.verdict("export X=1 && pytest"))
 
     def test_denies_timeout_env_prefix(self):
         self.assertIn("env", cmd_guard.verdict("timeout 5 env X=1 pytest"))
@@ -192,12 +192,12 @@ class CmdGuardTest(unittest.TestCase):
         for cmd in ("VAR=x cs-qrun -- scripts/dev.sh test a", "VAR=x cs-qrun -- cmd && ls"):
             why = cmd_guard.verdict(cmd)
             self.assertIn("qrun applies the test env itself", why)
-            self.assertIn("drop the `VAR=value` prefix", why)
+            self.assertIn("set it inside the test script", why)
             self.assertIn("`cs-qrun -- " + cmd.split("cs-qrun -- ")[1].split(" &&")[0] + "` alone", why)
 
     def test_env_prefix_on_non_qrun_runner_keeps_generic_denial(self):  # C1 decoy: a non-qrun runner keeps the old text
         why = cmd_guard.verdict("VAR=x pytest -q")
-        self.assertIn("No `env`, `VAR=value` or `export` before a test command", why)
+        self.assertIn("Set the variable inside the test script, or put `env` in a script file", why)
         self.assertNotIn("qrun applies", why)
 
     def test_env_prefix_on_read_only_tail_after_qrun_allowed(self):  # C2: every segment is qrun or read-only; the VAR= one is read-only

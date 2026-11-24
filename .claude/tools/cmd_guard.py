@@ -153,7 +153,8 @@ def serve_why(seg):
 OPERATORS = re.compile(r"(\|\||&&|;|\||(?<![<>])&(?!>)|\n)")
 QRUN_MSG = (
     "One qrun per Bash call. No pipe, `||`, `;`, `&` or newline after qrun.py: a pipe hides the test exit status (a red or empty run looks green) "
-    f"and a second command runs outside qrun. After qrun, `&&` is allowed only before another qrun call or a read-only command ({', '.join(QRUN_CHAIN_READ_ONLY)}). "
+    "and a second command runs outside qrun. To see the result, run the command bare and read the exit code. "
+    f"After qrun, `&&` is allowed only before another qrun call or a read-only command ({', '.join(QRUN_CHAIN_READ_ONLY)}). "
     f"Run `python3 -I {TOOLS_DIR}/qrun.py -- <command>` alone (a leading `cd dir &&` is fine); qrun already trims the output."
 )
 
@@ -449,11 +450,14 @@ def segments_why(segs):
             return why
         seen_assign = seen_assign or assigns
         if TEST_HEAD.match(head) and env and QRUN_HEAD.match(head):
-            return f"qrun applies the test env itself: drop the `VAR=value` prefix and run `{head}` alone."
+            return (
+                f"qrun applies the test env itself: run `{head}` alone. To set a variable for the test, set it inside the test script, "
+                "or put `env` in a script file and run that file."
+            )
         if TEST_HEAD.match(head) and (env or seen_assign):
             return (
-                "No `env`, `VAR=value` or `export` before a test command: headless agents are denied and qrun injects the test env itself. "
-                f"Run the test command as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
+                "Set the variable inside the test script, or put `env` in a script file and run that file. "
+                f"Then run the test as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
             )
     return ""
 
