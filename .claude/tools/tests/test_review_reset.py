@@ -171,15 +171,14 @@ class ReviewResetTest(unittest.TestCase):
         self.assertRegex(text, r"(?m)^tools: .*\bEdit\b")
 
     def test_dirty_goes_back_to_dev_then_reviewer_then_cap(self):
-        task = {"id": TASK, "owner_sonnet": False, "review_sonnet": False}
-        s = SimpleNamespace(reviewer_sonnet=False)
+        task = {"id": TASK}
         open(f"{self.job}/f", "w").write("d")
         with unittest.mock.patch.dict(os.environ, {steps.ENV_DRY_NO_CCN: "1"}):
-            d = steps._disp_reviewer(self.a, task, "a1", s, [])
+            d = steps._disp_reviewer(self.a, task, "a1", [])
             self.assertEqual(d["agent"], "dev")
             self.assertIn("f", open(d["prompt"].split("fix the findings in ")[1].split(" first")[0]).read())
             sh("-C", self.job, "checkout", "--", "f")
-            self.assertEqual(steps._disp_reviewer(self.a, task, "a2", s, [])["agent"], "reviewer")
+            self.assertEqual(steps._disp_reviewer(self.a, task, "a2", [])["agent"], "reviewer")
             open(f"{self.job}/f", "w").write("d")
             done = {"ev": "report", "role": "dev", "verdict": "DONE", "id": "a0", "file": "x"}
             disp = {"ev": "dispatch", "role": "dev", "model": "haiku", "id": "a0"}

@@ -5,9 +5,11 @@ import sys
 import tempfile
 import unittest
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import e1
-from pipeline.configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, FAIL, HAIKU_DEV_TRIES, MODEL_HAIKU, MODEL_SONNET
+from pipeline import e1, steps
+from pipeline.configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, FAIL, HAIKU_DEV_TRIES, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+from test_task_gates import TASK, _SeqBase, dev, done, ev
 
 
 def dispatch(sid, role, model=MODEL_HAIKU, why=None):
@@ -98,6 +100,113 @@ class E1EventTest(unittest.TestCase):
         model, why = e1.model_for("reviewer", {"review_sonnet": False}, mine)
         self.assertEqual(model, MODEL_SONNET)
         self.assertTrue((why or "").startswith("E1(c)"))
+
+
+def rep(verdict, role="dev", i="a1"):
+    return ev("report", id=i, role=role, verdict=verdict, file="d.md")
+
+
+def rev(i, model=MODEL_HAIKU):
+    return ev("dispatch", id=i, agent="reviewer", role="reviewer", model=model, why=None)
+
+
+def script(i, why):
+    return ev("dispatch", id=i, agent="script", role="script", model=None, why=why)
+
+
+def red(d, i):
+    """A red test-run FAIL report of script step I: its file holds the failing output the classifier reads."""
+    path = os.path.join(d, f"{i}.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("FAILED (failures=1)\nAssertionError: red\n")
+    return ev("report", id=i, role="script", verdict=FAIL, file=path)
+
+
+class RouteTest(_SeqBase):
+    """next_step on real event logs: the retired routes (owner_sonnet, ccn, report task, sticky reviewer) pick no model; E1 does."""
+
+    def nxt(self, mine, task=TASK):
+        self.a.orch_events = mine
+        return steps.next_step(self.a, task, mine, "a9")
+
+    def test_owner_sonnet_oversized_task_starts_haiku(self):
+        r = self.nxt([], {**TASK, "owner_sonnet": True})
+        self.assertEqual((r["agent"], r["model"]), ("dev", MODEL_HAIKU))
+        self.assertNotIn("why", r)
+
+    def test_ccn_hit_reviewer_fail_then_next_reviewer_is_haiku(self):
+        # a dev DONE runs the script steps first, so the reviewer dispatch is asked for directly (no ccn gate, no why)
+        mine = [dev("a1"), done("a1"), rev("a2"), rep("FAIL", "reviewer", "a2"), dev("a3"), done("a3")]
+        r = steps._disp_reviewer(self.a, TASK, "a4", mine)
+        self.assertEqual((r["agent"], r["model"]), ("reviewer", MODEL_HAIKU))
+        self.assertNotIn("why", r)
+
+    def test_sonnet_reviewer_without_escalate_does_not_stick(self):
+        mine = [dev("a1"), done("a1"), rev("a2", MODEL_SONNET), rep("FAIL", "reviewer", "a2"), dev("a3"), done("a3")]
+        r = steps._disp_reviewer(self.a, TASK, "a4", mine)
+        self.assertEqual((r["agent"], r["model"]), ("reviewer", MODEL_HAIKU))
+
+    def test_e1a_red_gates_send_the_dev_to_sonnet(self):
+        mine = [dev("a1"), done("a1"), script("a2", "test run: x"), red(self.d, "a2"), dev("a3"), done("a3"), script("a4", "test run: x"), red(self.d, "a4")]
+        r = self.nxt(mine)
+        self.assertEqual((r["agent"], r["model"]), ("dev", MODEL_SONNET))
+        self.assertTrue(r["why"].startswith("E1(a)"))
+
+    def test_e1b_dev_escalate_sends_the_dev_to_sonnet(self):
+        r = self.nxt([dev("a1"), rep("ESCALATE", "dev", "a1")])
+        self.assertEqual((r["agent"], r["model"]), ("dev", MODEL_SONNET))
+        self.assertTrue(r["why"].startswith("E1(b)"))
+
+    def test_e1c_reviewer_escalate_sends_the_reviewer_to_sonnet(self):
+        r = self.nxt([dev("a1"), done("a1"), rev("a2"), rep("ESCALATE", "reviewer", "a2")])
+        self.assertEqual((r["agent"], r["model"]), ("reviewer", MODEL_SONNET))
+        self.assertTrue(r["why"].startswith("E1(c)"))
+
+
+class ReplayTest(_SeqBase):
+    """Every Sonnet or Opus dev/reviewer dispatch in a log carries its E1 why; the E1 events each dispatch Sonnet."""
+
+    nxt = RouteTest.nxt
+
+    def check(self, mine, task=TASK):
+        r = self.nxt(mine, task)
+        if r and r.get("action") == "dispatch" and r["agent"] in ("dev", "reviewer") and r["model"] in (MODEL_SONNET, MODEL_OPUS):
+            self.assertTrue((r.get("why") or "").startswith("E1("), mine)
+        return r
+
+    def test_no_sonnet_or_opus_dispatch_without_an_e1_why(self):
+        logs = [
+            [],
+            [dev("a1"), done("a1")],
+            [dev("a1"), rep("ESCALATE", "dev", "a1"), dev("a2", MODEL_SONNET), done("a2")],
+            [dev("a1"), done("a1"), rev("a2"), rep("ESCALATE", "reviewer", "a2"), rev("a3", MODEL_SONNET), rep("FAIL", "reviewer", "a3")],
+            [dev("a1"), done("a1"), rev("a2"), rep("FAIL", "reviewer", "a2"), dev("a3"), done("a3"), rev("a4"), rep("FAIL", "reviewer", "a4")],
+            [
+                dev("a1"),
+                done("a1"),
+                rev("a2"),
+                rep("FAIL", "reviewer", "a2"),
+                dev("a3"),
+                done("a3"),
+                rev("a4"),
+                rep("FAIL", "reviewer", "a4"),
+                dev("a5", MODEL_SONNET),
+                done("a5"),
+                rev("a6"),
+                rep("FAIL", "reviewer", "a6"),
+            ],
+            [dev("a1"), rep("BLOCKED", "dev", "a1")],
+        ]
+        for mine in logs:
+            self.check(mine)
+        self.check([], {**TASK, "owner_sonnet": True})
+        self.check([dev("a1"), done("a1"), rev("a2"), rep("FAIL", "reviewer", "a2")], {**TASK, "review_sonnet": True})
+
+    def test_e1_events_each_dispatch_sonnet_with_their_why(self):
+        self.assertEqual(self.check([dev("a1"), rep("ESCALATE", "dev", "a1")])["why"][:5], "E1(b)")
+        self.assertEqual(self.check([dev("a1"), done("a1"), rev("a2"), rep("ESCALATE", "reviewer", "a2")])["why"][:5], "E1(c)")
+        reds = [dev("a1"), done("a1"), script("a2", "test run: x"), red(self.d, "a2"), dev("a3"), done("a3"), script("a4", "test run: x"), red(self.d, "a4")]
+        self.assertEqual(self.check(reds)["why"][:5], "E1(a)")
 
 
 if __name__ == "__main__":

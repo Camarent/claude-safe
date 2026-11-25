@@ -71,28 +71,14 @@ class T(unittest.TestCase):
 
 
 class DryGate(unittest.TestCase):
-    def dispatch(self, env):
-        a = mock.Mock(dir=tracked_mkdtemp(), stage="s")
-        with (
-            mock.patch.dict(os.environ, env),
-            mock.patch("pipeline.steps.review_ccn_hit", return_value="ccn 14 > 10") as hit,
-            mock.patch("pipeline.steps.prompt_for", return_value="p"),
-        ):
-            d = steps._disp_reviewer(a, {"id": "t1"}, "r1", mock.Mock(reviewer_sonnet=False))
-        return d, hit
-
-    def test_dry_env_skips_gate_and_stays_haiku(self):
-        d, hit = self.dispatch({steps.ENV_DRY_NO_CCN: "1"})
-        hit.assert_not_called()
-        self.assertEqual(d["model"], "haiku")
-        self.assertNotIn("why", d)
-
-    def test_gate_runs_without_env(self):
-        env = {k: v for k, v in os.environ.items() if k != steps.ENV_DRY_NO_CCN}
-        with mock.patch.dict(os.environ, env, clear=True):
-            d, hit = self.dispatch({})
-        hit.assert_called_once()
-        self.assertEqual(d["model"], "haiku")  # a ccn hit starts Haiku with the ccn brief
+    def test_reviewer_dispatch_has_no_ccn_gate_with_or_without_dry_env(self):
+        # the ccn route is gone from steps: a reviewer with no events is Haiku with no why, dry run or not
+        self.assertFalse(hasattr(steps, "review_ccn_hit"))
+        for env in ({steps.ENV_DRY_NO_CCN: "1"}, {}):
+            a = mock.Mock(dir=tracked_mkdtemp(), stage="s")
+            with mock.patch.dict(os.environ, env), mock.patch("pipeline.steps.prompt_for", return_value="p"):
+                d = steps._disp_reviewer(a, {"id": "t1"}, "r1")
+            self.assertEqual((d["model"], d.get("why")), ("haiku", None))
 
 
 if __name__ == "__main__":

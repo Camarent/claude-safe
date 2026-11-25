@@ -98,7 +98,7 @@ class GateSequenceTest(_SeqBase):
         m = [dev("a1"), done("a1"), gate("a2"), gate_rep("a2", "FAIL", f1)]
         m += [dev("a3", free=True), done("a3"), gate("a4"), gate_rep("a4", "FAIL", f2)]
         r = self.nxt(m)
-        self.assertEqual((self.who(r), r["free"]), (("dispatch", "dev", "haiku"), True))  # second free round
+        self.assertEqual((self.who(r), r["free"]), (("dispatch", "dev", "sonnet"), True))  # second free round: 2 red gates reach E1(a)
         m += [dev("a5", free=True), done("a5"), gate("a6"), gate_rep("a6", "FAIL", f3)]
         r = self.nxt(m)
         self.assertEqual((self.who(r), r["free"]), (("dispatch", "dev", "sonnet"), False))  # third red: Sonnet, counts as a try
