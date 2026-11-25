@@ -10,7 +10,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 
 ## Flow
 1. `Dockerfile` builds the base image (`FROM node:lts-trixie-slim`, `Dockerfile:5`).
-2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:167`, `run.sh:214`), then starts the container (`README.md:6-7`).
+2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:157`, `run.sh:204`), then starts the container (`README.md:6-7`).
 3. Inside the container, `entrypoint.sh` is the entry point (`Dockerfile:180`).
 4. Host side, `scripts/dev.sh` runs lint, format, mypy and the test suite (`ptest.py`); `scripts/image_test.sh` runs the same suite in the image; `scripts/release.sh` runs both plus gitleaks as a pre-PR gate.
 5. `scripts/sync-claude-config.sh` runs `scripts/install-claude-config.sh` to copy `.claude/` into `~/.claude`.
@@ -27,7 +27,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - Checks: `scripts/dev.sh check` (ruff, format, mypy); `scripts/dev.sh test` (parallel tests); `scripts/dev.sh cov` (coverage); `scripts/dev.sh sec`, `dead`, `ccn` (`scripts/dev.sh:3`).
 - Container suite: `scripts/image_test.sh [IMAGE]`.
 - Pre-PR gate: `scripts/release.sh`.
-- Setup: `scripts/dev.sh sync` needs `uv` and a system Python 3.11+ (`README.md:157`).
+- Setup: `scripts/dev.sh sync` needs `uv` and a system Python 3.11+ (`README.md:133`).
 - Tests of the pipeline live in `.claude/tools/tests/`.
 
 ## Shared state

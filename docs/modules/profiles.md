@@ -14,14 +14,14 @@ Two profiles, by file name (`profiles/<name>.Dockerfile`):
 - `rust` - `profiles/rust.Dockerfile:3` (rustup stable, clippy, rust-analyzer, wasm-pack, cargo tools, ruff, gcc)
 
 Each file has the same contract: `ARG BASE=claude-safe:latest` (`:1`), `FROM ${BASE}` (`:2`), `# desc: ...` (`:3`).
-`run.sh:63` reads the `# desc:` line and prints it in the profile list (`run.sh:64`). Chain comment: `run.sh:167`.
+`run.sh:62` reads the `# desc:` line and prints it in the profile list (`run.sh:63`). Chain comment: `run.sh:157`.
 
 ## Key files
 - `Dockerfile` - base image (`FROM node:lts-trixie-slim`, `Dockerfile:5`); comment at `Dockerfile:4` points here.
 
 ## Invariants and gotchas
-- Stacking order matters: `run.sh` passes `--build-arg BASE=<previous image>` (`run.sh:214`). A profile can only assume what earlier layers provide.
+- Stacking order matters: `run.sh` passes `--build-arg BASE=<previous image>` (`run.sh:204`). A profile can only assume what earlier layers provide.
 
 ## Depends on / used by
 - Depends on: `Dockerfile` (base image), `claude-safe:latest` (`BASE` default), docker.
-- Used by: `run.sh` (builds the chain, `--rebuild` rebuilds all), `README.md` (profile contract, line 89).
+- Used by: `run.sh` (builds the chain, `--rebuild` rebuilds all), `README.md` (profile contract, line 85).
