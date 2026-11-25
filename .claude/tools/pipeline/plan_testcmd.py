@@ -3,7 +3,8 @@
 import os
 import re
 
-from .configuration import BARE_RUNNER_RE, TESTCMD_HINT_KEY, TESTCMD_WARN_PREFIX, gates_of, project
+from .configuration import BARE_RUNNER_RE, TEST_BAN_KEY, TEST_BAN_PREFIX, TESTCMD_HINT_KEY, TESTCMD_WARN_PREFIX, gates_of, project
+from .plan_commands import _strip_wrappers
 from .shellwords import split_commands
 from .util import read_text
 
@@ -44,4 +45,36 @@ def check_bare_test_runner(d, tid, workspace):
             return [
                 f"{TESTCMD_WARN_PREFIX} {tid}: Test runs bare `{part.strip()}` but the project's test command is `{hint}`: use that, or the runner the project notes name"
             ]
+    return []
+
+
+def _test_bans(cfg):
+    """-> [(compiled pattern, use text)] from cfg `test_ban`; a malformed entry (not a list, not a dict, no text fields, a bad regex) is ignored."""
+    raw = cfg.get(TEST_BAN_KEY)
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, dict) or not isinstance(item.get("pattern"), str) or not isinstance(item.get("use"), str):
+            continue
+        try:
+            out.append((re.compile(item["pattern"]), item["use"]))
+        except re.error:
+            continue
+    return out
+
+
+def check_test_ban(d, tid, workspace):
+    """`testban:` error for one task: a `Test:` command part (wrapper words stripped) matches a `test_ban` pattern of the project; the error names the `use` text."""
+    m = TEST_LINE_RE.search(read_text(os.path.join(d, tid + ".md")))
+    if not m:
+        return []
+    bans = _test_bans(project(workspace))
+    if not bans:
+        return []
+    for part in split_commands(m[1].replace("`", " "), amp=False, newline=False):
+        cmd = " ".join(_strip_wrappers(part.split()))
+        for pat, use in bans:
+            if pat.search(cmd):
+                return [f"{TEST_BAN_PREFIX} {tid}: Test runs `{part.strip()}`, which the project bans (pipeline.json `test_ban`): use {use}"]
     return []

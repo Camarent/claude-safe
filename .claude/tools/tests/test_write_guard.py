@@ -49,6 +49,11 @@ class WriteGuardTest(unittest.TestCase):
         done = run_hook(self.payload(f"{self.wt}/a.py"), self.env)
         self.assertEqual((done.returncode, done.stdout), (0, ""))
 
+    def test_unlisted_worktree_path_allowed(self):
+        # a path no task file lists: the guard only fences the main checkout, never the job worktree
+        done = run_hook(self.payload(f"{self.wt}/core/unlisted_module.py"), self.env)
+        self.assertEqual((done.returncode, done.stdout), (0, ""))
+
     def test_report_path_allowed_when_listed(self):
         env = dict(self.env, **{ENV_GUARD_ALLOW: f"{self.main}/.work/dev-cwd/reports"})
         done = run_hook(self.payload(f"{self.main}/.work/dev-cwd/reports/report-a1.md"), env)

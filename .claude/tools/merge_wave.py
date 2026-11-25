@@ -104,7 +104,7 @@ def run(a_dir, stage, tasks, runner=None):
         gates = final_check.gate_names(cfg, merge=True)
         passed = _passed_gates(repo, cmds)  # the merged tree was green on this base: no second run
         for c, rec in passed.items():
-            lines.append(f"gate {gates.get(c, c)}: skipped, identical passed tree, run {rec['run']}")
+            lines.append(f"gate {gates.get(c, c)}: skipped, identical passed tree {rec['tree']}, run {rec['run']}")
         _log_skipped(a_dir, stage, tasks, passed, gates)
         results = _gate_results(a_dir, stage, tasks, cfg, repo, [c for c in cmds if c not in passed], gates, runner, lines)
         if any(r[1] for r in results):

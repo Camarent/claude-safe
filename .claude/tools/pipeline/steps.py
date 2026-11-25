@@ -433,9 +433,9 @@ def _after_dev_other(a, task, mine, rid, s, last):
             "message": f"{task['id']}: NO FIX, owner decision: {why}; report {last['file']}. No further tries run. "
             "Decide: wait for the cause to be fixed (then `orch.py retry`), accept the risk (`orch.py skip`), or change the brief." + hint(a, task["id"]),
         }
-    if last["verdict"] == ESCALATE and not task["owner_sonnet"] and not s.sonnet_dev:
-        sonnet = s.dev_esc > 1 or straight_to_sonnet(a, task, mine) is not None  # Haiku ESCALATE counts as a failed try: one more Haiku try, then Sonnet
-        return _disp(a, task, rid, "dev", sonnet, rework=last["file"])
+    if last["verdict"] == ESCALATE and not (task["owner_sonnet"] or s.sonnet_dev or s.dev_esc > 1):
+        # E1(b) and E4: the first dev ESCALATE with its reason moves the step to Sonnet once; a second one blocks to the lead below
+        return _disp(a, task, rid, "dev", True, rework=last["file"])
     if _plan_gap(last):  # Sonnet (or an owner-Sonnet task) also found a plan gap: the lead fixes the plan
         return {
             "action": "ask_main",
@@ -644,6 +644,11 @@ def _extra_round(a, task, mine, rid):
 def _after_reviewer(a, task, mine, rid, s, last):
     if last["verdict"] == ESCALATE and not task["review_sonnet"] and not sonnet_review_dispatched(mine):
         return _disp(a, task, rid, "reviewer", True)  # a Haiku reviewer ESCALATE goes straight to the Sonnet reviewer
+    if last["verdict"] == ESCALATE and _reviewer_reports(mine, ESCALATE) > 1:  # E4: a second reviewer ESCALATE blocks to the lead
+        return {
+            "action": "ask_main",
+            "message": f"{task['id']}: second reviewer ESCALATE blocks to the lead: {last.get('reason', '')}; findings {last['file']}" + hint(a, task["id"]),
+        }
     if (why := _plan_error(last)) is not None:
         return _plan_fix(a, task, mine, rid, last, why)
     if last["verdict"] in (FAIL, ESCALATE):

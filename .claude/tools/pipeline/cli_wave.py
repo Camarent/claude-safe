@@ -33,8 +33,10 @@ from .configuration import (
     EV_RETRY,
     EV_SKIP,
     FAIL,
+    NO_TASKS_HINT,
     PASS,
     PGID_FILE_NAME,
+    PLAN_FILE,
     RERUN_FROM,
     SQUASH_MSG_FILE,
     STAGE_LOCK,
@@ -307,8 +309,16 @@ def reset_squash_residue(a, c):
     return files
 
 
+def _plan_only(c):
+    """-> True when the stage folder holds a Plan.md and no TASKS.md (a feature whose phases are not planned yet)."""
+    return os.path.exists(os.path.join(c.w, PLAN_FILE)) and not os.path.exists(os.path.join(c.w, TASKS_FILE))
+
+
 def _run_locked(a, c):
     """The stage run under the stage lock taken by cmd_run: guards, recovery, then the loop."""
+    if _plan_only(c):  # a feature plan with no tasks yet: the loop would say `done: no tasks` with exit 0
+        print(f"blocked: no TASKS.md in {c.w}, only Plan.md: run `{NO_TASKS_HINT.format(stage=a.stage)}`")
+        return 4
     if files := reset_squash_residue(a, c):
         print(f"reset {len(files)} file(s) left by an interrupted squash merge: {', '.join(files)}")
     if msg := dirty_block(a):

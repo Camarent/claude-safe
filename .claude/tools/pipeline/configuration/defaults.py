@@ -64,6 +64,7 @@ PROJECT_DEFAULTS: dict = {
     "repo": None,  # repo folder below the workspace; None = autodetect the one that holds AUDIT.md
     "repos": None,  # all repo folders below the workspace for the phase digest (git diff --stat each); None = just `repo`
     "test_command_hint": None,  # the project's real test command, e.g. a wrapper that sets up the environment; a task `Test:` line that runs bare pytest/python -m pytest gets a `testcmd:` warning naming it; None = take the first `gates` command that runs pytest behind a wrapper
+    "test_ban": [],  # list of {"pattern": regex, "use": text}: a task `Test:` command part matching a pattern is a plan error naming `use`; a malformed entry is ignored
     "scope_guard": "strict",  # off | warn | strict: files a job changed outside the task's Predicted paths (and not named in the task text) go to the reviewer brief; strict = must-address, FAIL unless the task text justifies them; warn = mention only
     "scope_allow": [
         "tests",

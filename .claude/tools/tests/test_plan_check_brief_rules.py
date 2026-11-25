@@ -29,27 +29,51 @@ class BriefRules(unittest.TestCase):
         self.assertTrue(any(p.startswith("task-1:") and "main checkout" in p for p in probs), probs)
 
     def test_dev_task_nested_repo_path_rejected(self):
-        self.write("task-1.md", "Predicted paths: workspace/course/a.py\n")
-        probs = plan_rules.check_nested_repo_paths(self.d, "task-1", None, "workspace/")
+        self.write("t1.md", "Predicted paths: workspace/course/a.py\n")
+        probs = plan_rules.check_nested_repo_paths(self.d, "t1", None, "workspace/")
         self.assertEqual(len(probs), 1)
-        self.assertIn("task-1: Predicted path workspace/course/a.py is in a nested repo", probs[0])
+        self.assertIn("t1: Predicted path workspace/course/a.py is in a nested repo", probs[0])
 
     def test_nested_repo_path_allowed_when_rule_off(self):
-        self.write("task-1.md", "Predicted paths: workspace/course/a.py\n")
-        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "task-1"), [])
+        self.write("t1.md", "Predicted paths: workspace/course/a.py\n")
+        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "t1"), [])
 
     def test_dev_task_nested_repo_course_path_allowed(self):
         os.makedirs(os.path.join(self.root, "workspace", "course", ".git"))
-        self.write("task-1.md", "Predicted paths: workspace/course/a.py\n")
-        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "task-1", self.root, "workspace/"), [])
+        self.write("t1.md", "Predicted paths: workspace/course/a.py\n")
+        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "t1", self.root, "workspace/"), [])
 
     def test_lead_step_course_path_allowed(self):
-        self.write("task-1.md", "owner: ops\nPredicted paths: workspace/course/a.py\n")
-        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "task-1", None, "workspace/"), [])
+        self.write("t1.md", "owner: ops\nPredicted paths: workspace/course/a.py\n")
+        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "t1", None, "workspace/"), [])
 
     def test_repo_path_not_course(self):
-        self.write("task-1.md", "Predicted paths: src/workspace.py\n")
-        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "task-1", None, "workspace/"), [])
+        self.write("t1.md", "Predicted paths: src/workspace.py\n")
+        self.assertEqual(plan_rules.check_nested_repo_paths(self.d, "t1", None, "workspace/"), [])
+
+
+ARCHITECT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "agents", "architect.md")
+
+
+class ArchitectBriefRules(unittest.TestCase):
+    """architect.md carries the brief rules: each phrase must be present in that agent file, not in architect/*.md."""
+
+    def setUp(self):
+        with open(ARCHITECT, encoding="utf-8") as f:
+            self.text = f.read()
+
+    def test_grep_every_rule_present(self):
+        self.assertIn("grep every", self.text.lower())
+
+    def test_done_external_signal_rule_present(self):
+        self.assertIn("what code must change", self.text)
+
+    def test_predicted_paths_recommendation_present(self):
+        self.assertIn("Predicted paths are a recommendation", self.text)
+
+    def test_cite_missing_and_testban_named(self):
+        self.assertIn("cite-missing:", self.text)
+        self.assertIn("testban:", self.text)
 
 
 if __name__ == "__main__":

@@ -5,8 +5,12 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import denial_log
+from pipeline import claude
+from pipeline.configuration import ENV_DENIAL_SESSION, ENV_SCRATCH_DIR
 from retro import denials
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -62,6 +66,53 @@ class Scan(unittest.TestCase):
         self.assertEqual((s["bash_calls"], s["denied"]), (3, 2))
         self.assertEqual({x["family"] for x in s["families"]}, {"approval: rm", "sed"})
         self.assertIn("denied: 2", denials.render(s, 1))
+
+
+class DeniedGuard(unittest.TestCase):
+    def test_guard_name_ends_each_entry_in_order(self):
+        den = [
+            {"tool_name": "Bash", "tool_input": {"command": "rm -rf x"}, "reason": "no rm"},
+            {"tool_name": "Bash", "tool_input": {"command": "ls"}},
+            {"tool_name": "Write", "tool_input": {"file_path": "/a/b"}},
+        ]
+        guards = [("rm -rf x", "guard"), ("ls", "main_checkout")]
+        self.assertEqual(
+            claude.denial_lines(den, guards),
+            ["Bash: rm -rf x [no rm] guard", "Bash: ls main_checkout", "Write: /a/b"],
+        )
+
+    def test_each_row_used_once(self):
+        den = [{"tool_name": "Bash", "tool_input": {"command": "ls"}}, {"tool_name": "Bash", "tool_input": {"command": "ls"}}]
+        self.assertEqual(claude.denial_lines(den, [("ls", "guard")]), ["Bash: ls guard", "Bash: ls"])
+
+    def test_no_guards_no_suffix(self):
+        den = [{"tool_name": "Bash", "tool_input": {"command": "ls"}}]
+        self.assertEqual(claude.denial_lines(den), ["Bash: ls"])
+
+    def test_empty_row_command_matches_nothing(self):
+        den = [{"tool_name": "Bash", "tool_input": {"command": "ls"}}, {"tool_name": "Write", "tool_input": {"file_path": "/a"}}]
+        self.assertEqual(claude.denial_lines(den, [("", "review")]), ["Bash: ls", "Write: /a"])
+
+    def test_prefix_but_not_equal_command_matches_nothing(self):
+        den = [{"tool_name": "Bash", "tool_input": {"command": "lsof -p 1"}}]
+        self.assertEqual(claude.denial_lines(den, [("ls", "guard")]), ["Bash: lsof -p 1"])
+
+
+class SessionRows(unittest.TestCase):
+    def test_only_this_sessions_rows_name_its_denials(self):
+        scratch = tracked_mkdtemp()
+        den = [{"tool_name": "Bash", "tool_input": {"command": "ls"}}, {"tool_name": "Bash", "tool_input": {"command": "rm x"}}]
+
+        def fake_run(args, cwd, timeout, env_extra, **kw):
+            # a sibling session's hook row lands first, then this session's own row
+            with open(os.path.join(scratch, denial_log.DENIALS_FILE), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"rule": "sibling", "command": "ls", "session": "other"}) + "\n")
+                f.write(json.dumps({"rule": "guard", "command": "rm x", "session": env_extra[ENV_DENIAL_SESSION]}) + "\n")
+            return {"permission_denials": den}
+
+        with mock.patch.object(claude, "run_claude", fake_run):
+            res = claude.session(["claude"], scratch, env_extra={ENV_SCRATCH_DIR: scratch})
+        self.assertEqual(res["denials"], ["Bash: ls", "Bash: rm x guard"])
 
 
 if __name__ == "__main__":

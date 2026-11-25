@@ -63,7 +63,7 @@ class GateSequenceTest(_SeqBase):
     def test_gate_step_follows_done_and_green_test_run(self):
         r = self.nxt([dev("a1"), done("a1")])
         self.assertEqual((r["role"], r["why"]), ("script", GATE_WHY))
-        self.assertIn("audit/taskgates.py --stage s --task task-1", r["prompt"])
+        self.assertIn(f"audit/taskgates.py --stage s --task {TASK['id']}", r["prompt"])
         self.cfg(testrun=True)
         r = self.nxt([dev("a1"), done("a1")])
         self.assertIn("testrun.py", r["prompt"])  # the Test lines first
@@ -78,7 +78,7 @@ class GateSequenceTest(_SeqBase):
         self.assertNotEqual(self.nxt([dev("a1"), done("a1")]).get("why"), GATE_WHY)
         self.cfg()
         esc = ev("report", id="a1", role="dev", verdict="ESCALATE", file="d.md")
-        self.assertEqual(self.who(self.nxt([dev("a1"), esc])), ("dispatch", "dev", "haiku"))
+        self.assertEqual(self.who(self.nxt([dev("a1"), esc])), ("dispatch", "dev", "sonnet"))  # E1(b)
 
     def test_green_gates_go_to_prereview_then_reviewer(self):
         mine = [dev("a1"), done("a1"), gate("a2"), gate_rep("a2", "DONE")]
@@ -445,7 +445,7 @@ class TaskGatesScriptTest(unittest.TestCase):
         recs = [json.loads(x) for x in open(f"{self.d}/.work/s/metrics.jsonl", encoding="utf-8")]
         self.assertEqual(
             [(r["ev"], r["kind"], r["task"], r["gate"], r["rc"]) for r in recs],
-            [("gate_cmd", "task", "task-1", "lint", 1), ("gate_cmd", "task", "task-1", "audit", 0)],  # red on the base too: cleared, rc 0,
+            [("gate_cmd", "task", TASK["id"], "lint", 1), ("gate_cmd", "task", TASK["id"], "audit", 0)],  # red on the base too: cleared, rc 0,
         )
         self.assertTrue(all(isinstance(r["seconds"], (int, float)) for r in recs))
         self.assertEqual([bool(r.get("base_red")) for r in recs], [False, True])
@@ -458,7 +458,7 @@ class TaskGatesScriptTest(unittest.TestCase):
 
     def test_no_job_worktree_is_blocked(self):
         with mock.patch.object(taskgates.testrun, "workdir", return_value=None):
-            self.assertEqual(taskgates.run("s", "task-1", self.d)[0], "BLOCKED")
+            self.assertEqual(taskgates.run("s", TASK["id"], self.d)[0], "BLOCKED")
 
 
 class StraightToSonnetTest(_SeqBase):
@@ -481,9 +481,10 @@ class StraightToSonnetTest(_SeqBase):
         self.assertEqual(r["action"], "ask_main")
         self.assertIn("PLAN GAP: no unit in records", r["message"])
 
-    def test_plain_escalate_keeps_the_haiku_retry(self):
+    def test_escalate_with_reason_goes_to_sonnet_once(self):
+        # E1(b): a dev ESCALATE naming a reason moves the step to Sonnet
         r = self.nxt([dev("a1"), self.esc("ESCALATE: tests fail\n")])
-        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))
+        self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
 
     def test_first_run_no_edit_goes_to_sonnet_without_judge(self):
         self.cfg(gate=True)
@@ -495,9 +496,10 @@ class StraightToSonnetTest(_SeqBase):
         ):
             self.assertEqual(self.who(self.nxt([dev("a1"), e])), ("dispatch", "dev", "sonnet"))
             second = [dev("a1"), e, dev("a2"), self.esc("ESCALATE: again\n")]
-            self.assertEqual(self.nxt(second)["role"], "script")  # not a first run: the judge gate runs first
+            self.assertEqual(self.nxt(second)["action"], "ask_main")  # E4: a second ESCALATE blocks to the lead
         with mock.patch.object(steps, "job_heads", return_value="=abc"), mock.patch.object(steps, "job_diff", return_value="diff"):
-            self.assertEqual(self.who(self.nxt([dev("a1"), e])), ("dispatch", "dev", "haiku"))  # something was edited: today's ladder
+            # something was edited: E1(b) sends the step to Sonnet, and the judge gate reads the escalation first
+            self.assertEqual(self.who(self.nxt([dev("a1"), e])), ("dispatch", "script", None))
 
 
 if __name__ == "__main__":

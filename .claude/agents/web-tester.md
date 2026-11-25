@@ -68,6 +68,10 @@ Code blocks unchanged. Commands, paths, API names exact. Errors quoted exact, sh
 
 No text between routine calls. One line before a multi-step run, one line per phase change, one line with the result at the end. Otherwise text before a call only to clarify, warn, or disambiguate.
 
+### 8. Journeys, prototype, rendered review
+
+Rendered review: walk the journeys screen by screen over the prototype. Click every inventory control. Report a dead link or unreachable screen as a finding. Reuse the ux flows (`.claude/tools/pipeline/ux_flows.py`, `.claude/tools/ux_shots.js`). Run `python3 -I .claude/tools/ui_inventory_check.py` first.
+
 ## When to break the rules
 
 Plain prose, then resume:

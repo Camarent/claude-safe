@@ -14,7 +14,41 @@ class ScanError(Exception):
 
 
 def hits(repo, words):
-    """-> ["file:line: word", ...] for every line of every tracked text file of `repo` that contains a word of `words` (case-insensitive). Empty words -> []. Blank words are ignored: an empty pattern would match every line; the rest are stripped. Binary files (NUL byte in the first PUBLIC_BINARY_SNIFF_BYTES) are skipped. Raises ScanError when git cannot list the tracked files."""
+    """-> ["file:line: word", ...] for every line of every tracked text file of `repo` that contains a word of `words` (case-insensitive). Raises ScanError as records() does."""
+    return [_HIT.format(file=rel, line=n, word=w) for rel, n, w, _text in records(repo, words)]
+
+
+def hit_key(rel, word, text):
+    """-> the baseline key of one hit: `file TAB word TAB line text stripped`. No line number: the key stays the same when lines above the hit move."""
+    return f"{rel}\t{word}\t{text.strip()}"
+
+
+def read_baseline(path):
+    """-> set of hit keys listed in the baseline file at `path`. Blank lines and lines starting with # are ignored. A missing file is an empty baseline. Raises ScanError when the file exists but cannot be read."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return set()
+    except OSError:
+        raise ScanError(f"scan failed: cannot read baseline {path}") from None
+    return {s for s in (line.strip() for line in lines) if s and not s.startswith("#")}
+
+
+def diff(found, baseline):
+    """-> (new, stale): `new` are the records of `found` whose hit key is not in `baseline`, in scan order; `stale` are the baseline keys no record matches, sorted. A key listed once covers every identical line."""
+    new = []
+    seen = set()
+    for rec in found:
+        key = hit_key(rec[0], rec[2], rec[3])
+        seen.add(key)
+        if key not in baseline:
+            new.append(rec)
+    return new, sorted(baseline - seen)
+
+
+def records(repo, words):
+    """-> [(file, line, word, text), ...] for every line of every tracked text file of `repo` that contains a word of `words` (case-insensitive). `line` is 1-based, `text` the raw line. Empty words -> []. Blank words are ignored: an empty pattern would match every line; the rest are stripped. Binary files (NUL byte in the first PUBLIC_BINARY_SNIFF_BYTES) are skipped. Raises ScanError when git cannot list the tracked files."""
     needles = [w.strip() for w in words if w and w.strip()]
     if not needles:
         return []
@@ -38,5 +72,5 @@ def hits(repo, words):
         for n, text in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
             for w in needles:
                 if re.search(re.escape(w), text, re.IGNORECASE):
-                    found.append(_HIT.format(file=rel, line=n, word=w))
+                    found.append((rel, n, w, text))
     return found

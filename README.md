@@ -151,6 +151,8 @@ Decisions of the pipeline-hardening stage, one section per problem: `docs/decisi
 - Sync `~/.claude` from one ref: `scripts/sync-claude-config.sh [REF]` (REF defaults to HEAD). It refuses while a wave driver runs, works in a detached worktree, and never passes `host_agents.py --apply`.
 - Retry without a new dev run: `orch.py retry --verify` runs the task's Test lines and Done checks on the existing job commit and writes the report. Red records nothing.
 - Cleanup step (finish phase): removes merged or gone job worktrees and run temp dirs. Preview with `python3 -I .claude/tools/pipeline/cleanup.py --dry-run`; it changes nothing.
+- Public-words baseline: the pipeline.json key `public_words_baseline` (default `docs/public-words-baseline.txt`, repo-relative) lists accepted public-words hits, one per line. A hit key is `file TAB word TAB line text stripped`, with no line number, so the key stays the same when lines above the hit move. Blank lines and `#` lines are ignored; a missing file is an empty baseline. A key listed once covers every identical line. The generator is `.claude/tools/public_words_baseline.py`: `--write` rewrites the file from the current hits, `--dry-run` prints how many lines would change, `--check` exits 1 when a hit is not in the baseline, `--words a,b` overrides the configured words.
+- Public-words gate: on a public repo, a hit whose key is not in the baseline fails the gate. The output prints `file:line: word` and `add to <baseline>: <key line>` for each new hit; add that key line to the baseline file. A baseline entry with no hit is reported as `stale: <key>` and does not fail the gate.
 
 ## Setting up a new machine
 

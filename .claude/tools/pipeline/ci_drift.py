@@ -1,13 +1,13 @@
 """CI drift check: commands the project's CI runs that no `gates` entry in pipeline.json covers. Line-based, no YAML parser.
 
-Rule: a CI run line is drift unless a gate covers it, `ci_drift_ignore` names it, or it is never run locally: a line that references a GitHub-only variable (RUNNER_*, GITHUB_*), a secret or a `${{ }}` expression, or a bare shell setting (`set ...`, `cd X`, `export X`, `VAR=value`). The patterns are in configuration/pr_gates.py."""
+Rule: a CI run line is drift unless a gate covers it, `ci_drift_ignore` names it, its first word is a default ignore word (CI_DRIFT_DEFAULT_IGNORE), or it is never run locally: a line that references a GitHub-only variable (RUNNER_*, GITHUB_*), a secret or a `${{ }}` expression, or a bare shell setting (`set ...`, `cd X`, `export X`, `VAR=value`). The patterns are in configuration/pr_gates.py."""
 
 import glob
 import os
 import re
 
 from .configuration import all_gates_of, repo_dir
-from .configuration.pr_gates import CI_HINT_WORDS, CI_ONLY_RE, CI_SHELL_SETTING_RE
+from .configuration.pr_gates import CI_DRIFT_DEFAULT_IGNORE, CI_HINT_WORDS, CI_ONLY_RE, CI_SHELL_SETTING_RE
 
 RUN_RE = re.compile(r"^\s*(?:-\s+)?run:\s*(.*?)\s*$")
 SETUP_ONLY = ("npm ci", "npm install")
@@ -83,7 +83,9 @@ def drift(project_dir, cfg):
         gates = []
     if not gates:
         return ["no gates configured; CI drift not checked"]
-    return [f"CI runs `{n}` ({os.path.basename(f)}) but no gate covers it" for f, n in _uncovered(files, gates, cfg)]
+    return [
+        f'CI runs `{n}` ({os.path.basename(f)}) but no gate covers it; add ci_drift_ignore entry "{ignore_hint(n)}"' for f, n in _uncovered(files, gates, cfg)
+    ]
 
 
 def _covered(n, known):
@@ -108,7 +110,7 @@ def _uncovered(files, gates, cfg):
         with open(f, encoding="utf-8") as fh:
             for cmd in ci_run_lines(fh.read()):
                 n = _norm(cmd)
-                if _covered(n, known) or _never_local(n) or any(n == i or n.startswith(i + " ") for i in ignore):
+                if _covered(n, known) or _never_local(n) or any(n == i or n.startswith(i + " ") for i in ignore + list(CI_DRIFT_DEFAULT_IGNORE)):
                     continue
                 out.append((f, n))
     return out

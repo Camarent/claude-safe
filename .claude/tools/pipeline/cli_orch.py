@@ -269,15 +269,16 @@ def cmd_chain(a):
     print(text, end="")
 
 
-def _report_verdict(d, text):
+def _report_verdict(d, text, report_id=""):
     if d["role"] not in ROLES:
         return ("REPORTED", "") if text.strip() else ("MISSING", "no report file written")
     if not text.strip():
         return ROLES[d["role"]][1], "no report file written"
-    return verdict(d["role"], text)
+    return verdict(d["role"], text, report_id)
 
 
 WHY_MAX = 300
+REFRESH_PROGRESS = "orch: retry {step}: rebasing the job branch onto the stage branch (a slow rebase can take a while)"
 _WHY_LINE = re.compile(r"^(?:VERDICT:\s*)?(?:BLOCKED|ESCALATE|FAIL|PASS|DONE|OK)\b:?\s*(.*)$")
 _HANDOFF_LINE = re.compile(r"^\W*REPORT\s+\S+\W*$")  # the agent's last reply line `REPORT <id>`: a handoff, never a reason
 
@@ -374,7 +375,7 @@ def cmd_report(a):
     if a.text and not read_text(f).strip():  # --text only fills a missing/blank file
         write_text(f, a.text)
     body = read_text(f)
-    v, reason = _report_verdict(d, body)
+    v, reason = _report_verdict(d, body, a.id)
     v, ignored = _remit_verdict(a, d, v, body)
     if ignored:
         reason = f"ignored {len(ignored)} finding(s) outside the {d['role']} remit: " + "; ".join(x[:WHY_MAX] for x in ignored)
@@ -448,7 +449,7 @@ def _reset_fix_chain(log, a):
 
 
 def _record_conflict(a, log, e):
-    """retry hit a rebase conflict: record the step BLOCKED (a dev report, so the next retry and the lead see it) with the conflicting files and the resolve command."""
+    """retry hit a rebase conflict: record the step BLOCKED (a dev report, so the next retry and the lead see it) with the conflicting files and the resolve command. -> the reason text."""
     evs = read_jsonl(log)
     nums = [int(m.group(1)) for x in evs if (m := re.fullmatch(r"retry-(\d+)", str(x.get("id", ""))))]
     rid = f"retry-{max(nums, default=0) + 1}"
@@ -460,15 +461,17 @@ def _record_conflict(a, log, e):
     f = work_path(paths(a)[0], f"report-{rid}.md", create=True)
     write_text(f, f"VERDICT: BLOCKED\n{reason}\n")
     append_event(log, {"ev": "report", "id": rid, "task": a.step, "role": "dev", "verdict": BLOCKED, "reason": reason, "why": reason[:WHY_MAX], "file": f})
+    return reason
 
 
 def _refresh_job(a, log):
-    """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry."""
+    """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry with the resolve command."""
+    print(REFRESH_PROGRESS.format(step=a.step), file=sys.stderr, flush=True)
     try:
         res = worktree.refresh(a.dir, a.stage, a.step, discard=True)
     except worktree.RefreshConflict as e:
-        _record_conflict(a, log, e)
-        sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
+        reason = _record_conflict(a, log, e)
+        sys.exit(f"orch: retry {a.step} BLOCKED: {reason}")
     except RuntimeError as e:
         sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
     if res["rebased"] or res["discarded"]:

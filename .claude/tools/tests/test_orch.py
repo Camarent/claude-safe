@@ -152,16 +152,16 @@ class OrchTest(unittest.TestCase):
             self.assertEqual(briefs._lint_left(A, {"id": TASK1}), "")
 
     def test_dev_escalate_goes_to_sonnet_once(self):
+        # E1(b): the first ESCALATE with a reason moves the step to Sonnet; E4: a second ESCALATE blocks to the lead
         a = self.nxt()
-        self.rep(a["id"], "ESCALATE: needs a decision")
-        a = self.nxt()
-        self.assertEqual((a["agent"], a["model"]), ("dev", "haiku"))
         self.rep(a["id"], "ESCALATE: needs a decision")
         a = self.nxt()
         self.assertEqual((a["agent"], a["model"]), ("dev", "sonnet"))
         self.assertNotIn("LOGIC " + "OK", a["prompt"])
         self.rep(a["id"], "ESCALATE: still unclear")
-        self.assertEqual(self.nxt()["action"], "ask_main")
+        a = self.nxt()
+        self.assertEqual(a["action"], "ask_main")
+        self.assertIn("ESCALATE", a["message"])
 
     def test_report_reads_file_not_text(self):
         a = self.nxt()
@@ -423,7 +423,7 @@ class LeadRequestTest(OrchTest):
     def test_verdict_line_and_unclear_report(self):
         self.assertEqual(verdicts.verdict("dev", "VERDICT: BLOCKED\nall tests pass"), ("BLOCKED", "report line"))
         self.assertEqual(verdicts.verdict("reviewer", "wrong 0, risky 0, nit 0\nVERDICT: ESCALATE")[0], "PASS")  # nothing found: no second paid review
-        self.assertEqual(verdicts.verdict("reviewer", "wrong 0, risky 1, nit 0\nVERDICT: ESCALATE")[0], "ESCALATE")
+        self.assertEqual(verdicts.verdict("reviewer", "wrong 0, risky 1, nit 0\n- tools/x.py:3 race\nVERDICT: ESCALATE")[0], "ESCALATE")
         self.assertEqual(verdicts.verdict("reviewer", "x\nVERDICT: PASS\n")[0], "PASS")
         self.assertEqual(verdicts.verdict("reviewer", "looks fine to me")[0], "FAIL")  # unclear -> safe
         self.assertEqual(verdicts.verdict("dev", "VERDICT: PASS")[0], "BLOCKED")  # not allowed for dev -> falls through

@@ -11,6 +11,7 @@ from .ci_poll import (  # noqa: F401  (re-export: the facade keeps every name im
     GH_CHECKS_PENDING_RC,
 )
 from .cite_check import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    CITE_BACKTICK_FILE_RE,
     CITE_CHECK_DEFAULT,
     CITE_CHECK_KEY,
     CITE_COMMENT_MARKS,
@@ -18,7 +19,9 @@ from .cite_check import (  # noqa: F401  (re-export: the facade keeps every name
     CITE_DIFF_MAX_CHARS,
     CITE_EXTENSIONS,
     CITE_FENCE_RE,
+    CITE_FIXED_WORDS,
     CITE_MD_EXTENSIONS,
+    CITE_QUOTED_RE,
     CITE_RE,
     CITE_REPORT_NAME,
     CITE_SKIP_DIRS,
@@ -75,6 +78,8 @@ from .env import (  # noqa: F401  (re-export: the facade keeps every name import
     ENV_AGENTS_DIR,
     ENV_ARTIFACT,
     ENV_CLAUDE_FLAGS,
+    ENV_DENIAL_SESSION,
+    ENV_GATE_KIND,
     ENV_GATED,
     ENV_GUARD_ALLOW,
     ENV_GUARD_JOB,
@@ -93,6 +98,7 @@ from .env import (  # noqa: F401  (re-export: the facade keeps every name import
     ENV_SCRATCH_DIR,
     ENV_SCRIPT_TIMEOUT,
     ENV_TIMEOUT,
+    GATE_KIND_MUTATION,
     GIT_SAFE_ENV,
     GUARD_LOG_FILE,
     GUARD_TOOLS,
@@ -360,6 +366,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     MAIN_WRITE_PATCH,
     MAX_ROUNDS,
     MAX_TRIES,
+    MUTATION_GATE_TIMEOUT_S,
     PATH_HINT,
     PIPELINE_EXCLUDES,
     PIPELINE_JSON,
@@ -466,6 +473,7 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     MARKUP_TAGS,
     NEG_GREP_RE,
     NEG_WARN_PREFIX,
+    NO_TASKS_HINT,
     OUTPUTS_FIELD,
     PER_FILE_CHECK_PHRASES,
     PER_FILE_PHRASES,
@@ -489,6 +497,8 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     TASK_DIR_WEIGHT,
     TASK_FILES_FAIL,
     TASK_FILES_WARN,
+    TEST_BAN_KEY,
+    TEST_BAN_PREFIX,
     TEST_ENV_MAX_BYTES,
     TEST_ENV_MAX_FILES,
     TEST_ENV_WORDS,
@@ -527,11 +537,19 @@ from .public import (  # noqa: F401  (re-export: the facade keeps every name imp
     PUBLIC_BINARY_SNIFF_BYTES,
     PUBLIC_FORBIDDEN_WORDS_DEFAULT,
     PUBLIC_FORBIDDEN_WORDS_KEY,
+    PUBLIC_WORDS_BASELINE_DEFAULT,
+    PUBLIC_WORDS_BASELINE_KEY,
 )
 from .publish import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     _check_publish_entry,
     _escapes_project,
     publish_entries,
+)
+from .qrun import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    QRUN_PG_DIR_ENV,
+    QRUN_PG_FLAG,
+    QRUN_PG_START_KEY,
+    QRUN_PG_VAR_KEY,
 )
 from .serve import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     SERVE_DEFAULT_COMMANDS,

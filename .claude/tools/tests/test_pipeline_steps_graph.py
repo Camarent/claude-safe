@@ -97,6 +97,21 @@ class NextStepTest(unittest.TestCase):
         self.assertEqual((r["agent"], r["model"], r["why"]), ("script", None, "local pre-review (lp review); FAIL goes back to the dev"))
         self.assertIn(f"localmodel/prereview.py --stage s --task {TASK1} --dir " + self.d, r["prompt"])
 
+    def test_dev_done_that_changed_an_extra_file_goes_to_review_not_blocked(self):
+        # steps.py has no path-based block: a file outside the task's Predicted paths is no reason to stop the dev
+        self.cfg(testrun=True)
+        extra = "diff --git a/.claude/tools/extra_helper.py b/.claude/tools/extra_helper.py\n+x = 1\n"
+        green = [
+            dispatch("a1", "dev"),
+            dev_rep("a1", "DONE"),
+            ev("dispatch", id="a2", agent="script", role="script", model=None, why="test run (x)"),
+            ev("report", id="a2", role="script", verdict="DONE", file="t.md"),
+        ]
+        with mock.patch.object(steps, "job_diff", return_value=extra), mock.patch.object(steps, "job_dirty", return_value=[]):
+            r = self.nxt(green)
+        self.assertEqual(self.who(r), ("dispatch", "reviewer", "haiku"))
+        self.assertNotEqual(r["action"], "ask_main")
+
     def test_test_run_after_every_dev_done(self):
         self.cfg(testrun=True)
         r = self.nxt([dispatch("a1", "dev"), dev_rep("a1", "DONE")])
@@ -224,13 +239,11 @@ class NextStepTest(unittest.TestCase):
     def test_dev_escalate_paths(self):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "ESCALATE", "e.md")]
         r = self.nxt(mine)
-        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))
+        self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))  # E1(b): the first ESCALATE with a reason goes to Sonnet
         self.assertIn("Rework: fix the findings in e.md first.", r["prompt"])
-        two = [*mine, dispatch("a2", "dev"), dev_rep("a2", "ESCALATE", "e2.md")]
-        self.assertEqual(self.who(self.nxt(two)), ("dispatch", "dev", "sonnet"))
-        # a Sonnet dev failing goes to the lead
-        three = [*two, dispatch("a3", "dev", "sonnet"), dev_rep("a3", "ESCALATE", "e3.md")]
-        self.assertEqual(self.nxt(three)["action"], "ask_main")
+        # E4: a second ESCALATE of the step blocks to the lead
+        two = [*mine, dispatch("a2", "dev", "sonnet"), dev_rep("a2", "ESCALATE", "e2.md")]
+        self.assertEqual(self.nxt(two)["action"], "ask_main")
 
     def test_dev_blocked_on_a_reviewer_finding_without_change_stops_the_review_loop(self):
         mine = [
@@ -276,11 +289,11 @@ class NextStepTest(unittest.TestCase):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "DONE"), dispatch("a2", "reviewer"), rev_rep("a2", "ESCALATE", "r1.md")]
         r = self.nxt(mine)
         self.assertEqual(self.who(r), ("dispatch", "reviewer", "sonnet"))  # a Haiku ESCALATE goes straight to Sonnet
-        # a Sonnet reviewer already ran: an ESCALATE now counts as a failed round
+        # E4: the Sonnet reviewer's ESCALATE is a second ESCALATE of the step: it blocks to the lead with its reason
         mine += [dispatch("a3", "reviewer", "sonnet"), rev_rep("a3", "ESCALATE", "r2.md")]
         r = self.nxt(mine)
-        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))  # the Sonnet reviewer's ESCALATE is the first failed round: Haiku rework
-        self.assertIn("Rework: fix the findings in r2.md first.", r["prompt"])
+        self.assertEqual(r["action"], "ask_main")
+        self.assertIn("second reviewer ESCALATE", r["message"])
 
     def test_sonnet_reviewer_escalate_loop_ends_at_the_lead(self):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "DONE"), dispatch("a2", "reviewer", "sonnet"), rev_rep("a2", "ESCALATE", "r1.md")]

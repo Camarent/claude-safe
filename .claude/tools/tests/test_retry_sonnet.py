@@ -60,9 +60,12 @@ class LeadRetryTest(_SeqBase):
             self.assertNotEqual(r.get("why"), steps.RETRY_ESCALATE_WHY)
 
     def test_auto_retry_unchanged(self):
-        for kw in ({"auto": True}, {"from": "script"}, {"from": "review"}):
+        # the auto retry keeps Haiku; a lead retry after a dev ESCALATE with a reason is the E1(b) Sonnet move
+        r = self.nxt([dev("a1"), self.rep("ESCALATE"), self.retry(auto=True)])
+        self.assertEqual(r.get("model") if r else None, "haiku")
+        for kw in ({"from": "script"}, {"from": "review"}):
             r = self.nxt([dev("a1"), self.rep("ESCALATE"), self.retry(**kw)])
-            self.assertEqual(r.get("model") if r else None, "haiku", kw)
+            self.assertEqual(r.get("model") if r else None, "sonnet", kw)
 
     def test_owner_sonnet_task_unchanged(self):
         r = self.nxt([dev("a1", "sonnet"), self.rep("ESCALATE"), self.retry()], {**TASK, "owner_sonnet": True})
@@ -70,7 +73,7 @@ class LeadRetryTest(_SeqBase):
 
     def test_sonnet_counts_as_a_try(self):
         evs = [dev("a1"), self.rep("ESCALATE"), self.retry(), dev("a3", "sonnet")]
-        self.assertEqual(steps._tries(steps.history(evs, "task-1"), "dev", "sonnet"), 1)
+        self.assertEqual(steps._tries(steps.history(evs, TASK["id"]), "dev", "sonnet"), 1)
 
 
 if __name__ == "__main__":

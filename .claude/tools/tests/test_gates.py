@@ -74,7 +74,7 @@ class DriftTest(unittest.TestCase):
         )
         self.assertEqual(ci_run_lines(ci), ["npm run lint", "npm test && make build", "cat <<EOF"])
         d = make({"gates": G}, ci)
-        self.assertEqual(drift(d, project(d)), ["CI runs `cat <<EOF` (ci.yml) but no gate covers it"])
+        self.assertEqual(drift(d, project(d)), ['CI runs `cat <<EOF` (ci.yml) but no gate covers it; add ci_drift_ignore entry "cat <<EOF"'])
 
     def test_clean_when_gates_cover_ci(self):
         d = make({"gates": G}, CI)
@@ -99,7 +99,7 @@ class DriftTest(unittest.TestCase):
         os.makedirs(os.path.join(d, "app", ".github", "workflows"))
         with open(os.path.join(d, "app", ".github", "workflows", "ci.yml"), "w") as f:
             f.write("steps:\n  - run: npm run lint\n  - run: make build\n")
-        self.assertEqual(drift(d, project(d)), ["CI runs `make build` (ci.yml) but no gate covers it"])
+        self.assertEqual(drift(d, project(d)), ['CI runs `make build` (ci.yml) but no gate covers it; add ci_drift_ignore entry "make build"'])
 
 
 class DriftWiringTest(unittest.TestCase):

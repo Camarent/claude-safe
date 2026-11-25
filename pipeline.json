@@ -10,6 +10,7 @@
     "rc=0",
     "exit $rc"
   ],
+  "public_words_baseline": "docs/public-words-baseline.txt",
   "worktree_setup": [
     "ln -sfn \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.uv\" .uv"
   ],

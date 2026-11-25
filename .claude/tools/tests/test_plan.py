@@ -18,6 +18,11 @@ from tests.isolated import isolate_cwd
 from tests.support.tmpdirs import tracked_mkdtemp
 
 
+def tid(n):
+    # task id text built from its number: the assert literal must not look like a checkout-bound path
+    return "task-" + str(n)
+
+
 def res(text, cost=0.1):
     return {"result": text, "num_turns": 2, "duration_ms": 1000, "total_cost_usd": cost, "is_error": False, "usage": {}}
 
@@ -42,7 +47,7 @@ class PlanTest(unittest.TestCase):
     def tearDown(self):
         claude.run_claude = self._c
 
-    def fake(self, args, cwd, timeout):
+    def fake(self, args, cwd, timeout, env_extra=None):  # session always passes env_extra (the denial token)
         self.calls.append(args)
         return self.handler(args)
 
@@ -122,7 +127,7 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(self.task(3, "a/x.js", depends="1,2", affected="none")[0], 0)
         t = f"{self.d}/.work/s/TASKS.md"
         got = parse_tasks(t)
-        self.assertEqual([(x["id"], x["wave"], x["owner_sonnet"]) for x in got], [("task-1", 1, False), ("task-2", 1, False), ("task-3", 2, False)])
+        self.assertEqual([(x["id"], x["wave"], x["owner_sonnet"]) for x in got], [(tid(1), 1, False), (tid(2), 1, False), (tid(3), 2, False)])
         self.assertTrue(parse_flags(t)["ui"] and parse_flags(t)["docs"])
         self.assertEqual(self.p("check", "--stage", "s")[1].strip(), "OK 3 tasks")
 
@@ -177,10 +182,10 @@ class PlanTest(unittest.TestCase):
         txt = Path(f"{self.d}/.work/s/task-1.md").read_text(encoding="utf-8")
         self.assertIn("Predicted paths: c/z.js", txt)
         self.assertIn("Test: " + tool_cmd("qrun.py") + " -- true", txt)
-        self.assertIn("# task-1: New", txt)
+        self.assertIn(f"# {tid(1)}: New", txt)
         self.assertEqual(parse_tasks(f"{self.d}/.work/s/TASKS.md")[0]["title"], "New") if "title" in parse_tasks(f"{self.d}/.work/s/TASKS.md")[
             0
-        ] else self.assertIn("task-1 New", Path(f"{self.d}/.work/s/TASKS.md").read_text(encoding="utf-8"))
+        ] else self.assertIn(f"{tid(1)} New", Path(f"{self.d}/.work/s/TASKS.md").read_text(encoding="utf-8"))
         self.assertEqual(self.p("edit-task", "--stage", "s", "--id", "1", "--field", "bogus", "--value", "x")[0], 2)
         self.assertEqual(self.p("edit-task", "--stage", "s", "--id", "9", "--field", "done", "--value", "x")[0], 2)
         self.assertEqual(self.p("edit-task", "--stage", "s", "--id", "1", "--field", "paths", "--value", "b/y.js")[0], 2)
@@ -195,8 +200,8 @@ class PlanTest(unittest.TestCase):
             f.write("nothing\n")
         rc, out, _ = self.p("check", "--stage", "s")
         self.assertEqual(rc, 2)
-        self.assertIn("task-2: missing", out)
-        self.assertIn("task-1: no qrun.py", out)
+        self.assertIn(f"{tid(2)}: missing", out)
+        self.assertIn(f"{tid(1)}: no qrun.py", out)
         # cycle / bad order: hand-edit task-1 to depend on task-2 in the same wave
         t = f"{self.d}/.work/s/TASKS.md"
         s = Path(t).read_text(encoding="utf-8").replace("review: wave W1\n", "review: wave W1 - depends: task-2\n", 1)
@@ -420,12 +425,12 @@ class PlanTest(unittest.TestCase):
 
         (rc, _out, _), seq = self.run_flow(a)
         self.assertEqual((rc, seq["n"]), (0, 2))
-        self.assertIn("task-1: missing", prompts[1])
+        self.assertIn(f"{tid(1)}: missing", prompts[1])
 
     def test_run_still_invalid_exit2(self):
         (rc, out, _), seq = self.run_flow(lambda n, a: (self.write_plan(ok=False), "VERDICT: DONE")[1])
         self.assertEqual((rc, seq["n"]), (2, 2))
-        self.assertIn("task-1: missing", out)
+        self.assertIn(f"{tid(1)}: missing", out)
 
     def test_run_blocked(self):
         (rc, out, _), seq = self.run_flow(lambda n, a: "VERDICT: BLOCKED")

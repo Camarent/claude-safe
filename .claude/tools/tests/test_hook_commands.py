@@ -31,6 +31,15 @@ def cs_tokens(cmd):
     return [w for w in cmd.replace("&&", " ").replace("||", " ").split() if w.startswith(C.load()["prefix"])]
 
 
+def unguarded_names(cmd):
+    """cs-* names of a hook command that have neither the fail-open nor the fail-closed guard form."""
+    return [
+        w
+        for w in cs_tokens(cmd)
+        if f"command -v {w} >/dev/null 2>&1 || exit 0" not in cmd and f"command -v {w} >/dev/null 2>&1 && exec {w} || exit 2" not in cmd
+    ]
+
+
 class HookCommandsTest(unittest.TestCase):
     def test_guards_are_hooks_by_name(self):
         names = {w for c in hook_commands() for w in cs_tokens(c)}
@@ -61,6 +70,28 @@ class HookCommandsTest(unittest.TestCase):
             # cs-write-guard fails open by design (fix(hooks): a missing write guard must not block every Edit)
             want = OK if "cs-write-guard" in cs_tokens(cmd) else BLOCKED
             self.assertEqual(done.returncode, want, f"{cmd!r}: {done.stderr}")
+
+    def test_fail_open_guard_exits_zero_without_output(self):
+        empty = tempfile.mkdtemp(prefix="hookpath-")
+        self.addCleanup(shutil.rmtree, empty, True)
+        index = C.load()
+        fail_open = {C.command_name(index, key) for key in FAIL_OPEN_GUARDS}
+        checked = 0
+        for cmd in hook_commands():
+            if not fail_open & set(cs_tokens(cmd)):
+                continue
+            checked += 1
+            done = subprocess.run([SH, "-c", cmd], check=False, env={"PATH": empty}, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+            self.assertEqual(done.returncode, OK, f"{cmd!r}: {done.stderr}")
+            self.assertEqual(done.stdout + done.stderr, "", f"{cmd!r}")
+        self.assertGreater(checked, 0, "no fail-open guard hook found")
+
+    def test_checker_flags_bare_binary(self):
+        self.assertEqual(unguarded_names("cs-cmd-guard --check"), ["cs-cmd-guard"])
+
+    def test_real_hooks_have_guard_form(self):
+        for cmd in hook_commands():
+            self.assertEqual(unguarded_names(cmd), [], f"{cmd!r}")
 
 
 if __name__ == "__main__":

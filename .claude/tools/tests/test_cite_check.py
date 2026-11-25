@@ -124,6 +124,28 @@ class CiteCheck(unittest.TestCase):
             ["core.md:1 cites progress.py:130-200 but progress.py has 137 lines"],
         )
 
+    def test_bad_cite_quoted_as_fixed_skipped(self):
+        # the report quotes the bad cite (line 900 of a.py) as already fixed: skipped; the fixed cite (line 12) is still checked
+        wt = self.tree({"a.py": "x = 1\n" * 5})
+        self.assertEqual(
+            cite_check.check(wt, [], "the cite `a.py:900` was wrong, fixed to a.py:12\n"),
+            ["report:1 cites a.py:12 but a.py has 5 lines"],
+        )
+
+    def test_bad_cite_quoted_without_fixed_word_still_flagged(self):
+        wt = self.tree({"a.py": "x = 1\n" * 5})
+        self.assertEqual(
+            cite_check.check(wt, [], "the cite `a.py:900` is wrong\n"),
+            ["report:1 cites a.py:900 but a.py has 5 lines"],
+        )
+
+    def test_bad_cite_unquoted_next_to_fixed_word_still_flagged(self):
+        wt = self.tree({"a.py": "x = 1\n" * 5})
+        self.assertEqual(
+            cite_check.check(wt, [], "the cite a.py:900 was wrong\n"),
+            ["report:1 cites a.py:900 but a.py has 5 lines"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,7 @@ from .configuration import (
     AUDIT_ESCALATE_SUFFIX,
     AUDITORS,
     ENV_AGENT_KIND,
+    ENV_GATE_KIND,
     ENV_GUARD_ALLOW,
     ENV_GUARD_JOB,
     ENV_GUARD_LOG,
@@ -23,6 +24,7 @@ from .configuration import (
     ENV_REVIEW_DIR,
     ENV_SCRATCH_DIR,
     EV_DISPATCH,
+    GATE_KIND_MUTATION,
     GUARD_LOG_FILE,
     PGID_FILE_NAME,
     REPORTS_DIR,
@@ -217,7 +219,12 @@ def run_one(c, d):
                         args,
                         c.dir,
                         done_file=f,
-                        env_extra={**scratch_env(c), ENV_AGENT_KIND: d["agent"], ENV_REVIEW_DIR: review_root(c, task)},
+                        env_extra={
+                            **scratch_env(c),
+                            ENV_AGENT_KIND: d["agent"],
+                            ENV_REVIEW_DIR: review_root(c, task),
+                            ENV_GATE_KIND: GATE_KIND_MUTATION,
+                        },
                         pgid_file=os.path.join(c.w, PGID_FILE_NAME),
                     )
                 finally:

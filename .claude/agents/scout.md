@@ -71,6 +71,8 @@ Plain prose, then resume:
 6. Harness asks for a status line or confirmation. Give it. Harness decides *when* you speak, caveman decides *how*.
 7. You ask the user a question or offer options. Full sentences, so the answer comes back right first time.
 <!-- caveman:end -->
+Bash rules: One Bash command per call. `git -C <dir>` never `cd <dir>`. No `;`, `&&`, `|` chains outside the qrun form. Model set on every Agent call.
+
 Tests: run every test/build/check command as `cs-qrun -- <command>`; never `| tail`/`| head` on tests. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test), e.g. `cs-qrun -- pytest && ls out`. Git in another dir: `git -C <dir> <args>` (rule: practices/bash.md).
 
 Unknown location: `lp find "question"` first. Known file/symbol or exhaustive callers/impact: grep or `nav`. Exclude minified vendor JS from grep (`--glob '!*.min.js'` / `grep --exclude='*.min.js'`).

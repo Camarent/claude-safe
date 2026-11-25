@@ -11,10 +11,12 @@ from pathlib import Path
 
 from . import gitx
 from .ci_drift import drift
+from .cite_check import _cite_msg, _resolve_bare, cites
 from .configuration import (
     AFFECTED_WARN_PREFIX,
     CARRIED_NOT_NEEDED,
     CARRIED_SECTION,
+    CITE_BACKTICK_FILE_RE,
     DOCS_WAVE_WARN_PREFIX,
     FINAL_GATES_KEY,
     GATE_LABELS,
@@ -77,6 +79,7 @@ from .plan_ptest import ptest_selector_problems
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_rules import (
     _same,
+    _transitive_deps,
     acceptance_problems,
     check_affected_tests,
     check_docs_target,
@@ -100,7 +103,7 @@ from .plan_rules import (
     reads_as_prose,
     release_flag_problems,
 )
-from .plan_testcmd import check_bare_test_runner
+from .plan_testcmd import check_bare_test_runner, check_test_ban
 from .shellwords import split_commands
 from .stagedir import workspace_of
 from .tasks import parse_flags, parse_tasks
@@ -268,6 +271,38 @@ def check_exists(d, tid, repo):
         hit = _exists_hit(repo, predicted, name)
         if hit:
             probs.append(f"{tid}: `{name}` already exists at {hit} (the Goal asks to add it; change the task or name a new one)")
+    return probs
+
+
+CITE_LINE_PREFIXES = ("Goal:", "Done:", "Pattern:")  # the task lines whose cites must exist (or be predicted by this task or a task it depends on)
+
+
+def _in_tree(repo, path):
+    """True when path is a file of the tree (a bare file name is looked up in the tree as cite_check does)."""
+    return os.path.isfile(os.path.join(repo, _resolve_bare(repo, path)))
+
+
+def check_cite_exists(d, tid, repo, ents):
+    """Problems for one task file: a `path:line` cite or backticked file in its Goal/Done/Pattern lines whose file is not in the tree and is not a Predicted path of this task or of a task it depends on (an earlier wave); a cite of an existing file must hold the backticked symbol before it (cite_check._cite_msg)."""
+    text = read_text(os.path.join(d, tid + ".md"))
+    allowed = set(paths_in(text))
+    for dep in _transitive_deps(ents, tid):
+        allowed |= set(paths_in(read_text(os.path.join(d, dep + ".md"))))
+    probs = []
+    for ln in text.splitlines():
+        if not ln.startswith(CITE_LINE_PREFIXES):
+            continue
+        found = list(cites(ln))
+        found += [(m[1], None, None, "") for m in CITE_BACKTICK_FILE_RE.finditer(ln)]
+        for path, line, end, before in found:
+            if _in_tree(repo, path):
+                if line is None:
+                    continue
+                msg = _cite_msg(repo, f"{tid} cites {path}:{line}", path, line, end, before)
+                if msg:
+                    probs.append(f"{tid}: {msg}")
+            elif path not in allowed:
+                probs.append(f"{tid}: cite-missing: {path} is not in the tree and no task of this task's dependencies lists it in Predicted paths: {ln[:120]}")
     return probs
 
 
@@ -463,6 +498,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_test_refs(d, e["id"], repo)
         + check_test_globs(d, e["id"], repo)
         + check_exists(d, e["id"], repo)
+        + check_cite_exists(d, e["id"], repo, ents)
         + ptest_selector_problems(d, e["id"], repo)
         + check_test_quoting(d, e["id"])
         + check_lead_verified(d, e["id"])
@@ -472,6 +508,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_warning_count(d, e["id"])
         + check_denied_commands(d, e["id"], _preflight_denied(d))
         + check_bare_test_runner(d, e["id"], _workspace(d))
+        + check_test_ban(d, e["id"], _workspace(d))
         + check_work_paths(d, e["id"])
         + check_task_size(d, e["id"])
         + check_type_inputs(d, e["id"], repo, _workspace(d))

@@ -4,6 +4,7 @@ from .limits import EV_DISPATCH, EV_SKIP
 from .paths import QRUN_WRAPPER
 
 TASK_FILES_WARN = 15  # predicted files above this: `size:` warning and the dev starts on Sonnet
+NO_TASKS_HINT = "cs-wave feature --feature {stage}"  # `cs-wave run` on a stage that has Plan.md and no TASKS.md: the command that plans its phases instead
 STARTED_EVENTS = (EV_DISPATCH, EV_SKIP)  # orch.jsonl events that mark a task as started (plan.py task --before never renumbers or delays such a task)
 TASK_FILES_FAIL = 25  # above this plan_check fails: split the task by seam
 JQ_FILE_MAX_BYTES = 1_000_000  # brieflint reads a json file for its jq key check only up to this size
@@ -146,11 +147,14 @@ SCOPE_STEM_MIN = 3  # a predicted file's name stem shorter than this ties no tes
 SCOPE_TEST_RE = r"(?i)(?:^|[/._-])(?:tests?|spec)(?:[/._-]|$)"  # a test path
 SCOPE_SHOWN = 12  # files named in the scope note
 SCOPE_STRICT_NOTE = (
-    " Scope check (must address): the job changed files outside the task's predicted paths and the task text does not name them: {files}. "
-    "Judge each file: FAIL only for a side refactor; a file the task or a red gate needs is fine. Name every such file in your report."
+    " Scope check: the job changed files outside the task's predicted paths and the task text does not name them: {files}. "
+    "Predicted paths are a hint: a file outside them is never a FAIL by itself. Judge each file: FAIL only for a side refactor; "
+    "a file the task or a red gate needs is fine. Name every such file in your report."
 )
 SCOPE_HINT_NOTE = " Predicted paths are a planning hint: a file outside them is never a FAIL by itself."  # reviewer brief, every review
 SCOPE_WARN_NOTE = " Scope note: the job changed files outside the task's predicted paths and the task text does not name them: {files}. Name them in your report; this alone is not a FAIL."
+TEST_BAN_KEY = "test_ban"  # pipeline.json: list of {"pattern": regex, "use": text}; a task `Test:` command part matching a pattern is an error naming `use` (plan_testcmd.check_test_ban)
+TEST_BAN_PREFIX = "testban:"  # error prefix of plan_testcmd.check_test_ban
 TESTCMD_WARN_PREFIX = "testcmd:"  # warning prefix of plan_testcmd.check_bare_test_runner; plan_check.errors_of never fails on it
 TESTCMD_HINT_KEY = "test_command_hint"  # pipeline.json: the project's real test command (what a `Test:` line should run instead of bare pytest); when unset a `gates` command that runs pytest through a wrapper is used
 BARE_RUNNER_RE = r"^(?:pytest|py\.test|(?:python[\d.]*)(?:\s+-\w+)*\s+-m\s+pytest)(?:\s|$)"  # a command that starts pytest with no wrapper

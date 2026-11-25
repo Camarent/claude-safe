@@ -10,7 +10,9 @@ from .configuration import (
     CITE_COMMENT_MARKS,
     CITE_DEF_RE,
     CITE_FENCE_RE,
+    CITE_FIXED_WORDS,
     CITE_MD_EXTENSIONS,
+    CITE_QUOTED_RE,
     CITE_RE,
     CITE_REPORT_NAME,
     CITE_SKIP_DIRS,
@@ -62,6 +64,16 @@ def _first_line(lines, sym):
             if pat.search(line):
                 return i
     return None
+
+
+def _quoted_fixed(text):
+    """-> the (path, line, end) cites of one line that sit in backticks or quotes when the line also has a CITE_FIXED_WORDS word: the report quotes a bad cite as already fixed."""
+    if not re.search(r"\b(?:" + "|".join(map(re.escape, CITE_FIXED_WORDS)) + r")\b", text, re.IGNORECASE):
+        return set()
+    out: set = set()
+    for quoted in CITE_QUOTED_RE.findall(text):
+        out.update((path, line, end) for path, line, end, _ in cites(quoted))
+    return out
 
 
 def _inside(worktree, path):
@@ -142,7 +154,10 @@ def check(worktree, added, report_text):
     kept = [(s, ln, t) for s, ln, t in added if prose.get(s) is None or ln in prose[s]]
     msgs = []
     for src, ln, text in kept + rows:
+        skip = _quoted_fixed(text)
         for path, line, end, before in cites(text):
+            if (path, line, end) in skip:
+                continue
             where = f"{src}:{ln} cites {path}:{line}" + (f"-{end}" if end else "")
             msg = _cite_msg(worktree, where, path, line, end, before)
             if msg:
