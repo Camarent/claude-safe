@@ -47,9 +47,11 @@ from .ux_flows import flows_rel, variables
 from .verdicts import ROLES
 from .worktrees import job_diff, job_info, review_note
 
-BASH_NOTE = (  # every role: the two Bash rules that cmd_guard denies when broken
-    " Never `cd <dir>` before git: use `git -C <dir> <args>` (plain `git <args>` when your cwd is already the worktree), e.g. `git -C wt status`."
+BASH_NOTE = (  # every role: the Bash rules that cmd_guard denies when broken
+    " One Bash command per call. `git -C <dir>` never `cd <dir>`: use `git -C <dir> <args>` (plain `git <args>` when your cwd is already the worktree), e.g. `git -C wt status`."
     f" One `{QRUN_WRAPPER}` call per Bash call: after it only `&& <another {QRUN_WRAPPER} call>` or `&& <read-only command>` ({', '.join(QRUN_CHAIN_READ_ONLY)}), e.g. `{QRUN_WRAPPER} -- pytest && ls out`."
+    " No `;`, `&&`, `|` chains outside the qrun form: a pipe goes into a script file."
+    " Model set on every Agent call."
     " Read JSON/JSONL with `jq` (allowed, no approval), not python/node scripts: `jq -c 'select(.id==\"sd-170\")' f.jsonl`, `jq '.items|length' f.json`, `jq -r '.items|to_entries[]|[.key,.value.ok,.value.bad]|@tsv' f.json`; recipes: practices/bash.md."
 )
 NAV = (
@@ -485,6 +487,17 @@ def db_start_note(a):
     return ""
 
 
+TOOLING_BLOCKED_NOTE = " A BLOCKED on a tooling failure names the cause: the tool, the command and the error line."
+CCN_RE = re.compile(r"\bCCN\b")
+CCN_NOTE = " Your task's Goal or Done mentions CCN: never run `cs-audit`; the gates run it."
+
+
+def ccn_note(task_file):
+    """Dev brief line forbidding `cs-audit` when the task's Goal: or Done: line mentions CCN, else ''."""
+    lines = read_text(task_file).splitlines()
+    return CCN_NOTE if any(CCN_RE.search(line) for line in lines if line.startswith(("Goal:", "Done:"))) else ""
+
+
 def prompt_for(a, task, role, rework_file, rid):
     t = os.path.join(os.path.abspath(getattr(a, "dir", ".")), WORK_DIR, a.stage, f"{task['id']}.md")
     out = (
@@ -503,6 +516,8 @@ def prompt_for(a, task, role, rework_file, rid):
             + pattern_header_note(os.path.abspath(getattr(a, "dir", ".")), t)
             + gates_note(a)
             + db_start_note(a)
+            + TOOLING_BLOCKED_NOTE
+            + ccn_note(t)
             + affected_note(t, AFFECTED_DEV)
             + lead_note(t)
         )
