@@ -10,7 +10,8 @@ AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "a
 # architect.md: 27000 (was 26000) because task-8 moved four always-read brief rules into it; they must sit in the main file, not rare-rules.md.
 # dev.md: 13700 (was 13500) and reviewer.md: 12300 (was 12200) because task-3 added the Bash rules line to both (and the CCN and tooling-BLOCKED lines to dev.md); they must sit in the main files, not rare-rules.md.
 # dev.md: 14600 (was 13700) and reviewer.md: 13300 (was 12300) because task-8 put the E1-E4 escalation rules in both main files: test_escalation_docs.py requires them word for word in each doc, so they cannot move to rare-rules.md.
-CAPS = {"architect.md": 27000, "dev.md": 14600, "reviewer.md": 13300}
+# architect.md: 27400 (was 27000) because the UI job rule bullet (glossary, sign-off, prototype) is always-read planning guidance; it sits in the main file, not rare-rules.md.
+CAPS = {"architect.md": 27400, "dev.md": 14600, "reviewer.md": 13300}
 
 # Gate-rule keywords that existed in the agent files before the split.
 KEYWORDS = ("ccn", "mutation check", "PLAN GAP", "Predicted paths", "VERDICT")
