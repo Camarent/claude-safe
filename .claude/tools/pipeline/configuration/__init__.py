@@ -539,6 +539,8 @@ from .public import (  # noqa: F401  (re-export: the facade keeps every name imp
     PUBLIC_FORBIDDEN_WORDS_KEY,
     PUBLIC_WORDS_BASELINE_DEFAULT,
     PUBLIC_WORDS_BASELINE_KEY,
+    PUBLIC_WORDS_SKIP_FILES_DEFAULT,
+    PUBLIC_WORDS_SKIP_FILES_KEY,
 )
 from .publish import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     _check_publish_entry,

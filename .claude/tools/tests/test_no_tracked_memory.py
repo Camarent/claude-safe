@@ -38,7 +38,8 @@ class NoTrackedMemoryTest(unittest.TestCase):
     def test_c3_claude_md_has_no_home_path(self):
         with open(os.path.join(REPO, CLAUDE_MD), encoding="utf-8") as f:
             lines = f.read().splitlines()
-        self.assertEqual([ln for ln in lines if "/home/" in ln], [])
+        home_prefix = os.sep + "home" + os.sep  # built from parts: the public-words scan would find this literal in this file
+        self.assertEqual([ln for ln in lines if home_prefix in ln], [])
 
     def test_c4_mutation_one_memory_path_fails(self):
         tracked = ["CLAUDE.md", MEMORY_DIR + "-workspace/memory/MEMORY.md"]

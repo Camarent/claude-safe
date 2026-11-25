@@ -47,8 +47,8 @@ def diff(found, baseline):
     return new, sorted(baseline - seen)
 
 
-def records(repo, words):
-    """-> [(file, line, word, text), ...] for every line of every tracked text file of `repo` that contains a word of `words` (case-insensitive). `line` is 1-based, `text` the raw line. Empty words -> []. Blank words are ignored: an empty pattern would match every line; the rest are stripped. Binary files (NUL byte in the first PUBLIC_BINARY_SNIFF_BYTES) are skipped. Raises ScanError when git cannot list the tracked files."""
+def records(repo, words, skip=()):
+    """-> [(file, line, word, text), ...] for every line of every tracked text file of `repo` that contains a word of `words` (case-insensitive). `line` is 1-based, `text` the raw line. Empty words -> []. Blank words are ignored: an empty pattern would match every line; the rest are stripped. Binary files (NUL byte in the first PUBLIC_BINARY_SNIFF_BYTES) and the repo-relative files in `skip` are not scanned. Raises ScanError when git cannot list the tracked files."""
     needles = [w.strip() for w in words if w and w.strip()]
     if not needles:
         return []
@@ -58,6 +58,8 @@ def records(repo, words):
         raise ScanError("scan failed: git could not list the tracked files")
     found = []
     for rel in filter(None, listed.stdout.split("\0")):
+        if rel in skip:
+            continue
         # a tracked symlink names a target outside the repo: it is not repo text, so it is not scanned
         if os.path.islink(os.path.join(repo, rel)):
             continue

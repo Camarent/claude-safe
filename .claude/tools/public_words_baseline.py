@@ -22,6 +22,8 @@ from pipeline.configuration import (
     PUBLIC_FORBIDDEN_WORDS_KEY,
     PUBLIC_WORDS_BASELINE_DEFAULT,
     PUBLIC_WORDS_BASELINE_KEY,
+    PUBLIC_WORDS_SKIP_FILES_DEFAULT,
+    PUBLIC_WORDS_SKIP_FILES_KEY,
     project,
     repo_dir,
 )
@@ -64,7 +66,8 @@ def main(argv=None):
     repo = repo_dir(d, project(d))
     path = os.path.join(repo, project(d).get(PUBLIC_WORDS_BASELINE_KEY, PUBLIC_WORDS_BASELINE_DEFAULT))
     try:
-        found = public_words.records(repo, _words(d, a.words))
+        skip = project(d).get(PUBLIC_WORDS_SKIP_FILES_KEY, PUBLIC_WORDS_SKIP_FILES_DEFAULT)
+        found = public_words.records(repo, _words(d, a.words), skip)
         baseline = public_words.read_baseline(path)
     except public_words.ScanError as e:
         print(str(e))

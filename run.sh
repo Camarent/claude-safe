@@ -7,7 +7,7 @@ dockerfilePath="$scriptDir"
 claudeDockerDir="$scriptDir/.claude"
 browserProfileDir="$scriptDir/browser-profile"
 
-# Add folders you always trust here, e.g. "/home/you/projects"
+# Add folders you always trust here, e.g. "~/projects"
 trustedPaths=(
 )
 

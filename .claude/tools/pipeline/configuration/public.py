@@ -6,3 +6,7 @@ PUBLIC_FORBIDDEN_WORDS_DEFAULT: list[str] = []  # the key when pipeline.json doe
 PUBLIC_BINARY_SNIFF_BYTES = 8192  # the scan skips a tracked file whose first this-many bytes hold a NUL byte (binary)
 PUBLIC_WORDS_BASELINE_KEY = "public_words_baseline"  # pipeline.json key: path (repo-relative) of the file listing accepted hits, one hit key per line
 PUBLIC_WORDS_BASELINE_DEFAULT = "docs/public-words-baseline.txt"  # the baseline when pipeline.json does not set the key; missing file = empty baseline
+PUBLIC_WORDS_SKIP_FILES_KEY = (
+    "public_words_skip_files"  # pipeline.json key: repo-relative files the scan skips (the file that holds the word list would match itself)
+)
+PUBLIC_WORDS_SKIP_FILES_DEFAULT = ["pipeline.json"]  # the skip list when pipeline.json does not set the key

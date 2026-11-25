@@ -31,6 +31,8 @@ from pipeline.configuration import (
     PUBLIC_FORBIDDEN_WORDS_KEY,
     PUBLIC_WORDS_BASELINE_DEFAULT,
     PUBLIC_WORDS_BASELINE_KEY,
+    PUBLIC_WORDS_SKIP_FILES_DEFAULT,
+    PUBLIC_WORDS_SKIP_FILES_KEY,
     VERDICT_PREFIX,
     project,
     release_branch,
@@ -185,7 +187,8 @@ def public_words_gate(d):
         return True, []
     baseline_rel = project(d).get(PUBLIC_WORDS_BASELINE_KEY, PUBLIC_WORDS_BASELINE_DEFAULT)
     try:
-        found = public_words.records(repo, words)
+        skip = project(d).get(PUBLIC_WORDS_SKIP_FILES_KEY, PUBLIC_WORDS_SKIP_FILES_DEFAULT)
+        found = public_words.records(repo, words, skip)
         baseline = public_words.read_baseline(os.path.join(repo, baseline_rel))
     except public_words.ScanError as e:
         return False, [str(e)]
