@@ -25,7 +25,7 @@ from itertools import zip_longest
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline.configuration import HOME, WORK_DIR
+from pipeline.configuration import HOME, WORK_DIR, tool_setting
 from pipeline.util import swallowed
 
 SKIP_DIRS = {
@@ -259,7 +259,7 @@ def vcache(root=None):
         os.makedirs(d, exist_ok=True)
         if os.path.basename(d) == ".code-index" and not os.path.exists(os.path.join(d, ".gitignore")):
             Path(d, ".gitignore").write_text("*\n", encoding="utf-8")  # never committed
-        c = sqlite3.connect(path, timeout=60)
+        c = sqlite3.connect(path, timeout=tool_setting("ASK_DB_TIMEOUT_S"))
         c.execute("pragma journal_mode=wal")
         c.execute("create table if not exists vec(h text primary key, v blob)")
         return c

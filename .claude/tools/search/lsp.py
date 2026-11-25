@@ -21,6 +21,8 @@ import time
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
 # lsp.py also runs as a script (python -I search/lsp.py): the tools root is not on sys.path before the insert above
+from pipeline.configuration import tool_setting  # noqa: E402  # the tools root is on sys.path (inserted above)
+
 from search.lsp_client import (  # noqa: E402
     EXT,
     MARKERS,
@@ -156,7 +158,7 @@ def not_checked(f, lang, why):
     cmd = [sys.executable, "-m", "py_compile", f] if lang == "py" else ["node", "--check", f] if lang == "js" else None
     if cmd:
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=False)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=tool_setting("LSP_RUN_TIMEOUT_S"), check=False)
             msg = r.stderr.strip().splitlines() or [""]
             if r.returncode:
                 print(f"{f}  syntax error ({'node --check' if lang == 'js' else 'py_compile'}; {why}; type errors NOT CHECKED): {msg[-1][:150]}")

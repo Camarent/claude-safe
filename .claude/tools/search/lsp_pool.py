@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 
+from pipeline.configuration import tool_setting
+
 from search import codesrv, lsp
 from search.lsp_client import EXT, MARKERS, Client, root_of
 
@@ -194,7 +196,7 @@ class Pool:
         with self.glock:
             entries, self.entries = list(self.entries.values()), collections.OrderedDict()
         for e in entries:
-            got = e.lock.acquire(timeout=2)  # a stuck request must not block shutdown (signal/atexit): kill anyway
+            got = e.lock.acquire(timeout=tool_setting("LSP_LOCK_TIMEOUT_S"))  # a stuck request must not block shutdown (signal/atexit): kill anyway
             try:
                 e.close()
             finally:
