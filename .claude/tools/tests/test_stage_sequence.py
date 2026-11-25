@@ -53,11 +53,11 @@ class StageSequenceTest(unittest.TestCase):
 
 
 class ReportTypeSequenceTest(unittest.TestCase):
-    def test_report_task_skips_quality_run_and_goes_to_sonnet_reviewer(self):
+    def test_report_task_skips_quality_run_and_keeps_haiku_reviewer(self):
         from tests.test_report_tasks import two_task_project
 
         _, steps, _ = dry_run(two_task_project())
-        self.assertEqual([s[2] for s in steps if s[1] == "reviewer"], ["sonnet", "haiku"])  # task-2 (report) first, task-1 (code) stays on Haiku
+        self.assertEqual([s[2] for s in steps if s[1] == "reviewer"], ["haiku", "haiku"])  # no E1 event: both reviewers stay on Haiku
         self.assertEqual(sum("qualityrun.py" in s[3] for s in steps), 1)  # the code task only
 
     def test_report_task_gets_a_prereview_before_its_sonnet_reviewer(self):
