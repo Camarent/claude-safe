@@ -103,7 +103,7 @@ from .plan_rules import (
     reads_as_prose,
     release_flag_problems,
 )
-from .plan_testcmd import check_bare_test_runner
+from .plan_testcmd import check_bare_test_runner, check_test_ban
 from .shellwords import split_commands
 from .stagedir import workspace_of
 from .tasks import parse_flags, parse_tasks
@@ -508,6 +508,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_warning_count(d, e["id"])
         + check_denied_commands(d, e["id"], _preflight_denied(d))
         + check_bare_test_runner(d, e["id"], _workspace(d))
+        + check_test_ban(d, e["id"], _workspace(d))
         + check_work_paths(d, e["id"])
         + check_task_size(d, e["id"])
         + check_type_inputs(d, e["id"], repo, _workspace(d))

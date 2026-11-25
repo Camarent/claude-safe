@@ -152,6 +152,8 @@ SCOPE_STRICT_NOTE = (
 )
 SCOPE_HINT_NOTE = " Predicted paths are a planning hint: a file outside them is never a FAIL by itself."  # reviewer brief, every review
 SCOPE_WARN_NOTE = " Scope note: the job changed files outside the task's predicted paths and the task text does not name them: {files}. Name them in your report; this alone is not a FAIL."
+TEST_BAN_KEY = "test_ban"  # pipeline.json: list of {"pattern": regex, "use": text}; a task `Test:` command part matching a pattern is an error naming `use` (plan_testcmd.check_test_ban)
+TEST_BAN_PREFIX = "testban:"  # error prefix of plan_testcmd.check_test_ban
 TESTCMD_WARN_PREFIX = "testcmd:"  # warning prefix of plan_testcmd.check_bare_test_runner; plan_check.errors_of never fails on it
 TESTCMD_HINT_KEY = "test_command_hint"  # pipeline.json: the project's real test command (what a `Test:` line should run instead of bare pytest); when unset a `gates` command that runs pytest through a wrapper is used
 BARE_RUNNER_RE = r"^(?:pytest|py\.test|(?:python[\d.]*)(?:\s+-\w+)*\s+-m\s+pytest)(?:\s|$)"  # a command that starts pytest with no wrapper
