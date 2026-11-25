@@ -14,7 +14,7 @@ import host_agents as H  # noqa: E402
 
 class TestRender(unittest.TestCase):
     def test_empty_frontmatter_is_kept(self):
-        text, _ = H.render("---\n---\nbody line\n", "/home/u/.claude", "pl-")
+        text, _ = H.render("---\n---\nbody line\n", "/srv/u/.claude", "pl-")
         self.assertTrue(text.startswith("---\n---\n"), text)
         self.assertIn("body line", text)
 
@@ -28,8 +28,8 @@ class TestRender(unittest.TestCase):
 
     def test_only_container_home_is_rewritten(self):
         body = "read /root/.claude/tools and /workspace/proj\n"
-        text, rep = H.render("---\nname: a\n---\n" + body, "/home/u/.claude", "pl-")
-        self.assertIn("/home/u/.claude/tools", text)
+        text, rep = H.render("---\nname: a\n---\n" + body, "/srv/u/.claude", "pl-")
+        self.assertIn("/srv/u/.claude/tools", text)
         self.assertIn("/workspace/proj", text)
         self.assertEqual(rep["paths"], 1)
 
@@ -103,7 +103,7 @@ class TestRenderRealAgents(unittest.TestCase):
         for fn, text in self.rendered.items():
             self.assertNotIn(self.home + self.home, text, fn)
             for line in text.split("\n"):
-                for tok in re.findall(r"/home/\S+", line):
+                for tok in re.findall(r"/\S*home\S*", line):
                     segs = tok.split("/")
                     self.assertLessEqual(segs.count("home"), 1, f"{fn}: {tok}")
 

@@ -11,13 +11,13 @@ from pipeline import lead_context as lc
 
 class ProjectDirTest(unittest.TestCase):
     def test_host_path(self):
-        self.assertEqual(lc.project_dir("/home/user/workspace", home="/home/user"), Path("/home/user/.claude/projects/-home-user-workspace"))
+        self.assertEqual(lc.project_dir("/srv/user/workspace", home="/srv/user"), Path("/srv/user/.claude/projects/-srv-user-workspace"))
 
     def test_container_path(self):
         self.assertEqual(lc.project_dir("/workspace", home="/root"), Path("/root/.claude/projects/-workspace"))
 
     def test_dots_become_dashes(self):
-        self.assertEqual(lc.project_dir("/home/u/my.repo", home="/home/u"), Path("/home/u/.claude/projects/-home-u-my-repo"))
+        self.assertEqual(lc.project_dir("/srv/u/my.repo", home="/srv/u"), Path("/srv/u/.claude/projects/-srv-u-my-repo"))
 
 
 if __name__ == "__main__":

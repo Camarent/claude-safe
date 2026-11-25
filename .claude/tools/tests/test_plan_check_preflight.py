@@ -13,7 +13,7 @@ from pipeline import plan_check
 
 class PreflightTest(unittest.TestCase):
     def test_test_line_prefix(self):
-        bad = brieflint.lint("Test: DOJO_KIT_ROOT=$PWD python3 qrun.py -- node --test a.js")
+        bad = brieflint.lint("Test: SAMPLE_LIB_ROOT=$PWD python3 qrun.py -- node --test a.js")
         self.assertTrue(any("VAR= prefix" in m for m in bad))
         ok = brieflint.lint("Test: python3 -I /root/.claude/tools/qrun.py -- node --test a.js")
         self.assertFalse(any("VAR= prefix" in m for m in ok))
@@ -25,27 +25,29 @@ class PreflightTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, "web", "tests"))
             open(os.path.join(d, "web", "tests", "clip.test.js"), "w").write("assert(clipMeta(1))")
-            open(os.path.join(d, "task-1.md"), "w").write("Goal: `clipMeta` gets a field\nPredicted paths: web/audio.js\nDone: ok\n")
-            got = plan_check.check_test_refs(d, "task-1", d)
+            open(os.path.join(d, "task-alpha.md"), "w").write("Goal: `clipMeta` gets a field\nPredicted paths: web/audio.js\nDone: ok\n")
+            got = plan_check.check_test_refs(d, "task-alpha", d)
             self.assertEqual(len(got), 1)
             self.assertIn("web/tests/clip.test.js", got[0])
-            open(os.path.join(d, "task-1.md"), "w").write("Goal: `clipMeta` gets a field\nPredicted paths: web/audio.js, web/tests/clip.test.js\nDone: ok\n")
-            self.assertEqual(plan_check.check_test_refs(d, "task-1", d), [])
-            open(os.path.join(d, "task-1.md"), "w").write(
+            open(os.path.join(d, "task-alpha.md"), "w").write(
+                "Goal: `clipMeta` gets a field\nPredicted paths: web/audio.js, web/tests/clip.test.js\nDone: ok\n"
+            )
+            self.assertEqual(plan_check.check_test_refs(d, "task-alpha", d), [])
+            open(os.path.join(d, "task-alpha.md"), "w").write(
                 "Goal: `clipMeta` gets a field\nPredicted paths: web/audio.js\nNote: web/tests/clip.test.js stays, it only reads it\nDone: ok\n"
             )
-            self.assertEqual(plan_check.check_test_refs(d, "task-1", d), [])
+            self.assertEqual(plan_check.check_test_refs(d, "task-alpha", d), [])
 
     def test_denied_command_prefix_in_test_line(self):
         with tempfile.TemporaryDirectory() as d:
-            open(os.path.join(d, "task-1.md"), "w").write("Test: python3 -I qrun.py -- true && ./dojo build x\n")
-            denied = ["rustup", "./dojo build"]
-            got = plan_check.check_denied_commands(d, "task-1", denied)
+            open(os.path.join(d, "task-alpha.md"), "w").write("Test: python3 -I qrun.py -- true && ./sample-lib build x\n")
+            denied = ["rustup", "./sample-lib build"]
+            got = plan_check.check_denied_commands(d, "task-alpha", denied)
             self.assertEqual(len(got), 1)
-            self.assertIn("./dojo build", got[0])
-            self.assertEqual(plan_check.check_denied_commands(d, "task-1", []), [])  # unset: no check
-            open(os.path.join(d, "task-1.md"), "w").write("Test: python3 -I qrun.py -- pytest rustup_notes.py\n")
-            self.assertEqual(plan_check.check_denied_commands(d, "task-1", denied), [])
+            self.assertIn("./sample-lib build", got[0])
+            self.assertEqual(plan_check.check_denied_commands(d, "task-alpha", []), [])  # unset: no check
+            open(os.path.join(d, "task-alpha.md"), "w").write("Test: python3 -I qrun.py -- pytest rustup_notes.py\n")
+            self.assertEqual(plan_check.check_denied_commands(d, "task-alpha", denied), [])
 
     def test_denied_commands_come_from_pipeline_json(self):
         with tempfile.TemporaryDirectory() as d:
@@ -60,16 +62,16 @@ class PreflightTest(unittest.TestCase):
             repo = os.path.join(d, "repo")
             os.makedirs(os.path.join(repo, "web"))
             subprocess.run(["git", "-C", repo, "init", "-q"], check=True)
-            open(os.path.join(d, "task-1.md"), "w").write("Predicted paths: web/new.js, ../outside/x.txt\n")
-            got = plan_check.check_git_paths(d, "task-1", repo)
+            open(os.path.join(d, "task-alpha.md"), "w").write("Predicted paths: web/new.js, ../outside/x.txt\n")
+            got = plan_check.check_git_paths(d, "task-alpha", repo)
             self.assertEqual(len(got), 1)
             self.assertIn("../outside/x.txt", got[0])
 
     def test_warning_count_is_a_warning(self):
         with tempfile.TemporaryDirectory() as d:
             for goal, n in (("fix 18 clippy warnings in a.rs", 0), ("fix 40 clippy warnings in a.rs", 1), ("Goal without a count", 0)):
-                open(os.path.join(d, "task-1.md"), "w").write(f"Goal: {goal}\n")
-                got = plan_check.check_warning_count(d, "task-1")
+                open(os.path.join(d, "task-alpha.md"), "w").write(f"Goal: {goal}\n")
+                got = plan_check.check_warning_count(d, "task-alpha")
                 self.assertEqual(len(got), n)
             self.assertEqual(plan_check.errors_of([*got, "size: x"]), [])
 
@@ -84,8 +86,8 @@ class PreflightTest(unittest.TestCase):
                 ("Predicted paths: web/a.js\nTest: python3 qrun.py -- node --test web/a.test.js\n", 0),
                 ("Predicted paths: web/a.js\nTest: node --test mykit/x.js\n", 0),
             ):
-                open(os.path.join(tf, "task-1.md"), "w").write(body)
-                self.assertEqual(len(plan_check.check_repo_prefix(tf, "task-1", repo)), n, body)
+                open(os.path.join(tf, "task-alpha.md"), "w").write(body)
+                self.assertEqual(len(plan_check.check_repo_prefix(tf, "task-alpha", repo)), n, body)
 
     def test_repo_phase_strips_prefix(self):
         from pipeline import cli_feature

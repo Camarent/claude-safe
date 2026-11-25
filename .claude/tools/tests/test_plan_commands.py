@@ -73,14 +73,14 @@ class T(unittest.TestCase):
         self.assertEqual(self.findings("./tool validate course-a"), [])
 
     def test_bare_word_after_option_no_suggestion(self):
-        self.make("workspace/dojo-core/x.txt", "tool")
-        self.assertEqual(self.findings("./tool -p dojo-core"), [])
-        self.assertEqual(self.findings("./tool --name dojo-core"), [])
-        self.assertEqual(self.findings("cs-qrun -- ./tool -p dojo-core hint_leak"), [])
+        self.make("workspace/sample-lib-core/x.txt", "tool")
+        self.assertEqual(self.findings("./tool -p sample-lib-core"), [])
+        self.assertEqual(self.findings("./tool --name sample-lib-core"), [])
+        self.assertEqual(self.findings("cs-qrun -- ./tool -p sample-lib-core hint_leak"), [])
 
     def test_system_tools_no_suggestion(self):
         self.make("workspace/course-a/x.txt", "workspace/hint_leak/y.txt")
-        for cmd in ("cargo test -p dojo-core hint_leak", "npm run course-a", "git status course-a", "pytest -k course-a"):
+        for cmd in ("cargo test -p sample-lib-core hint_leak", "npm run course-a", "git status course-a", "pytest -k course-a"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(self.findings(cmd), [])
 

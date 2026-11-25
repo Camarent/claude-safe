@@ -87,7 +87,7 @@ class PrReadyGatesTest(unittest.TestCase):
         self.assertNotIn("ci_drift_ignore", str(cm.exception))
 
     def test_red_ci_only_line_with_unset_variable_is_environment(self):
-        runner = FakeRunner(red={"scripts/dev.sh extra-ci"}, out={"scripts/dev.sh extra-ci": "KATA_TOKEN is not set"})
+        runner = FakeRunner(red={"scripts/dev.sh extra-ci"}, out={"scripts/dev.sh extra-ci": "SAMPLE_REPO_TOKEN is not set"})
         with self.assertRaises(pr_ops.Blocked) as cm:
             pr_ops._gates_gate(self.tmp.name, CFG, "stage/x", runner=runner)
         self.assertIn("environment, not code", str(cm.exception))
@@ -117,7 +117,7 @@ class PrReadyGatesTest(unittest.TestCase):
         self.assertIn("0 command(s) green", note)
 
     def _ci_file_runner(self, red=()):
-        """FakeRunner that makes the CI line `scripts/dev.sh extra-ci` write requirements-ci.txt (the stray file of kata)."""
+        """FakeRunner that makes the CI line `scripts/dev.sh extra-ci` write requirements-ci.txt (the stray file of sample-repo)."""
         inner = FakeRunner(red=red)
 
         def runner(args, cwd, timeout):
