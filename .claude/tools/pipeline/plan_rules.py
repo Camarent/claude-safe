@@ -24,7 +24,7 @@ from .configuration import (
     DEFAULT_WORKSPACE,
     DOC_PATHS,
     DOCS_WAVE_DIR,
-    DOCS_WAVE_WARN_PREFIX,
+    DOCS_WAVE_PREFIX,
     DONE_WHEN_EXTS,
     DRYRUN_FIELD,
     DRYRUN_FLAGS,
@@ -261,7 +261,7 @@ def _is_docs_path(path):
 
 
 def check_docs_wave(d, e, ents):
-    """`docs-wave:` warning (never fails a check): every Predicted path of the task is a docs path (`*.md` or under `docs/`) and a code task of the same wave is not among its dependencies, direct or through others. The docs then run beside the code they describe and may read it before it lands; add the dependency with `cs-plan edit-task --id N --depends M`, which moves the docs task to the wave after M."""
+    """`docs-wave:` error: every Predicted path of the task is a docs path (`*.md` or under `docs/`) and a code task of the same wave is not among its dependencies, direct or through others. The docs then run beside the code they describe and may read it before it lands; add the dependency with `cs-plan edit-task --id N --depends M`, which moves the docs task to the wave after M."""
     tid, wave = e["id"], e["wave"]
     own = paths_in(read_text(os.path.join(d, tid + ".md")))
     if not own or not all(_is_docs_path(p) for p in own):
@@ -280,7 +280,7 @@ def check_docs_wave(d, e, ents):
     )
     return (
         [
-            f"{DOCS_WAVE_WARN_PREFIX} {tid}: all Predicted paths are docs but {', '.join(code)} (same wave, code) is not a dependency: if the docs need that work, `cs-plan edit-task --id {tid[5:]} --depends {code[0][5:]}` (moves {tid} to the wave after it)"
+            f"{DOCS_WAVE_PREFIX} {tid}: all Predicted paths are docs but {', '.join(code)} (same wave, code) is not a dependency: if the docs need that work, `cs-plan edit-task --id {tid[5:]} --depends {code[0][5:]}` (moves {tid} to the wave after it)"
         ]
         if code
         else []

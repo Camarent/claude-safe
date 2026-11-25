@@ -462,7 +462,7 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     CMD_WRAPPER_OPTS,
     CMD_WRAPPERS,
     DOCS_WAVE_DIR,
-    DOCS_WAVE_WARN_PREFIX,
+    DOCS_WAVE_PREFIX,
     DONE_WHEN_EXTS,
     DRYRUN_COUNT_RE,
     DRYRUN_FIELD,
