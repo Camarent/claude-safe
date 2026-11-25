@@ -17,8 +17,11 @@ import time
 
 from pipeline import gate_record
 from pipeline.configuration import (
+    ENV_GATE_KIND,
     ENV_QRUN_NO_RECORD,
+    GATE_KIND_MUTATION,
     GATE_TIMEOUT_S,
+    MUTATION_GATE_TIMEOUT_S,
     QRUN_ENV,
     QRUN_LOG_MAX_AGE_S,
     QRUN_LOG_MAX_COUNT,
@@ -290,8 +293,9 @@ def _parallelize(cmd, cwd):
 
 
 def _timeout():
-    """Seconds one run may take: env ORCH_SCRIPT_TIMEOUT (same name as the pipeline script steps), default SCRIPT_TIMEOUT_S, never above GATE_TIMEOUT_S (below the agent tool timeout)."""
-    return min(script_timeout(), GATE_TIMEOUT_S)
+    """Seconds one run may take: env ORCH_SCRIPT_TIMEOUT (same name as the pipeline script steps), default SCRIPT_TIMEOUT_S, never above GATE_TIMEOUT_S (below the agent tool timeout), or MUTATION_GATE_TIMEOUT_S in a reviewer mutation check (ENV_GATE_KIND)."""
+    limit = MUTATION_GATE_TIMEOUT_S if os.environ.get(ENV_GATE_KIND) == GATE_KIND_MUTATION else GATE_TIMEOUT_S
+    return min(script_timeout(), limit)
 
 
 def _descendants(pid):

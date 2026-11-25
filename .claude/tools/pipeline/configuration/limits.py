@@ -149,6 +149,7 @@ GATE_ENV_PREFIXES = ("GIT_", "WT_")  # ... and every variable that starts with o
 SCRIPT_TIMEOUT_S = 1800.0  # one no-model script step (audit_run, final_check, ux_run ...): killed after this
 AGENT_TOOL_TIMEOUT_S = 600  # the agent Bash tool kills a command after this (Claude Code maximum, 600000 ms)
 GATE_TIMEOUT_S = AGENT_TOOL_TIMEOUT_S - 60  # qrun and testrun kill a gate after this: below AGENT_TOOL_TIMEOUT_S, so the agent gets the output line
+MUTATION_GATE_TIMEOUT_S = 300  # qrun kills one gate run of a reviewer mutation check (ENV_GATE_KIND=mutation) after this: a mutation run is one test, not the full gate; never above GATE_TIMEOUT_S
 GIT_NETWORK_TIMEOUT_S = 300  # one git push / fetch (pipeline/pr_ops.py)
 GIT_QUICK_TIMEOUT_S = 30  # one cheap git read (configuration.gitbranch._git_out, audit_run rev-parse)
 LIZARD_TIMEOUT_S = 120  # one `lizard --csv` run of pipeline/ccn.py
