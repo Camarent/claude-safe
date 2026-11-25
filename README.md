@@ -74,10 +74,6 @@ gitleaks, claude-code. Heavier toolchains are separate layers in `profiles/`
 |---|---|
 | `cpp`    | g++, clang, clangd, clang-tidy, cppcheck, cmake, make, bear |
 | `rust`   | gcc, rustup (stable), clippy, rust-analyzer, `wasm32-unknown-unknown`, wasm-pack, cargo-audit, cargo-deny, cargo-machete, cargo-llvm-cov, ruff |
-| `office` | LibreOffice, pandoc, typst, tesseract (eng+fra), poppler, Office fonts |
-| `audio`  | ffmpeg, yt-dlp, faster-whisper (`/opt/audio-venv`; models download on first use) |
-| `cluster` | docker (own dockerd), act, kubectl, kind, helm, one-node Slurm + munge (+0.6 GB); added by `--with cluster` |
-| `postgres` | PostgreSQL 17 (`initdb`, `pg_ctl`, `postgres`, `psql` on PATH, service not started), pgvector, `/opt/pg-venv` with FastAPI, uvicorn, SQLAlchemy, psycopg[binary], httpx |
 
     claude-safe --with rust
     claude-safe --here --with rust,cpp
@@ -105,32 +101,10 @@ container does not allow user namespaces.
 
 Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<stage>/reports/report-<id>.md`) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
 
-## Local cluster (`--with cluster`)
+## Risks
 
-`./run.sh --here --with cluster` adds the `cluster` profile and starts, as root in the entrypoint, an own `dockerd`
-(docker-in-docker; the host Docker socket is NOT mounted) and a one-node Slurm (`munged`, `slurmctld`, `slurmd`,
-node detected with `slurmd -C`). The container runs `--privileged`, which loosens isolation: use it only for this work.
-Images pulled by Docker/kind/act are kept in the volume `claude-safe-docker` (`docker volume rm` to reset).
-kind needs about 2-4 GB RAM, so stop the local model first (`modelctl use none` in model-host) unless you have enough RAM. Checked: `docker run`, `sbatch -W`/`srun`, `kind create cluster`.
-Logs: `/tmp/dockerd.log`, `/var/log/slurm/`.
-
-## Local models (model-host)
-
-Ollama and Strata no longer live in this image. They run from the separate project
-[model-host](https://github.com/Camarent/model-host) (a Compose project with its own `modelctl`, `~/workspace/model-host` by
-default, or `MODEL_HOST_DIR`). Start an engine there (`bin/modelctl up` for Ollama, `bin/modelctl use strata` for Strata); one engine
-holds the GPU at a time.
-
-`run.sh` connects by itself, nothing to flag: when the Docker network `model-net` exists, the container joins it, and for each engine
-running at that moment it sets `OLLAMA_URL=http://model-host-ollama:11434` and `STRATA_URL=http://model-host-strata:8080` plus
-`STRATA_KEY` (read from model-host's generated `secrets/strata.key`). Without model-host the container starts as before.
-Start the engines first: an engine started after the container has no variables in it (restart the container). A Strata that is still
-loading when the container starts is waited for by the pipeline preflight (`STRATA_LOAD_WAIT`, default 90 s). The container sits on the
-shared network `model-net`, so other containers there can reach Ollama, which has no login.
-
-The pipeline can no longer start Strata (it has no access to the host): `preflight()` in `.claude/tools/search/strata.py` skips the
-local-model steps when it does not answer. `--with strata` and `--with ollama` are gone and say where to go.
-All model files (GGUF sources, Strata data) live inside model-host (`models/`); claude-safe keeps none.
+The container runs as root with network access. The host gh token is forwarded into it today.
+The privileged cluster mode no longer exists.
 
 ## Development workflow
 
@@ -157,10 +131,8 @@ Decisions of the pipeline-hardening stage, one section per problem: `docs/decisi
 ## Setting up a new machine
 
 1. Clone the repo, then `scripts/dev.sh sync` (needs `uv` and a system Python 3.11+).
-2. Docker host (the PC with a GPU): `./run.sh --rebuild`, add `--with cluster` as needed; the local models come from model-host.
-3. No-container host (a VM): install the toolchains directly with `scripts/provision-dev-vm.sh` (`--list` shows the steps, `--dry-run`
-   shows what would change without sudo). The
-   `cluster` profile is PC-only: it needs a privileged container.
+2. Docker host: `./run.sh --rebuild`.
+3. Install `.claude` into `~/.claude` with `scripts/sync-claude-config.sh`.
 4. Per-machine values stay out of git: host paths come from `~` or `$HOME` in `.claude/paths.json`, tokens from the
    environment or an untracked `~/.config/secrets.env` (`chmod 600`), never from the repo.
 5. Privacy blocklist: copy `.claude/git/privacy.gitconfig.example` to `.claude/git/privacy.gitconfig` (untracked) and set

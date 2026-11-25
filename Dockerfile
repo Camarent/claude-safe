@@ -1,6 +1,6 @@
 # Base image: node, git, gh, browser, python/uv + QA tools, ctags, JS/Python language
 # servers, snip, gitleaks, claude-code.
-# Optional toolchains (cpp, rust, office) are layered on top by run.sh --with,
+# Optional toolchains (cpp, rust) are layered on top by run.sh --with,
 # see profiles/*.Dockerfile.
 FROM node:lts-trixie-slim
 
@@ -148,7 +148,7 @@ RUN npm i --prefix /opt/jstools --ignore-scripts "knip@${KNIP_VERSION}" "jscpd@$
     && chown -R node:node /opt/jstools \
     && /opt/jstools/node_modules/.bin/knip --version && /opt/jstools/node_modules/.bin/eslint --version
 
-# kata tooling (base: Python and JS go here, other toolchains in profiles).
+# project tooling (base: Python and JS go here, other toolchains in profiles).
 # mypy and the Hugging Face CLI (`hf`) are isolated by uv like the QA tools; esbuild, web-ext (run/lint a Firefox
 # extension) and vsce (package a VS Code extension) are global npm tools. Pinned 2026-11-11.
 ARG MYPY_VERSION=2.4.1
