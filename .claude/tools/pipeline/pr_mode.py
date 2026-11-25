@@ -8,7 +8,7 @@ import subprocess
 from urllib.parse import urlparse
 
 from . import gitx
-from .configuration import GIT_MIN_VERSION, GIT_SAFE_ENV, GIT_TIMEOUT_S, GITHUB_HOSTS, project, repo_path, tool_cmd, work_branch
+from .configuration import GIT_MIN_VERSION, GIT_SAFE_ENV, GIT_TIMEOUT_S, GITHUB_HOSTS, project, repo_path, tool_cmd, tool_setting, work_branch
 
 GH_CRED = "credential.helper=!gh auth git-credential"
 
@@ -34,7 +34,7 @@ def is_git(a):
 
 
 def has_origin(a):
-    r = _git(repo_path(a.dir), "remote", "get-url", "origin")
+    r = _git(repo_path(a.dir), "remote", "get-url", tool_setting("GIT_REMOTE"))
     return bool(r and r.returncode == 0)
 
 
@@ -57,7 +57,7 @@ def parse_remote(url):
 
 
 def origin_url(repo):
-    r = _git(repo, "remote", "get-url", "origin")
+    r = _git(repo, "remote", "get-url", tool_setting("GIT_REMOTE"))
     return r.stdout.strip() if r and r.returncode == 0 else ""
 
 

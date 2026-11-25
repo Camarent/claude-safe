@@ -37,6 +37,7 @@ from pipeline.configuration import (
     SERVE_TTL_S,
     VERDICT_PREFIX,
     WORK_DIR,
+    tool_setting,
 )
 from pipeline.serve_rule import start_refusal
 
@@ -149,7 +150,7 @@ def load_records(d):
 def port_open(port):
     """True when something accepts TCP connections on SERVE_HOST:PORT."""
     try:
-        with socket.create_connection((SERVE_HOST, port), timeout=0.5):
+        with socket.create_connection((SERVE_HOST, port), timeout=tool_setting("SERVE_CONNECT_TIMEOUT_S")):
             return True
     except OSError:
         return False
