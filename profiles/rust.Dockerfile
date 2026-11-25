@@ -1,3 +1,4 @@
+# BASE defaults to the locally built claude-safe image (a local tag, not a registry image, so no digest).
 ARG BASE=claude-safe:latest
 FROM ${BASE}
 # desc: rustup (stable), clippy, rust-analyzer, wasm32 target, wasm-pack, cargo-audit, cargo-deny, cargo-machete, cargo-llvm-cov, cargo-bloat, ruff, gcc
@@ -9,19 +10,33 @@ FROM ${BASE}
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned 2026-11-05; empty WASM_PACK_VERSION = latest GitHub release.
+# Pinned 2026-11-05; the wasm-pack tarball is checked by its sha256 (value in pins.md).
 ARG WASM_PACK_VERSION=0.15.1
+ARG WASM_PACK_SHA256_X86_64=410101009739b9d01c7d5affaaad6e9c9a24b4cba6791a4805db8e89b9bf7af2
+# rustup-init: versioned release asset, checked by sha256 per architecture (values in pins.md).
+ARG RUSTUP_VERSION=1.29.3
+ARG RUSTUP_INIT_SHA256_X86_64=b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+ARG RUSTUP_INIT_SHA256_AARCH64=9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282
 ENV RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
     PATH=/opt/cargo/bin:$PATH
-RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) rustupTriple=x86_64-unknown-linux-gnu; rustupSha="${RUSTUP_INIT_SHA256_X86_64}" ;; \
+        arm64) rustupTriple=aarch64-unknown-linux-gnu; rustupSha="${RUSTUP_INIT_SHA256_AARCH64}" ;; \
+        *) echo "unsupported arch for rustup: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rustupTriple}/rustup-init" \
+    && echo "${rustupSha}  /tmp/rustup-init" | sha256sum -c - \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --profile minimal --default-toolchain stable \
+    && rm -f /tmp/rustup-init \
     && rustup component add clippy rust-analyzer \
     && rustup target add wasm32-unknown-unknown \
-    && WASM_PACK_VERSION="${WASM_PACK_VERSION:-$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/rustwasm/wasm-pack/releases/latest | sed 's|.*/tag/v||')}" \
     && case "$(dpkg --print-architecture)" in \
         amd64) \
             curl -fsSL -o /tmp/wasm-pack.tar.gz \
               "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            && echo "${WASM_PACK_SHA256_X86_64}  /tmp/wasm-pack.tar.gz" | sha256sum -c - \
             && tar -xzf /tmp/wasm-pack.tar.gz -C /tmp \
             && install -m 755 "/tmp/wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl/wasm-pack" /opt/cargo/bin/wasm-pack \
             && rm -rf /tmp/wasm-pack* ;; \

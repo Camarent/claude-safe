@@ -2,7 +2,8 @@
 # servers, snip, gitleaks, claude-code.
 # Optional toolchains (cpp, rust) are layered on top by run.sh --with,
 # see profiles/*.Dockerfile.
-FROM node:lts-trixie-slim
+# Base pinned by digest (multi-arch index of the node:lts-trixie-slim tag); bump the digest to update.
+FROM node:lts-trixie-slim@sha256:abe7e5a82b61a8ef67b315b85497c9e65173387ccf2f4a029248184b8e020be5
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -61,42 +62,52 @@ RUN npm install -g "chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}"
 
 COPY mcp-servers.json /etc/claude/mcp-servers.json
 
+# uv installer: versioned release asset, checked by sha256 before it runs (no pipe to sh).
+ARG UV_VERSION=0.13.10
+ARG UV_INSTALLER_SHA256=51781aafe6950cc659f79873e1bdca55fbb9da6e0ef650bf98093a0f0aaaf453
 ENV UV_INSTALL_DIR=/usr/local/bin
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN curl -fsSL -o /tmp/uv-installer.sh "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-installer.sh" \
+    && echo "${UV_INSTALLER_SHA256}  /tmp/uv-installer.sh" | sha256sum -c - \
+    && sh /tmp/uv-installer.sh \
+    && rm -f /tmp/uv-installer.sh
 
 # snip — filters verbose shell output before it reaches the context window.
 # It installs as a PreToolUse hook on Bash: it runs the command itself, applies a
 # declarative YAML filter, and returns the condensed result. Measured in this
 # image: find -type f 127KB -> 1.9KB, grep -rn 390KB -> 5.3KB, git diff -96%.
 # Non-zero exits keep their real stderr and exit code, so failures stay readable.
-# Pinned 2026-11-05; empty SNIP_VERSION = latest GitHub release.
+# Pinned 2026-11-05; the tarball is checked by its sha256 per architecture (values in pins.md).
 ARG SNIP_VERSION=0.26.0
-RUN snipVersion="${SNIP_VERSION:-$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/edouard-claude/snip/releases/latest | sed 's|.*/tag/v||')}" \
-    && case "$(dpkg --print-architecture)" in \
-        amd64) snipArch=amd64 ;; \
-        arm64) snipArch=arm64 ;; \
+ARG SNIP_SHA256_AMD64=59659bea445f95be73b3084c249653c973148bac30674861aa35d8446bf92bf5
+ARG SNIP_SHA256_ARM64=255eb1a9cdf764f211a58a653e93d9ce5744a01de293ca9ba25b5255ac1498f9
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) snipArch=amd64; snipSha="${SNIP_SHA256_AMD64}" ;; \
+        arm64) snipArch=arm64; snipSha="${SNIP_SHA256_ARM64}" ;; \
         *) echo "unsupported arch for snip: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac \
     && curl -fsSL -o /tmp/snip.tar.gz \
-       "https://github.com/edouard-claude/snip/releases/download/v${snipVersion}/snip_${snipVersion}_linux_${snipArch}.tar.gz" \
+       "https://github.com/edouard-claude/snip/releases/download/v${SNIP_VERSION}/snip_${SNIP_VERSION}_linux_${snipArch}.tar.gz" \
+    && echo "${snipSha}  /tmp/snip.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/snip.tar.gz -C /tmp \
     && install -m 755 /tmp/snip /usr/local/bin/snip \
     && rm -f /tmp/snip.tar.gz /tmp/snip
 
 # gitleaks — scans repos/files for committed secrets (`gitleaks detect`, `gitleaks dir`).
-# Pinned 2026-11-05; empty GITLEAKS_VERSION = latest GitHub release.
+# Pinned 2026-11-05; the tarball is checked by its sha256 per architecture (values in pins.md).
 ARG GITLEAKS_VERSION=8.30.1
-RUN gitleaksVersion="${GITLEAKS_VERSION:-$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/gitleaks/gitleaks/releases/latest | sed 's|.*/tag/v||')}" \
-    && case "$(dpkg --print-architecture)" in \
-        amd64) gitleaksArch=x64 ;; \
-        arm64) gitleaksArch=arm64 ;; \
+ARG GITLEAKS_SHA256_X64=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+ARG GITLEAKS_SHA256_ARM64=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) gitleaksArch=x64; gitleaksSha="${GITLEAKS_SHA256_X64}" ;; \
+        arm64) gitleaksArch=arm64; gitleaksSha="${GITLEAKS_SHA256_ARM64}" ;; \
         *) echo "unsupported arch for gitleaks: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac \
+    && curl -fsSL -o /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${gitleaksArch}.tar.gz" \
+    && echo "${gitleaksSha}  /tmp/gitleaks.tar.gz" | sha256sum -c - \
     && mkdir /tmp/gitleaks \
-    && curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${gitleaksVersion}/gitleaks_${gitleaksVersion}_linux_${gitleaksArch}.tar.gz" \
-       | tar -xz -C /tmp/gitleaks gitleaks \
+    && tar -xzf /tmp/gitleaks.tar.gz -C /tmp/gitleaks gitleaks \
     && install -m 755 /tmp/gitleaks/gitleaks /usr/local/bin/gitleaks \
-    && rm -rf /tmp/gitleaks \
+    && rm -rf /tmp/gitleaks /tmp/gitleaks.tar.gz \
     && gitleaks version
 
 # Python QA tools, each isolated by uv in /opt/uv-tools with
@@ -162,7 +173,9 @@ RUN UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin sh -c '\
     && npm install -g "esbuild@${ESBUILD_VERSION}" "web-ext@${WEB_EXT_VERSION}" "@vscode/vsce@${VSCE_VERSION}" \
     && mypy --version && (hf version || hf --help | head -1) && esbuild --version && web-ext --version && vsce --version
 
-RUN npm install -g "@anthropic-ai/claude-code@latest"
+# Claude Code CLI: pinned by version, never the moving latest tag; bump the ARG to update.
+ARG CLAUDE_CODE_VERSION=2.1.332
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
 # `lp` = short alias for the code-navigation / local-model entry point: every argument is forwarded
 # unchanged, so `lp find "q"` is `python3 -I /root/.claude/tools/search/local.py find "q"` (the tool itself
