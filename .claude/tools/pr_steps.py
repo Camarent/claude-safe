@@ -29,7 +29,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     v, text = run(a.what, a.dir, a.stage, a.name)
     print(f"VERDICT: {v}\n{text}")
-    return 0
+    return 0 if v == "DONE" else 1
 
 
 if __name__ == "__main__":
