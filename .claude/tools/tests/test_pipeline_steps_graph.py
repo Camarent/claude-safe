@@ -97,6 +97,21 @@ class NextStepTest(unittest.TestCase):
         self.assertEqual((r["agent"], r["model"], r["why"]), ("script", None, "local pre-review (lp review); FAIL goes back to the dev"))
         self.assertIn(f"localmodel/prereview.py --stage s --task {TASK1} --dir " + self.d, r["prompt"])
 
+    def test_dev_done_that_changed_an_extra_file_goes_to_review_not_blocked(self):
+        # steps.py has no path-based block: a file outside the task's Predicted paths is no reason to stop the dev
+        self.cfg(testrun=True)
+        extra = "diff --git a/.claude/tools/extra_helper.py b/.claude/tools/extra_helper.py\n+x = 1\n"
+        green = [
+            dispatch("a1", "dev"),
+            dev_rep("a1", "DONE"),
+            ev("dispatch", id="a2", agent="script", role="script", model=None, why="test run (x)"),
+            ev("report", id="a2", role="script", verdict="DONE", file="t.md"),
+        ]
+        with mock.patch.object(steps, "job_diff", return_value=extra), mock.patch.object(steps, "job_dirty", return_value=[]):
+            r = self.nxt(green)
+        self.assertEqual(self.who(r), ("dispatch", "reviewer", "haiku"))
+        self.assertNotEqual(r["action"], "ask_main")
+
     def test_test_run_after_every_dev_done(self):
         self.cfg(testrun=True)
         r = self.nxt([dispatch("a1", "dev"), dev_rep("a1", "DONE")])
