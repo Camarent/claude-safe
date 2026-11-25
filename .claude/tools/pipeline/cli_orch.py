@@ -278,6 +278,7 @@ def _report_verdict(d, text, report_id=""):
 
 
 WHY_MAX = 300
+REFRESH_PROGRESS = "orch: retry {step}: rebasing the job branch onto the stage branch (a slow rebase can take a while)"
 _WHY_LINE = re.compile(r"^(?:VERDICT:\s*)?(?:BLOCKED|ESCALATE|FAIL|PASS|DONE|OK)\b:?\s*(.*)$")
 _HANDOFF_LINE = re.compile(r"^\W*REPORT\s+\S+\W*$")  # the agent's last reply line `REPORT <id>`: a handoff, never a reason
 
@@ -465,6 +466,7 @@ def _record_conflict(a, log, e):
 
 def _refresh_job(a, log):
     """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry with the resolve command."""
+    print(REFRESH_PROGRESS.format(step=a.step), file=sys.stderr, flush=True)
     try:
         res = worktree.refresh(a.dir, a.stage, a.step, discard=True)
     except worktree.RefreshConflict as e:
