@@ -158,7 +158,7 @@ class CmdGuardTest(unittest.TestCase):
         self.assertIn("pipe", cmd_guard.verdict("/w/tools/qrun.py -- x | tail"))
 
     def test_denies_export_then_test(self):
-        self.assertIn("Set the variable inside the test script", cmd_guard.verdict("export X=1 && pytest"))
+        self.assertIn("Write absolute paths in the command instead", cmd_guard.verdict("export X=1 && pytest"))
 
     def test_denies_timeout_env_prefix(self):
         self.assertIn("env", cmd_guard.verdict("timeout 5 env X=1 pytest"))

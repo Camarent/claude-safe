@@ -163,7 +163,7 @@ QRUN_MSG = (
     "One qrun per Bash call. No pipe, `||`, `;`, `&` or newline after qrun.py: a pipe hides the test exit status (a red or empty run looks green) "
     "and a second command runs outside qrun. To see the result, run the command bare and read the exit code. "
     f"After qrun, `&&` is allowed only before another qrun call or a read-only command ({', '.join(QRUN_CHAIN_READ_ONLY)}). "
-    f"Run `python3 -I {TOOLS_DIR}/qrun.py -- <command>` alone (a leading `cd dir &&` is fine); qrun already trims the output."
+    "Run `cs-qrun -- <command>` alone (a leading `cd dir &&` is fine); qrun already trims the output."
 )
 
 
@@ -462,9 +462,14 @@ def segments_why(segs):
                 f"qrun applies the test env itself: run `{head}` alone. To set a variable for the test, set it inside the test script, "
                 "or put `env` in a script file and run that file."
             )
-        if TEST_HEAD.match(head) and (env or seen_assign):
+        if TEST_HEAD.match(head) and env:
             return (
                 "Set the variable inside the test script, or put `env` in a script file and run that file. "
+                f"Then run the test as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
+            )
+        if TEST_HEAD.match(head) and seen_assign:
+            return (
+                "Write absolute paths in the command instead: no variable assignment before a command (`export` or `VAR=x`). "
                 f"Then run the test as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
             )
     return ""
