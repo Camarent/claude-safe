@@ -136,6 +136,17 @@ class PostgresFlagTest(unittest.TestCase):
             os.kill(pid, 9)
             self.fail("the daemonized child must be killed when qrun exits")
 
+    def test_start_and_run_share_one_deadline(self):
+        # the start takes ~1 s of the 2 s budget: the run gets only the rest, so the whole call ends near 2 s, not 1 s + 2 s
+        slow_start = "import sys, time\ntime.sleep(1.0)\nprint('postgresql://fake/slow')\n"
+        Path(self.script).write_text(slow_start, encoding="utf-8")
+        t0 = time.monotonic()
+        with unittest.mock.patch.object(qrun, "_timeout", return_value=2.0):
+            rc, _, _ = self.run_q([sys.executable, "-c", "import time; time.sleep(60)"])
+        elapsed = time.monotonic() - t0
+        self.assertNotEqual(rc, 0)
+        self.assertLess(elapsed, 2.8, f"start and run must share one budget, took {elapsed:.2f} s")
+
     def test_start_command_failure_is_exit_2(self):
         self.write_cfg(qrun_pg_var="PGURL_TEST", qrun_pg_start=[sys.executable, "-c", "import sys; sys.exit(3)"])
         rc, _, err = self.run_q(CMD_READS_URL)

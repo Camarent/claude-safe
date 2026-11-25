@@ -254,8 +254,8 @@ def _pg_settings():
 
 
 @contextlib.contextmanager
-def _postgres():
-    """Start a scratch Postgres with the pipeline.json start command, yield {VAR: url} for the command's env. The command runs in a fresh instance dir (also set as QRUN_PG_DIR) and prints the URL as its last stdout line. On exit, also on a timeout or SIGTERM, kill what it started and remove the instance dir."""
+def _postgres(deadline):
+    """Start a scratch Postgres with the pipeline.json start command, yield {VAR: url} for the command's env. The command runs in a fresh instance dir (also set as QRUN_PG_DIR) and prints the URL as its last stdout line. The start waits until DEADLINE (a time.monotonic value shared with the run). On exit, also on a timeout or SIGTERM, kill what it started and remove the instance dir."""
     var, start = _pg_settings()
     inst = tempfile.mkdtemp(prefix=_scratch_prefix())  # pruned by _prune_dead_scratch if qrun dies before this finally
     _become_subreaper()
@@ -267,7 +267,7 @@ def _postgres():
         except OSError as e:
             raise _PgError(f"qrun: {QRUN_PG_FLAG}: cannot run the start command: {e}") from e
         try:
-            out = p.communicate(timeout=_timeout())[0]
+            out = p.communicate(timeout=max(0.0, deadline - time.monotonic()))[0]
         except subprocess.TimeoutExpired as e:
             raise _PgError(f"qrun: {QRUN_PG_FLAG}: start command timeout after {_timeout():g} s") from e
         lines = [x for x in out.decode("utf-8", "replace").splitlines() if x.strip()]
@@ -370,17 +370,18 @@ def _prune_dead_scratch(roots):
             shutil.rmtree(d, ignore_errors=True)
 
 
-def _run(cmd, log, extra_env=None):
-    """Run CMD with its own TMPDIR (removed when it ends, also on a crash or kill), write the ANSI-stripped output to LOG; return (output lines, exit code). A timeout, SIGTERM or Ctrl-C kills the command and everything it started. EXTRA_ENV wins over the rest of the env."""
+def _run(cmd, log, extra_env=None, deadline=None):
+    """Run CMD with its own TMPDIR (removed when it ends, also on a crash or kill), write the ANSI-stripped output to LOG; return (output lines, exit code). A timeout, SIGTERM or Ctrl-C kills the command and everything it started. EXTRA_ENV wins over the rest of the env. DEADLINE (a time.monotonic value) bounds the run when given, else the run gets a full _timeout()."""
     scratch = _new_scratch()
+    wait = _timeout() if deadline is None else max(0.0, deadline - time.monotonic())
     try:
-        return _run_in(cmd, log, scratch, extra_env or {})
+        return _run_in(cmd, log, scratch, extra_env or {}, wait)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _run_in(cmd, log, scratch, extra_env):
-    """The run of _run, with SCRATCH as the command's TMPDIR (a pipeline.json test_env TMPDIR still wins)."""
+def _run_in(cmd, log, scratch, extra_env, wait):
+    """The run of _run, with SCRATCH as the command's TMPDIR (a pipeline.json test_env TMPDIR still wins) and at most WAIT seconds."""
     _become_subreaper()
     try:
         p = subprocess.Popen(
@@ -395,7 +396,7 @@ def _run_in(cmd, log, scratch, extra_env):
     else:
         old = signal.signal(signal.SIGTERM, _on_term)
         try:
-            raw, rc = p.communicate(timeout=_timeout())[0], p.returncode
+            raw, rc = p.communicate(timeout=wait)[0], p.returncode
         except subprocess.TimeoutExpired:
             raw, rc = (_kill_tree(p) or b"") + f"qrun: timeout after {_timeout():g} s (ORCH_SCRIPT_TIMEOUT)\n".encode(), 124
         except BaseException:
@@ -499,10 +500,11 @@ def main(argv=None):
     tree = _tree_before(cwd) if recording else None  # taken before the run: a test may write files
     cmd_argv = cmd
     cmd = _parallelize(cmd, cwd)
+    deadline = time.monotonic() + _timeout()  # one budget for the start command and the run
     try:
         with contextlib.ExitStack() as stack:
-            extra_env = stack.enter_context(_postgres()) if a.postgres else {}
-            lines, rc = _run(cmd, log, extra_env)
+            extra_env = stack.enter_context(_postgres(deadline)) if a.postgres else {}
+            lines, rc = _run(cmd, log, extra_env, deadline)
     except _PgError as e:
         print(e, file=sys.stderr)
         return 2
