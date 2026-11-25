@@ -103,6 +103,7 @@ PROJECT_DEFAULTS: dict = {
         "ffmpeg",
         "ffprobe",
     ],  # binaries a red-base failure names when its output has MISSING_BINARY_MARK (the red-base message adds a line listing them)
+    "tool_settings": {},  # {key: value} overriding a named tool setting (configuration/literals.py `tool_setting`); env CS_<NAME> wins over it
 }
 GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above

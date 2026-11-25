@@ -425,6 +425,19 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     WAVE_UNLIMITED,
     WORKTREES_KEY,
 )
+from .literals import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    ASK_DB_TIMEOUT_S,
+    GIT_REMOTE,
+    INDEX_DB_TIMEOUT_S,
+    LSP_LOCK_TIMEOUT_S,
+    LSP_RUN_TIMEOUT_S,
+    PRICES_TABLE,
+    SAFESHELL_TIMEOUT_S,
+    SERVE_CONNECT_TIMEOUT_S,
+    TOOL_ENV_PREFIX,
+    TOOL_SETTINGS_KEY,
+    tool_setting,
+)
 from .paths import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     AGENTS_DIR,
     ASK_VENV_PY,
