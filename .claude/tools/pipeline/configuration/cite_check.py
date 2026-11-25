@@ -23,12 +23,20 @@ CITE_COMMENT_MARKS = {  # code files: the comment marker; only the tail after it
     ".java": "//",
 }
 CITE_EXTENSIONS = ("py", "md", "sh", "yml", "yaml", "toml", "json", "js", "ts", "go", "rs", "c", "h", "java", "txt")  # extensions a cite path may end in
+CITE_QUOTED_RE = re.compile(r"`[^`]*`|\"[^\"]*\"|'[^']*'")  # a quoted span: backticks or double or single quotes
 CITE_RE = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-]+\.(?:" + "|".join(CITE_EXTENSIONS) + r")):(\d+)(?:-(\d+))?\b")  # path:line or path:start-end
 CITE_URL_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+")  # URLs are not cites: `https://host:80/x`
 CITE_FENCE_RE = re.compile(r"^\s*```")  # a fenced block opens or closes on this line
 CITE_SYMBOL_BEFORE_RE = re.compile(r"`([A-Za-z_]\w*)`[\s(]*$")  # a backticked symbol right before a cite
 CITE_DEF_RE = r"\b(?:def|class|function|func|fn|const|let|var)\s+{sym}\b"  # template: a definition of the symbol
 CITE_WORD_RE = r"\b{sym}\b"  # template: any occurrence of the symbol
+CITE_FIXED_WORDS = (
+    "was",
+    "old",
+    "fixed",
+    "stale",
+    "previously",
+)  # a cite in backticks or quotes on a line with one of these words is quoted as already fixed: not checked
 CITE_CHECK_KEY = "cite_check"  # pipeline.json key: the cite check runs after the Test lines are green (testrun.py)
 CITE_CHECK_DEFAULT = True  # the key when pipeline.json does not set it
 CITE_DIFF_MAX_CHARS = 10**7  # the cite check reads the whole committed diff: a cut would hide the cites past it
