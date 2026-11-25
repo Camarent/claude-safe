@@ -239,13 +239,11 @@ class NextStepTest(unittest.TestCase):
     def test_dev_escalate_paths(self):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "ESCALATE", "e.md")]
         r = self.nxt(mine)
-        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))
+        self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))  # E1(b): the first ESCALATE with a reason goes to Sonnet
         self.assertIn("Rework: fix the findings in e.md first.", r["prompt"])
-        two = [*mine, dispatch("a2", "dev"), dev_rep("a2", "ESCALATE", "e2.md")]
-        self.assertEqual(self.who(self.nxt(two)), ("dispatch", "dev", "sonnet"))
-        # a Sonnet dev failing goes to the lead
-        three = [*two, dispatch("a3", "dev", "sonnet"), dev_rep("a3", "ESCALATE", "e3.md")]
-        self.assertEqual(self.nxt(three)["action"], "ask_main")
+        # E4: a second ESCALATE of the step blocks to the lead
+        two = [*mine, dispatch("a2", "dev", "sonnet"), dev_rep("a2", "ESCALATE", "e2.md")]
+        self.assertEqual(self.nxt(two)["action"], "ask_main")
 
     def test_dev_blocked_on_a_reviewer_finding_without_change_stops_the_review_loop(self):
         mine = [
@@ -291,11 +289,11 @@ class NextStepTest(unittest.TestCase):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "DONE"), dispatch("a2", "reviewer"), rev_rep("a2", "ESCALATE", "r1.md")]
         r = self.nxt(mine)
         self.assertEqual(self.who(r), ("dispatch", "reviewer", "sonnet"))  # a Haiku ESCALATE goes straight to Sonnet
-        # a Sonnet reviewer already ran: an ESCALATE now counts as a failed round
+        # E4: the Sonnet reviewer's ESCALATE is a second ESCALATE of the step: it blocks to the lead with its reason
         mine += [dispatch("a3", "reviewer", "sonnet"), rev_rep("a3", "ESCALATE", "r2.md")]
         r = self.nxt(mine)
-        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))  # the Sonnet reviewer's ESCALATE is the first failed round: Haiku rework
-        self.assertIn("Rework: fix the findings in r2.md first.", r["prompt"])
+        self.assertEqual(r["action"], "ask_main")
+        self.assertIn("second reviewer ESCALATE", r["message"])
 
     def test_sonnet_reviewer_escalate_loop_ends_at_the_lead(self):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "DONE"), dispatch("a2", "reviewer", "sonnet"), rev_rep("a2", "ESCALATE", "r1.md")]

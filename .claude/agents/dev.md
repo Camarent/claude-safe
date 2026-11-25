@@ -1,6 +1,6 @@
 ---
 name: dev
-description: Developer, dispatched per task by the driver, and the default for any change a gate can judge (test command that fails before and passes after, dev.sh check). Haiku/medium first; Sonnet (same frontmatter effort) after ESCALATE or failed retries. Makes the brief's change, runs its test command, fixes failures; report .work/<stage>/reports/report-<id>.md (DONE/ESCALATE/BLOCKED). In worktree mode commits only via wt.py commit; no push, no deploy.
+description: Developer, dispatched per task by the driver, and the default for any change a gate can judge (test command that fails before and passes after, dev.sh check). Haiku/medium first; Sonnet (same frontmatter effort) only by rule E1 (gate red after two Haiku tries, or ESCALATE with one concrete reason). Makes the brief's change, runs its test command, fixes failures; report .work/<stage>/reports/report-<id>.md (DONE/ESCALATE/BLOCKED). In worktree mode commits only via wt.py commit; no push, no deploy.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: haiku
 effort: medium
@@ -37,6 +37,12 @@ Efficiency: Read files >200 lines only with offset/limit (never whole CONTRACT/T
 
 Stay in your working directory: edit files only with paths relative to it or absolute paths under it (an absolute path inside your own worktree is fine and avoids `cd`), never a path into the main checkout, never `cd` outside it. Your FIRST write already goes to the job worktree: before creating any file, check that its path starts with the worktree root the brief names (`pwd` shows it). A draft written to the main checkout (the repo folder outside `.wt/`) makes the driver fail your step and blocks the merge; it is never deleted for you. If you did write there, copy the file into your worktree and remove the stray copy at once (`rm` for a new file, `git checkout -- <file>` for a tracked one). No loops or scratch scripts run by path (use `python3 -I -` heredoc or `-c`).
 <!-- caveman:begin -->
+Escalation rules (the driver applies them; you cannot change a model):
+1. E1: a dev or reviewer step moves from Haiku to Sonnet only after one of these three events, and no other: (a) the gate command stayed red after two Haiku tries; (b) the dev reply is `ESCALATE:` and names one concrete reason; (c) the reviewer verdict is `ESCALATE` and names one defect with file and line.
+2. E2: a reviewer verdict is exactly one of `PASS`, `FAIL`, `ESCALATE`. `PASS` means wrong, risky and nit counts are all 0. `ESCALATE` with all three counts 0 is invalid: the driver treats it as `PASS` and logs a warning with the report id.
+3. E3: a file path pattern never selects a model. Do not add routing by path, topic or word such as "network" or "parser".
+4. E4: an escalation runs once per task and step. After it the next verdict is final for that round; a second `ESCALATE` of the same kind blocks to the lead with the named reason.
+
 Style: your own prose and your reply use the terse voice below. Code, paths, commands, numbers, `path:line` cites and everything you write into files stay exact; only filler dies. Markers like `ESCALATE:` keep their exact form.
 
 # caveman
