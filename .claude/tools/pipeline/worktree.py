@@ -824,7 +824,9 @@ def merge(a_dir, stage, task):
         if sq.returncode:
             hunks = _conflict_hunks(r)  # read before the reset: the reset removes the conflict markers
             git(r, "reset", "--hard", "HEAD", check=False)
-            raise Conflict(f"conflict merging {branch} into {want} in {r}: {(sq.stdout + sq.stderr).strip()[-300:]}\n{hunks}")
+            done = [k for k, v in out.items() if v != "nothing"]  # repos merged before this one: their commits stay
+            kept = f"\nalready merged, kept: {', '.join(done)}" if done else ""
+            raise Conflict(f"conflict merging {branch} into {want} in {r}: {(sq.stdout + sq.stderr).strip()[-300:]}\n{hunks}{kept}")
         out[rel or "."] = _commit_squash(r, branch)
     return out
 
