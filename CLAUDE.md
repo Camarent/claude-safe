@@ -6,5 +6,5 @@ Module map: `docs/ARCHITECTURE.md`; per-module contracts: `docs/modules/`.
 
 ## Guidelines
 
-python: read /home/cam/.claude/practices/guidelines/python.md before editing python files
-all: /home/cam/.claude/practices/guidelines/base.md
+python: read ~/.claude/practices/guidelines/python.md before editing python files
+all: ~/.claude/practices/guidelines/base.md
