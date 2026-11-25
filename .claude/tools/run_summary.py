@@ -11,15 +11,20 @@ import json
 import os
 import subprocess
 import sys
+from collections import Counter
 
+import denial_log
 from pipeline import gitx
-from pipeline.configuration import GIT_TIMEOUT_S, ORCH_LOG, WORK_DIR, project, work_branch
+from pipeline.configuration import GIT_TIMEOUT_S, ORCH_LOG, SCRATCH_DIR, WORK_DIR, project, work_branch
 from pipeline.util import read_jsonl
 
 GH_BIN = "gh"
 GH_PR_FIELDS = "number,state,url,isDraft"
 SUMMARY_EVENTS = 3  # the last N events of orch.jsonl
 EVENT_CHARS = 200  # one event line is cut to this many characters
+DENIALS_LABEL = "denials"  # the summary line starts with this label
+DENIALS_ITEM = "{agent}={count}"  # one agent kind on the denials line
+DENIALS_SEP = " "  # between the agent kinds on the denials line
 
 
 def gh_run(args, cwd):
@@ -65,13 +70,24 @@ def event_lines(log):
     return [f"event: {json.dumps(e, ensure_ascii=False, sort_keys=True)[:EVENT_CHARS]}" for e in evs]
 
 
+def denials_line(scratch):
+    """-> [one line] with the denial count per agent kind of the scratch dir's denials.jsonl, or [] when no row names an agent."""
+    counts = Counter(str(r["agent"]) for r in denial_log.rows(scratch) if r.get("agent"))
+    if not counts:
+        return []
+    items = DENIALS_SEP.join(DENIALS_ITEM.format(agent=agent, count=n) for agent, n in counts.most_common())
+    return [f"{DENIALS_LABEL}: {items}"]
+
+
 def summary(project_dir, stage, gh=None, git=gitx.try_out):
     """-> the summary lines for STAGE in PROJECT_DIR. GH and GIT are runners; None means the real gh and git."""
     if gh is None:
         gh = functools.partial(gh_run, cwd=project_dir)
     branch = work_branch(project(project_dir), stage)
+    stage_dir = os.path.join(project_dir, WORK_DIR, stage)
     lines = [tip_line(project_dir, branch, git), pr_line(branch, gh)]
-    lines += event_lines(os.path.join(project_dir, WORK_DIR, stage, ORCH_LOG))
+    lines += denials_line(os.path.join(stage_dir, SCRATCH_DIR))
+    lines += event_lines(os.path.join(stage_dir, ORCH_LOG))
     return lines
 
 

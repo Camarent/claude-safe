@@ -32,6 +32,7 @@ Layout: top level keeps TASKS.md, orch.jsonl, metrics.jsonl, BLOCKED.md; `report
 `orch.jsonl` events (dispatch/report/reject) | `reports/report-<id>.md` agent -> orch | `brief-<name>.md` + `requests/<nn>-<name>.json` anyone -> orch
 (`{"agent":"researcher","model":"haiku"|null,"brief":".work/<stage>/brief-<name>.md"}`; consumed requests move to `requests/done/`).
 Headless ops role may `rm` under `<project>/.work/` (cleanup step).
+`run_summary.py --stage S` (the post-exit summary) prints the stage branch tip, the PR state, a `denials: dev=3 reviewer=1` line (hook denials of `tmp/denials.jsonl` counted per agent kind, most first; no line when the log is missing or no row names an agent; label and format are `DENIALS_LABEL` / `DENIALS_ITEM` in `run_summary.py`) and the last three `orch.jsonl` events.
 Headless sessions get the Artifact tool only with `CLAUDE_CODE_ARTIFACT=1` and `--allowedTools Artifact` (publisher only; the PUBLISH: line is the authorization); `claude.py` sets both for the publisher only (`ARTIFACT_AGENTS`, `ENV_ARTIFACT`, `ARTIFACT_ALLOW_FLAGS` in `configuration/`).
 `cs-plan edit-task --stage S --id N --field F --value V` (fields: title, paths, pattern, test, done, turns).
 

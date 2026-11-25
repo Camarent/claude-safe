@@ -8,8 +8,9 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import denial_log
 import run_summary
-from pipeline.configuration import ORCH_LOG, WORK_DIR
+from pipeline.configuration import ORCH_LOG, SCRATCH_DIR, WORK_DIR
 from tests.support.tmpdirs import tracked_mkdtemp
 
 STAGE = "s1"
@@ -88,6 +89,34 @@ class RunSummaryTest(unittest.TestCase):
         self.write_events(1)
         lines = run_summary.summary(self.d, STAGE, fake_gh(), fake_git(sha=None))
         self.assertEqual(lines[0], "stage branch stage/s1: not found")
+
+    def write_denials(self, text):
+        scratch = os.path.join(self.stage_dir, SCRATCH_DIR)
+        os.makedirs(scratch, exist_ok=True)
+        with open(os.path.join(scratch, denial_log.DENIALS_FILE), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_denials_line_counts_per_agent_not_per_rule(self):
+        self.write_events(1)
+        rows = [
+            {"rule": "sed", "agent": "dev"},
+            {"rule": "cd_git", "agent": "dev"},
+            {"rule": "sed", "agent": "reviewer"},
+            {"rule": "sed", "agent": "dev"},
+            {"rule": "sed"},  # older row: no agent, not counted
+        ]
+        self.write_denials("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
+        lines = run_summary.summary(self.d, STAGE, fake_gh(), fake_git())
+        self.assertEqual(lines[2], f"{run_summary.DENIALS_LABEL}: dev=3 reviewer=1")
+        self.assertEqual(lines[3], f"event: {json.dumps({'i': 1, 'ev': 'report'}, sort_keys=True)}")
+
+    def test_no_denials_line_without_log_or_counted_rows(self):
+        self.write_events(1)
+        lines = run_summary.summary(self.d, STAGE, fake_gh(), fake_git())
+        self.assertFalse(any(line.startswith(run_summary.DENIALS_LABEL) for line in lines))
+        self.write_denials("not json\n" + json.dumps({"rule": "sed"}) + "\n")
+        lines = run_summary.summary(self.d, STAGE, fake_gh(), fake_git())
+        self.assertFalse(any(line.startswith(run_summary.DENIALS_LABEL) for line in lines))
 
     def test_main_exits_zero_and_prints_lines(self):
         self.write_events(4)
