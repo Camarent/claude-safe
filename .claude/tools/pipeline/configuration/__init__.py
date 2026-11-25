@@ -11,6 +11,7 @@ from .ci_poll import (  # noqa: F401  (re-export: the facade keeps every name im
     GH_CHECKS_PENDING_RC,
 )
 from .cite_check import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    CITE_BACKTICK_FILE_RE,
     CITE_CHECK_DEFAULT,
     CITE_CHECK_KEY,
     CITE_COMMENT_MARKS,

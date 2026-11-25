@@ -25,6 +25,7 @@ CITE_COMMENT_MARKS = {  # code files: the comment marker; only the tail after it
 CITE_EXTENSIONS = ("py", "md", "sh", "yml", "yaml", "toml", "json", "js", "ts", "go", "rs", "c", "h", "java", "txt")  # extensions a cite path may end in
 CITE_QUOTED_RE = re.compile(r"`[^`]*`|\"[^\"]*\"|'[^']*'")  # a quoted span: backticks or double or single quotes
 CITE_RE = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-]+\.(?:" + "|".join(CITE_EXTENSIONS) + r")):(\d+)(?:-(\d+))?\b")  # path:line or path:start-end
+CITE_BACKTICK_FILE_RE = re.compile(r"`((?:[\w.-]+/)*[\w-]+\.(?:" + "|".join(CITE_EXTENSIONS) + r"))`")  # a backticked file name with a cite extension, no line
 CITE_URL_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+")  # URLs are not cites: `https://host:80/x`
 CITE_FENCE_RE = re.compile(r"^\s*```")  # a fenced block opens or closes on this line
 CITE_SYMBOL_BEFORE_RE = re.compile(r"`([A-Za-z_]\w*)`[\s(]*$")  # a backticked symbol right before a cite
