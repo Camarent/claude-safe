@@ -118,3 +118,8 @@ Moves, renames and rewrites go through a script with a dry run first (print the 
 - Messages and file names for this live in `pipeline.configuration` (`LINK_*`, `BASE_WHY_*`, `CLEAR_WHY_*`).
 - Time-based or non-isolated tests are bad design (code not separated): inject the clock, isolate the test; only if impossible put it in `gates_merge`. See `agents/dev.md`, `agents/architect.md`, `ORCHESTRATOR.md`.
 - Main-checkout guard: `main_guard_ignore_globs` (pipeline.json key; default `("qrun-*.log",)` from `MAIN_GUARD_IGNORE_GLOBS` in `pipeline/configuration/limits.py`) lists path globs of the main checkout the dirt check never reports. Set it in the project `pipeline.json`; a list replaces the default (`[]` ignores nothing).
+
+## Lesson: a missing hook binary on Edit or Write must fail open
+- What happened: a fail-closed write hook blocked every dev write in job worktrees (2026-11-24) because its binary was not on PATH.
+- Rule: a write guard on Edit or Write must exit 0 when its binary is missing (fail open). Hooks on Bash and Agent keep exit 2 on purpose (fail closed). The review guard, matched on Edit or Write too, stays fail closed by decision.
+- Proof: `test_hook_commands.py` runs each fail-open hook with an empty PATH and asserts exit 0; `unguarded_names` flags any cs- hook without a guard form.
