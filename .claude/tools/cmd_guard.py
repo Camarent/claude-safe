@@ -17,7 +17,7 @@
    A `cd` into the hook's own cwd (the job worktree) is not denied: it is dropped by the rewrite (`cd . && git x` -> `git x`).
 
 Quoted text and heredoc bodies are data, not commands, except the body of `sh -c` / `bash -c`.
-Known limit: `$(...)` subshells and `(...)` groups are not split; a hook crash exits 1 and the call is allowed (fail open).
+Known limit (A11): `$(...)` and backtick subshells and `(...)` groups are not split, so a qrun call inside them is not checked; a hook crash exits 1 and the call is allowed (fail open).
 Setup: settings.json runs `python3 -I /root/.claude/tools/cmd_guard.py`; if that path is missing python exits 2 and blocks every Bash
 call, so restore the file (or fix the hook path) rather than the guard.
 
@@ -101,7 +101,13 @@ QRUN_HEAD = re.compile(rf"(?:{QRUN_PATTERN})(?=\s|$)")
 WRAPPERS = {"env", "nohup", "time", "exec", "command", "nice", "builtin"}
 ASSIGN_WORDS = {"export", "declare", "typeset", "local", "readonly"}
 VAR_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
-SHELL_C = re.compile(r"\b(?:ba|z|da)?sh\s+(?:-\w+\s+)*-\w*c\s+(['\"])(.*?)\1", re.S)
+TIMEOUT_VALUE_FLAGS = {"-k", "--kill-after", "-s", "--signal"}  # timeout flags whose value is the next word
+SHELL_C = re.compile(r"\b(?:ba|z|da)?sh\s+(?:-\w+\s+)*-\w*c\s+('[^']*'|\"(?:\\.|[^\"\\])*\")", re.S)  # the quoted body, escapes kept
+
+
+def shell_c_bodies(cmd):
+    """-> the body of each `sh -c` / `bash -c` argument, quotes and escapes removed (shlex reads the quoted token)."""
+    return [shlex.split(quoted)[0] for quoted in SHELL_C.findall(strip_heredocs(cmd))]
 
 
 def strip_quotes(cmd):
@@ -122,8 +128,10 @@ def parse(seg):
         elif w == "timeout":
             words = words[1:]
             while words and words[0].startswith("-"):
-                words.pop(0)
-            words = words[1:]
+                takes_value = words.pop(0) in TIMEOUT_VALUE_FLAGS
+                if takes_value and words:
+                    words.pop(0)  # the value of `-k 5` or `-s TERM` is not the duration
+            words = words[1:]  # the duration
         elif VAR_WORD.match(w):
             env = True
             words.pop(0)
@@ -466,8 +474,8 @@ def verdict_rule(cmd):
     """-> (rule, deny reason) or ('', '') when allowed; the rule names the check that denied (denial log)."""
     if IMPORT_FAILURE:
         return "import", IMPORT_FAILURE
-    for body in SHELL_C.findall(strip_heredocs(cmd)):
-        rule, why = verdict_rule(body[1])
+    for body in shell_c_bodies(cmd):
+        rule, why = verdict_rule(body)
         if why:
             return rule, why
     text = strip_quotes(cmd)
