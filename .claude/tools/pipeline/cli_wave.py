@@ -177,6 +177,8 @@ def _kill_stale_sessions(w):
             killed += 1
         except ProcessLookupError:  # already gone
             continue
+        except PermissionError:  # pid reused by another user's process: not ours to kill
+            continue
     Path(path).unlink(missing_ok=True)
     return killed
 
