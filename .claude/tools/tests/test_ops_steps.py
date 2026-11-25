@@ -145,13 +145,44 @@ class OpsStepsTest(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}):
             ok, lines = ops_steps.public_words_gate(self.d)
             self.assertFalse(ok)
-            self.assertEqual(lines, ["README.md:2: sauce"])
+            self.assertEqual(lines, ["README.md:2: sauce", "add to docs/public-words-baseline.txt: README.md\tsauce\tthe sauce is here"])
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 rc = ops_steps.main(["public-words", "--dir", self.d])
         self.assertEqual(rc, 1)
         self.assertEqual(out.getvalue().splitlines()[0], "VERDICT: FAIL")
         self.assertIn("README.md:2: sauce", out.getvalue())
+        self.assertIn("add to docs/public-words-baseline.txt: README.md\tsauce\tthe sauce is here", out.getvalue())
+
+    def _baseline(self, text):
+        os.makedirs(os.path.join(self.d, "docs"), exist_ok=True)
+        with open(os.path.join(self.d, "docs", "public-words-baseline.txt"), "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_public_words_baselined_hit_is_silent(self):
+        self._repo_with_doc("intro\nthe sauce is here\n")
+        self.put_claude("This repo is public.\n")
+        self._baseline("# accepted\nREADME.md\tsauce\tthe sauce is here\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, []))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = ops_steps.main(["public-words", "--dir", self.d])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().splitlines()[0], "VERDICT: DONE")
+
+    def test_public_words_baseline_entry_without_hit_is_stale_not_fail(self):
+        self._repo_with_doc("intro\nthe sauce is here\n")
+        self.put_claude("This repo is public.\n")
+        self._baseline("README.md\tsauce\tthe sauce is here\nREADME.md\tsauce\tgone line\n")
+        with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}):
+            self.assertEqual(ops_steps.public_words_gate(self.d), (True, ["stale: README.md\tsauce\tgone line"]))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = ops_steps.main(["public-words", "--dir", self.d])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().splitlines()[0], "VERDICT: DONE")
+        self.assertIn("stale: README.md\tsauce\tgone line", out.getvalue())
 
     def test_public_words_tracked_symlink_to_outside_file_is_not_a_hit(self):
         self._repo_with_doc("intro\n")
@@ -199,7 +230,7 @@ class OpsStepsTest(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"PIPELINE_PUBLIC_FORBIDDEN_WORDS": "sauce"}), self._gh_says('{"isPrivate": false}'):
             ok, lines = ops_steps.public_words_gate(self.d)
         self.assertFalse(ok)
-        self.assertEqual(lines, ["README.md:1: sauce"])
+        self.assertEqual(lines, ["README.md:1: sauce", "add to docs/public-words-baseline.txt: README.md\tsauce\tthe sauce is here"])
 
     def test_public_words_failed_ls_files_fails_closed(self):
         self._repo_with_doc("the sauce is here\n")

@@ -29,6 +29,8 @@ from pipeline.configuration import (
     METRICS_LOG,
     PUBLIC_FORBIDDEN_WORDS_DEFAULT,
     PUBLIC_FORBIDDEN_WORDS_KEY,
+    PUBLIC_WORDS_BASELINE_DEFAULT,
+    PUBLIC_WORDS_BASELINE_KEY,
     VERDICT_PREFIX,
     project,
     release_branch,
@@ -171,7 +173,7 @@ def _forbidden_words(d):
 
 
 def public_words_gate(d):
-    """-> (ok, lines): on a public repo, every tracked text line that holds a forbidden word, as `file:line: word`; ok only when none. Fails closed: a scan or visibility check that cannot finish is not ok."""
+    """-> (ok, lines): on a public repo, every tracked text line with a forbidden word that the baseline does not accept. Per new hit: `file:line: word` and `add to <baseline>: <key line>`. A baseline entry with no hit is `stale: <key>` and does not fail. Fails closed: a scan, baseline read or visibility check that cannot finish is not ok."""
     words = _forbidden_words(d)
     if not any(w.strip() for w in words):
         return True, []
@@ -181,11 +183,19 @@ def public_words_gate(d):
         return False, ["repo visibility unknown"]
     if not public:
         return True, []
+    baseline_rel = project(d).get(PUBLIC_WORDS_BASELINE_KEY, PUBLIC_WORDS_BASELINE_DEFAULT)
     try:
-        found = public_words.hits(repo, words)
+        found = public_words.records(repo, words)
+        baseline = public_words.read_baseline(os.path.join(repo, baseline_rel))
     except public_words.ScanError as e:
         return False, [str(e)]
-    return not found, found
+    new, stale = public_words.diff(found, baseline)
+    lines = []
+    for rel, n, w, text in new:
+        lines.append(f"{rel}:{n}: {w}")
+        lines.append(f"add to {baseline_rel}: {public_words.hit_key(rel, w, text)}")
+    lines += [f"stale: {key}" for key in stale]
+    return not new, lines
 
 
 def main(argv=None):
