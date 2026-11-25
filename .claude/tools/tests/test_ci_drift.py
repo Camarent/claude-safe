@@ -71,6 +71,34 @@ class CiOnlyLinesTest(unittest.TestCase):
         self.assertEqual(ci_commands(d, {"gates": G}), decoys)
 
 
+class DefaultIgnoreTest(unittest.TestCase):
+    def test_default_ignore_words_are_not_drift(self):
+        # Setup, fetch, unpack, folder and exit lines are CI-only by first word; no ci_drift_ignore entry needed.
+        defaults = ["install tool", "download x", "unpack y.tgz", "mkdir -p out", "exit 0"]
+        ci = "jobs:\n  t:\n    steps:\n" + "".join(f"      - run: {c}\n" for c in defaults)
+        d = make({"gates": G}, ci)
+        self.assertEqual(ci_commands(d, {"gates": G}), [])
+        self.assertEqual(drift(d, project(d)), [])
+
+    def test_decoy_lines_are_still_reported(self):
+        # Not a default word: the first word is `npm` or `echo-install`, not `install`.
+        decoys = ["npm run build", "echo-install x"]
+        ci = "jobs:\n  t:\n    steps:\n" + "".join(f"      - run: {c}\n" for c in decoys)
+        d = make({"gates": G}, ci)
+        self.assertEqual(ci_commands(d, {"gates": G}), decoys)
+        self.assertEqual(len(drift(d, project(d))), 2)
+
+
+class DriftMessageHintTest(unittest.TestCase):
+    def test_drift_message_ends_with_ignore_hint(self):
+        d = make({"gates": G[:1]}, CI)
+        stage = os.path.join(d, ".work", "s1")
+        os.makedirs(stage)
+        probs = plan_check.ci_drift_warnings(stage)
+        self.assertEqual(len(probs), 1)
+        self.assertTrue(probs[0].endswith('ci_drift_ignore entry "npm test"'), probs[0])
+
+
 class RepoGatesCoverCiTest(unittest.TestCase):
     def test_repo_ci_has_no_drift(self):
         self.assertEqual(drift(REPO, project(REPO)), [])
@@ -80,4 +108,4 @@ class RepoGatesCoverCiTest(unittest.TestCase):
         cfg["gates"] = [g for g in cfg["gates"] if g["name"] != "ccn"]
         with open(os.path.join(REPO, ".github", "workflows", "ci.yml"), encoding="utf-8") as f:
             d = make(cfg, f.read())
-        self.assertEqual(drift(d, project(d)), ["CI runs `scripts/dev.sh ccn` (ci.yml) but no gate covers it"])
+        self.assertEqual(drift(d, project(d)), ['CI runs `scripts/dev.sh ccn` (ci.yml) but no gate covers it; add ci_drift_ignore entry "scripts/dev.sh ccn"'])

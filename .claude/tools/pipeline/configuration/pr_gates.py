@@ -11,6 +11,9 @@ CI_ONLY_RE = re.compile(r"\bRUNNER_\w*|GITHUB_\w*|secrets\.|\$\{\{")
 # Arguments never contain a shell separator, so `cd web && npm test` is not a bare setting.
 CI_SHELL_SETTING_RE = re.compile(r"(?:set|cd|export)(?:\s+[^\s&;|]+)*|[A-Za-z_]\w*=[^\s&;|]*")
 
+# ci_drift: a CI run line whose first word is one of these (setup, fetch, unpack, folder, exit) is never drift, with no `ci_drift_ignore` entry.
+CI_DRIFT_DEFAULT_IGNORE = ("install", "download", "unpack", "mkdir", "exit")
+
 # pr-ready: a red CI-only line is reported with a `ci_drift_ignore` hint of its leading words (the prefix rule of ci_drift).
 CI_HINT_WORDS = 2
 # pr-ready: a red CI-only line whose output matches one of these is an environment problem (a variable not set), not a code failure.
