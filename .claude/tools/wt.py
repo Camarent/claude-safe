@@ -97,6 +97,8 @@ def main(argv=None):
             f"wt.py commit: task {a.task} has no job worktree in stage {a.stage}, nothing was committed (worked in place? commit with commit.py)",
             file=sys.stderr,
         )
+        print(json.dumps(out))
+        sys.exit(3)
     print(out if isinstance(out, str) else json.dumps(out))
 
 

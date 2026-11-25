@@ -396,8 +396,9 @@ class WtTest(unittest.TestCase):
 
     def test_cli_commit_unknown_task_says_so_on_stderr(self):
         buf, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
             wt.main(["commit", "--stage", "s", "--task", "task-9", "--subject", "feat(x): add m", "--dir", self.t])
+        self.assertEqual(cm.exception.code, 3)
         self.assertEqual(json.loads(buf.getvalue()), {})
         self.assertIn("nothing was committed", err.getvalue())
 
