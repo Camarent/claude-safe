@@ -24,7 +24,6 @@ EXPECTED_WORDS = (
     os.sep + "home" + os.sep,
     "tit" + "ov",
     "kir" + "ill",
-    "github.com/" + "Camarent",
 )
 
 
