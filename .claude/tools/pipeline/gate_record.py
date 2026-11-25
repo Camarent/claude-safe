@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import time
 import uuid
+from datetime import UTC, datetime
 
 from .gitx import try_run
 
@@ -55,6 +56,12 @@ def _log_path(cwd):
 
 def _head(cwd):
     return _git(cwd, "rev-parse", "HEAD")
+
+
+def skip_note(cwd, rec):
+    """Text of a skipped gate line for the green record REC: its tree, the record log path and the pass time (UTC, ISO)."""
+    at = datetime.fromtimestamp(rec["ts"], UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"identical passed tree {rec['tree']}, record {os.path.abspath(_log_path(cwd) or RECORD_FILE)} passed at {at}"
 
 
 _TREE_NOW = object()  # record(tree=...) default: hash the tree at the call

@@ -215,7 +215,7 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
     for c in cmds:
         hit = _passed(cwd, c, tree) if tree else None
         if hit:
-            skipped.append(f"skipped {c}: identical passed tree {hit['tree']}, run {hit['run']}")
+            skipped.append(f"skipped {c}: {gate_record.skip_note(cwd, hit)}")
             continue
         red = _run_line(cwd, c, runner)
         if red:

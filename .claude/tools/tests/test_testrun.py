@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
@@ -35,16 +36,17 @@ def git_box(test_lines):
 
 
 class TestRun(unittest.TestCase):
-    def test_line_green_on_identical_tree_is_skipped_with_run_id(self):
+    def test_line_green_on_identical_tree_is_skipped_with_log_path_and_time(self):
         d = git_box("Test: true\n")
         gate_record.record(d, ["cs-qrun", "--", "true"], 0)
-        run_id = gate_record._entries(gate_record._log_path(d))[-1]["run"]
+        rec = gate_record._entries(gate_record._log_path(d))[-1]
         calls = []
         v, note = testrun.run("s", "t1", d, runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""))
         self.assertEqual(v, "DONE")
         self.assertEqual(calls, [])
-        tree = gate_record._entries(gate_record._log_path(d))[-1]["tree"]
-        self.assertIn(f"skipped true: identical passed tree {tree}, run {run_id}", note)
+        at = datetime.fromtimestamp(rec["ts"], UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        log = os.path.abspath(gate_record._log_path(d))
+        self.assertIn(f"skipped true: identical passed tree {rec['tree']}, record {log} passed at {at}", note)
 
     def test_red_record_or_other_tree_runs_the_line(self):
         d = git_box("Test: true\n")
