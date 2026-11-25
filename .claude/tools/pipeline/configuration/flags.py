@@ -98,7 +98,10 @@ AGENT_TUNING_FLAGS = (  # per-session token trim: no slash commands, only the ru
 # agents that call Skill: disabling slash commands would break it, so claude.py strips AGENT_TUNING_FLAGS for them
 TUNING_EXEMPT_AGENTS = ("publisher", "pl-publisher")
 # the tuning flags come BEFORE `--allowedTools`: that option takes every following word, and the Bash allow patterns that callers append must stay inside its list
-BASE_FLAGS = "--permission-mode acceptEdits " + " ".join(AGENT_TUNING_FLAGS) + " --allowedTools Read Edit Write Grep Glob"
+PERMISSION_MODE_FLAG = "--permission-mode"  # claude option that sets the permission mode
+PERMISSION_MODE_DEFAULT = "acceptEdits"  # headless agents: edits go through, other actions follow the allowlist
+PERMISSION_MODE_AUTO = "auto"  # scripts/pipeline_auto.py: claude decides per action (opt-in, no allowlist prompt)
+BASE_FLAGS = f"{PERMISSION_MODE_FLAG} {PERMISSION_MODE_DEFAULT} " + " ".join(AGENT_TUNING_FLAGS) + " --allowedTools Read Edit Write Grep Glob"
 PROJECT_FILE = "pipeline.json"  # per-project settings file name
 TEST_RUNNERS = (  # cmd_guard.py: regexes of command heads that count as a test run; pipeline.json `test_runners` replaces it
     QRUN_PATTERN,

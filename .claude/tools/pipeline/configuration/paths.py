@@ -9,6 +9,8 @@ from pipeline import cmdnames
 # container (/root/.claude) all work without edits; env PIPELINE_HOME overrides. Never write /root/.claude as a literal elsewhere.
 HOME = os.environ.get("PIPELINE_HOME") or os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 TOOLS_DIR = os.path.join(HOME, "tools")
+CS_WAVE = os.path.join(HOME, "bin", "cs-wave")  # the stage/feature driver entry point (scripts/pipeline_auto.py execs it)
+WAVE_MODES = ("feature", "run")  # cs-wave subcommands the auto-mode launcher starts
 ASK_VENV_PY = "/opt/ask-venv/bin/python"  # the embedding library's own venv (env ASK_CODE_PY overrides)
 VERDICT_PREFIX = "VERDICT: "  # first line of a step's output: the driver reads the verdict word after it
 AGENTS_DIR = os.path.join(HOME, "agents")
