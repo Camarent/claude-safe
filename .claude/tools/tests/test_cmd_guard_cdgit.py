@@ -15,7 +15,7 @@ from pipeline.configuration import ENV_SCRATCH_DIR
 
 WT_SENTENCE = "your cwd is already the job worktree"
 MAIN_CWD = "/repo/main"
-WT_CWD = "/home/x/.wt/stage/task-1/repo"
+WT_CWD = "/srv/x/.wt/stage/task-1/repo"
 
 
 class CdGitTest(unittest.TestCase):

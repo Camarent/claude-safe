@@ -41,9 +41,9 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(acceptance_items(PLAN), [("cmd:", "true"), ("cmd:", "false"), ("eyes:", "looks right")])
 
     def test_bad_lines(self):
-        txt = "## Acceptance checklist\n- do it\n- cmd: cd x\n- cmd: a && b\n- cmd: FOO=1 run\n- cmd:\n- cmd: ls /home/user/workspace/x\n- cmd: ok\n"
-        probs = acceptance_problems(txt, "/home/user/workspace")
-        self.assertEqual(len(probs), 7, probs)  # `ls /home/...` is both a main-checkout path and path-only
+        txt = "## Acceptance checklist\n- do it\n- cmd: cd x\n- cmd: a && b\n- cmd: FOO=1 run\n- cmd:\n- cmd: ls /srv/user/workspace/x\n- cmd: ok\n"
+        probs = acceptance_problems(txt, "/srv/user/workspace")
+        self.assertEqual(len(probs), 7, probs)  # `ls /srv/...` is both a main-checkout path and path-only
 
     def test_good_lines(self):
         self.assertEqual(acceptance_problems(PLAN), [])
