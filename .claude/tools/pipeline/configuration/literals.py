@@ -6,7 +6,6 @@ import math
 import os
 import re
 
-from ..prices import PRICES
 from .errors import ConfigError
 from .project import project
 
@@ -20,7 +19,21 @@ INDEX_DB_TIMEOUT_S = 5  # sqlite3 connect timeout of the index step (index_step.
 SERVE_CONNECT_TIMEOUT_S = 0.5  # socket connect timeout of the servectl port wait (servectl.py)
 LSP_LOCK_TIMEOUT_S = 2  # lock wait of the language-server pool shutdown (search/lsp_pool.py)
 GIT_REMOTE = "origin"  # the remote a push or fetch names by default
-PRICES_TABLE = PRICES  # the price rows of pipeline/prices.py: the default; pipeline.json `tool_settings.prices` replaces it
+# the price rows (USD per million tokens by model family): the default; pipeline.json `tool_settings.prices` replaces it.
+# SET 2026-10-30 from the claude-api skill's cached model table (cached 2026-10-06). PRICES MUST BE RE-CHECKED against the
+# published list before any number here is used for a decision: list prices change with each model release.
+# Sure: input and output for every row, cache read for the two 5.5 rows that list it ($0.20).
+# Assumed (not listed in the source): cache write = 1.25 x input (5-minute TTL), cache read = 0.1 x input where not listed.
+# Haiku 5.5 input/output are for prompts up to 100K tokens ($0.50 / $2.50 beyond; not modelled).
+# (substring of the model id, input, output, cache_read, cache_write); first match wins, so specific rows come first.
+PRICES_TABLE = (
+    ("opus-5-5", 4.00, 20.00, 0.20, 5.00),
+    ("opus", 5.00, 25.00, 0.50, 6.25),  # opus 5 / 4.8 / 4.7 / 4.6
+    ("sonnet-5", 2.00, 10.00, 0.20, 2.50),  # sonnet 5.5 and 5
+    ("sonnet", 3.00, 15.00, 0.30, 3.75),  # sonnet 4.6 and older
+    ("haiku-5-5", 0.10, 0.50, 0.01, 0.125),
+    ("haiku", 1.00, 5.00, 0.10, 1.25),  # haiku 4.5
+)
 
 
 def _positive(raw):
