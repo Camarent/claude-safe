@@ -78,6 +78,7 @@ from .env import (  # noqa: F401  (re-export: the facade keeps every name import
     ENV_AGENTS_DIR,
     ENV_ARTIFACT,
     ENV_CLAUDE_FLAGS,
+    ENV_DENIAL_SESSION,
     ENV_GATED,
     ENV_GUARD_ALLOW,
     ENV_GUARD_JOB,

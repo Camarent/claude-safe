@@ -79,7 +79,7 @@ and writes `.work/S/retro/retro.md` (<= 15 lines: tripped signals with numbers, 
 - `cost_usd`: USD of the call (session), summed on `wave` and `total` lines. Agent cost only; lead cost is in `LEAD-COST` lines (above).
 - `sid`: claude session id of the call (empty if unknown); the key to its transcript.
 - `tools`: per-tool call counts, optional, absent in old lines.
-- `denied`: commands the headless agent was denied (`Tool: command`, max 5), optional; a BLOCKED report names its cause here.
+- `denied`: commands the headless agent was denied (`Tool: command`, max 5), optional; a BLOCKED report names its cause here. Each entry ends with the guard name (the `rule` the hook logged in the stage's denials.jsonl for that command, e.g. `Bash: rm -rf x [reason] guard`); the name is absent when no logged row matches.
 - `search`: local-search share, optional: calls of `local:find`, `local:nav-def`, `grep`, `glob`; share = local / all.
 - `reason`: first line of the report, written only on BLOCKED or FAIL sessions; absent on other verdicts and in old lines.
 - `LEAD-COST` is always written, one line per lead session and one total per stage or feature. When it costs $0.00 the line ends with `reason: ...` (no orch window, no lead transcript, no lead session in the window, or tiny or unpriced). The `whole session incl. N subagent log(s)` line adds the subagent logs; it is the one cost source when comparing phases.

@@ -34,7 +34,9 @@ def session_line(c, id, agent, model, u, verdict="", task="", reason=""):
     if u.get("tools"):
         rec["tools"] = u["tools"]  # optional {tool name: calls}; absent in old lines
     if u.get("denials"):
-        rec["denied"] = u["denials"]  # commands the headless agent was denied (`Tool: command`, max 5); a BLOCKED report names its cause here
+        # commands the headless agent was denied (`Tool: command [reason] guard`, max 5); a BLOCKED report names its cause here.
+        # The last word is the guard name (denials.jsonl rule), absent when no logged row matches.
+        rec["denied"] = u["denials"]
     if u.get("search"):
         rec["search"] = u["search"]  # optional {local:find|local:nav-def|grep|glob: calls}; share = local / all
     if reason and verdict in (BLOCKED, FAIL):

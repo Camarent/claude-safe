@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -26,7 +27,9 @@ from .configuration import (
     DENIED_CMD_MAX,
     ENV_ARTIFACT,
     ENV_CLAUDE_FLAGS,
+    ENV_DENIAL_SESSION,
     ENV_PROJECT_ROOT,
+    ENV_SCRATCH_DIR,
     ENV_TIMEOUT,
     GIT_SAFE_ENV,
     INIT_PID,
@@ -327,22 +330,46 @@ def search_counts(session_id):
     return dict(c)
 
 
-def denial_lines(denials):
-    """Raw `permission_denials` of a claude json -> lines `Tool: command-or-path` (max 5, DENIED_CMD_MAX chars each, plus ` [reason]` when the json gives one)."""
+def guard_rows(scratch, token):
+    """(command, rule) of each denials.jsonl row in the stage scratch dir that carries this session's `token`, in file order (denial_log.py); [] without a scratch dir."""
+    if not scratch:
+        return []
+    import denial_log
+
+    return [(r.get("command", ""), r.get("rule", "")) for r in denial_log.rows(scratch) if r.get("session") == token]
+
+
+def denial_lines(denials, guards=()):
+    """Raw `permission_denials` of a claude json -> lines `Tool: command-or-path` (max 5, DENIED_CMD_MAX chars each, plus ` [reason]` when the json gives one, and the guard name last when a `guards` row (command, rule) matches the command; each row is used once)."""
     out = []
+    left = list(guards)
     for d in denials or []:
         if not isinstance(d, dict):
             continue
         i = d.get("tool_input") or {}
-        what = i.get("command") or i.get("file_path") or i.get("path") or ""
-        line = f"{d.get('tool_name', '?')}: {str(what)[:DENIED_CMD_MAX]}"
+        what = str(i.get("command") or i.get("file_path") or i.get("path") or "")
+        line = f"{d.get('tool_name', '?')}: {what[:DENIED_CMD_MAX]}"
         why = d.get("reason") or d.get("message")
-        out.append(f"{line} [{str(why)[:200]}]" if why else line)
+        if why:
+            line = f"{line} [{str(why)[:200]}]"
+        rule = _take_guard(left, what)
+        out.append(f"{line} {rule}" if rule else line)
     return out[:5]
 
 
-def usage(res):
-    """Raw claude json -> {turns, input, output, cache_read, cache_write, cost_usd, seconds, seconds_api, result, error}."""
+def _take_guard(left, what):
+    """The rule of the first row in `left` whose command is `what` as denial_log.py cuts it (COMMAND_CHARS); that row is removed. "" when none; a row with an empty command matches nothing."""
+    import denial_log
+
+    for k, (cmd, rule) in enumerate(left):
+        if cmd and what[: denial_log.COMMAND_CHARS] == cmd:
+            del left[k]
+            return rule
+    return ""
+
+
+def usage(res, guards=()):
+    """Raw claude json -> {turns, input, output, cache_read, cache_write, cost_usd, seconds, seconds_api, result, error}; guards: see denial_lines."""
     u = res.get("usage") or {}
     return {
         "turns": res.get("num_turns", 0),
@@ -356,7 +383,7 @@ def usage(res):
         "result": res.get("result") or "",
         "error": bool(res.get("is_error")),
         "stopped": bool(res.get("stopped")),
-        "denials": denial_lines(res.get("permission_denials")),
+        "denials": denial_lines(res.get("permission_denials"), guards),
         "sid": res.get("session_id") or "",
         "tools": tool_counts(res.get("session_id")),
         "search": search_counts(res.get("session_id")),
@@ -393,14 +420,17 @@ def session(args, cwd, timeout=None, done_file=None, env_extra=None, pgid_file=N
     A usage-limit notice as the result is not a failure of the task: wait for the printed reset time and run the session again (at most LIMIT_WAIT_MAX_S in all)."""
     t = default_timeout() if timeout is None else timeout
     waited = 0.0
+    token = uuid.uuid4().hex  # the scratch log is shared by the stage and its sessions run in parallel: denial_log.py stamps each row with the token, so only this session's rows name its denials
+    env_extra = {**(env_extra or {}), ENV_DENIAL_SESSION: token}
+    scratch = env_extra.get(ENV_SCRATCH_DIR, "")
     while True:
         extra = {k: v for k, v in (("done_file", done_file), ("env_extra", env_extra), ("pgid_file", pgid_file)) if v}
         res = run_claude(args, cwd, t, **extra)
         if res.get("stopped"):
-            return usage(res)
+            return usage(res, guard_rows(scratch, token))
         wait = limit_wait_s(res)
         if wait is None or waited + wait > LIMIT_WAIT_MAX_S:
-            return usage(res)
+            return usage(res, guard_rows(scratch, token))
         print(f"wave: usage limit hit ({res.get('result')!r}); waiting {wait / 60:.0f} min, then running the session again", file=sys.stderr, flush=True)
         time.sleep(wait)
         waited += wait
