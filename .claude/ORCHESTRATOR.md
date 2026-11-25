@@ -89,6 +89,8 @@ Every failure, stall or repeated round yields a lesson. Name the cause in one li
 - Start each feature from a cleared or compacted context: a long lead context re-reads itself on every turn.
 - Notify on finish and on BLOCKED: the owner learns of a stop without polling the session.
 - Never mix pipeline source work into a feature's lead session: run it as a subagent or in a separate session.
+- UI plan (`UI: yes`): the plan stops for owner sign-off twice: once on the glossary, and again before the prototype is built. The lead asks with AskUserQuestion (short options, one decision per question), never as a text list.
+- A UI phase gate reason is exactly `gate: owner step or real-data run`; the lead does not pass it on a guess.
 
 ## Classifier blocks
 If an agent is refused by the classifier several times in a row inside a job worktree, the lead may try those separate small edits/commands itself, one at a time (pre-authorised); the agent does the rest (tests, guards, mutations, commit). No workarounds via scripts, sed/python batches or foreign paths; if the lead is refused too, stop and tell the owner.
