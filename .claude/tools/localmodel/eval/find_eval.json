@@ -13,5 +13,5 @@
  {"q": "stimulus rendering", "expect": ["web/ui/stimulus.js"]},
  {"q": "session feedback after an answer", "expect": ["web/ui/session-feedback.js"]},
  {"q": "group card on the catalog", "expect": ["web/ui/group-card.js"]},
- {"q": "rust migration tests", "expect": ["crates/dojo-core/tests/migrate.rs"]}
+ {"q": "rust migration tests", "expect": ["crates/sample-core/tests/migrate.rs"]}
 ]

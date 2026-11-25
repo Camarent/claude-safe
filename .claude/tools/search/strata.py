@@ -92,7 +92,7 @@ def strata_up():
 
 
 def _loading():
-    """True when the model may still be loading: STRATA_URL is set (run.sh found model-host's Strata running when this container started, so
+    """True when the model may still be loading: STRATA_URL is set (the start script found the local model server running when this container started, so
     a Strata that does not answer is most likely still loading), or the phase file (STRATA_PHASE_FILE, default /run/strata-phase) says so."""
     if "STRATA_URL" in os.environ:
         return True
@@ -117,7 +117,5 @@ def preflight():
         if strata_up():
             return True
     os.environ["STRATA"] = "0"
-    print(
-        "preflight: local model (Strata) down: local-model steps are skipped for this run (start it on the host: modelctl use strata, in the model-host project)"
-    )
+    print("preflight: local model (Strata) down: local-model steps are skipped for this run (start it on the host: modelctl use strata)")
     return False

@@ -96,7 +96,7 @@ def _bare_word_finding(label, a, repo):
 
 
 def _arg_findings(label, args, repo, dirs, produced, local, script):
-    """-> findings for the arguments of one command. A path-like argument must exist: a problem when SCRIPT (the command runs a local file), else only a warning. A bare word that names one repo directory gets a warning, only for a LOCAL executable (`./tool`) and never right after an option (`-p dojo-core` names a package, not a path)."""
+    """-> findings for the arguments of one command. A path-like argument must exist: a problem when SCRIPT (the command runs a local file), else only a warning. A bare word that names one repo directory gets a warning, only for a LOCAL executable (`./tool`) and never right after an option (`-p sample-lib` names a package, not a path)."""
     out = []
     for i, a in enumerate(args):
         if _skip_arg(args, i):
@@ -119,7 +119,7 @@ def _skip_arg(args, i):
 
 
 def _bare_candidate(args, i):
-    """-> True when argument I is a bare word that may name a repo directory: not an option value (`-p dojo-core`)."""
+    """-> True when argument I is a bare word that may name a repo directory: not an option value (`-p sample-lib`)."""
     return not (i and args[i - 1].startswith("-")) and bool(BARE_WORD_RE.match(args[i]))
 
 

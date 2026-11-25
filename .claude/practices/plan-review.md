@@ -15,7 +15,7 @@ Four review points. Each runs once per plan, after the plan check passes.
 
 ## Why a second model
 
-The architect misses items from the prompt. Evidence: lessons recorded in the kata pipeline notes (`pipeline-efficiency-lessons.md`). A second reviewer model reads the request and the plan with fresh context and lists each gap.
+The architect misses items from the prompt. A second reviewer model reads the request and the plan with fresh context and lists each gap.
 
 ## Why one fix round and no re-review
 

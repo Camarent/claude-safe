@@ -10,6 +10,7 @@ A newer version is a new tool for sec-auditor: vet it, bump the row, then `check
 import argparse
 import contextlib
 import os
+import pwd
 import re
 import subprocess
 
@@ -140,9 +141,13 @@ def ensure_proj(project):
 
 
 WRAPPER = "/usr/local/bin/chrome-nonroot"
-WRAPPER_TEXT = """#!/bin/sh
+
+
+def wrapper_text(home):
+    """The chrome wrapper script for the `browser` user whose home directory is HOME."""
+    return f"""#!/bin/sh
 # Chrome as the unprivileged user `browser` (the MCP server runs as root). Used as chrome-devtools-mcp --executablePath.
-exec runuser -u browser -- env HOME=/home/browser XDG_CONFIG_HOME=/home/browser/.config /usr/bin/google-chrome --disable-breakpad "$@"
+exec runuser -u browser -- env HOME={home} XDG_CONFIG_HOME={home}/.config /usr/bin/google-chrome --disable-breakpad "$@"
 """
 
 
@@ -152,10 +157,14 @@ def ensure_browser_user():
         return
     if run(["id", "browser"])[0] != 0:
         run(["useradd", "-m", "-s", "/usr/sbin/nologin", "browser"])
-    os.makedirs("/home/browser/chrome-profile", exist_ok=True)
-    run(["chown", "-R", "browser:browser", "/home/browser"])
+    try:
+        home = pwd.getpwnam("browser").pw_dir
+    except KeyError:  # useradd failed (no permission or space): no user, no home, nothing to set up
+        return
+    os.makedirs(os.path.join(home, "chrome-profile"), exist_ok=True)
+    run(["chown", "-R", "browser:browser", home])
     if not os.path.exists(WRAPPER):
-        write_text(WRAPPER, WRAPPER_TEXT)
+        write_text(WRAPPER, wrapper_text(home))
         os.chmod(WRAPPER, 0o755)  # nosec B103  # wrapper script must be executable
 
 
