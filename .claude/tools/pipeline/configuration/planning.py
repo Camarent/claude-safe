@@ -146,8 +146,9 @@ SCOPE_STEM_MIN = 3  # a predicted file's name stem shorter than this ties no tes
 SCOPE_TEST_RE = r"(?i)(?:^|[/._-])(?:tests?|spec)(?:[/._-]|$)"  # a test path
 SCOPE_SHOWN = 12  # files named in the scope note
 SCOPE_STRICT_NOTE = (
-    " Scope check (must address): the job changed files outside the task's predicted paths and the task text does not name them: {files}. "
-    "Judge each file: FAIL only for a side refactor; a file the task or a red gate needs is fine. Name every such file in your report."
+    " Scope check: the job changed files outside the task's predicted paths and the task text does not name them: {files}. "
+    "Predicted paths are a hint: a file outside them is never a FAIL by itself. Judge each file: FAIL only for a side refactor; "
+    "a file the task or a red gate needs is fine. Name every such file in your report."
 )
 SCOPE_HINT_NOTE = " Predicted paths are a planning hint: a file outside them is never a FAIL by itself."  # reviewer brief, every review
 SCOPE_WARN_NOTE = " Scope note: the job changed files outside the task's predicted paths and the task text does not name them: {files}. Name them in your report; this alone is not a FAIL."

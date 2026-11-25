@@ -80,20 +80,31 @@ class NoteTest(unittest.TestCase):
         self.assertIn("core/a.py", note)
         self.assertIn("core/b.py", note)
         self.assertNotIn("src/widget.py", note)
-        self.assertIn("must address", note)
+        self.assertNotIn("must address", note)
         prompt = briefs.prompt_for(self.a, {"id": "task-1"}, "reviewer", None, "r1")
         self.assertIn("core/a.py", prompt)
 
     def test_strict_note_is_no_verdict_rule_and_reviewer_brief_says_predicted_paths_are_a_hint(self):
         self.commit("src/widget.py", "core/a.py")
         note = scopeguard.scope_note(self.a, "task-1")
-        self.assertIn("must address", note)
+        self.assertNotIn("must address", note)
         self.assertNotIn("Verdict FAIL", note)
         self.assertNotIn("FAIL unless", note)
         self.assertIn("FAIL only for a side refactor", note)
         prompt = briefs.prompt_for(self.a, {"id": "task-1"}, "reviewer", None, "r1")
         self.assertIn(briefs.SCOPE_HINT_NOTE.strip(), prompt)
         self.assertIn("never a FAIL by itself", prompt)
+
+    def test_strict_note_says_predicted_paths_are_a_hint_and_lists_the_files(self):
+        # C1/C2: the strict note states the paths are a hint and an outside file is never a FAIL by itself; {files} lists the names
+        self.commit("src/widget.py", "core/a.py", "core/b.py")
+        note = scopeguard.scope_note(self.a, "task-1")
+        self.assertIn("Predicted paths are a hint", note)
+        self.assertIn("never a FAIL by itself", note)
+        self.assertIn("FAIL only for a side refactor", note)
+        self.assertNotIn("must address", note)
+        self.assertIn("core/a.py, core/b.py", note)
+        self.assertNotIn("{files}", note)
 
     def test_strict_unplanned_files_return_a_note_and_never_raise(self):
         # strict mode is a reviewer note, not a block: the dev edit is not refused, scope_note only returns text
