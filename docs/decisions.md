@@ -131,18 +131,18 @@ Item map. Report, item, task id or drop reason:
 | stability | 21 | dropped: manual `retry --from review` role write is known and already fixed in hardening phase 03 (`cli_orch.cmd_reset` writes `role: reviewer`); listed only as closed |
 | stability | 22 | task-28 |
 | stability | 23 | task-29 |
-| time | 1 | dropped: kata-only (kata repo, check-all.sh) |
+| time | 1 | dropped: project-specific (other repo, check-all.sh) |
 | time | 2 | task-18 |
 | time | 3 | task-17 |
 | time | 4 | task-17, task-19 |
 | time | 5 | task-20 |
 | time | 6 | task-2 |
-| time | 7 | dropped: kata-only |
-| time | 8 | dropped: kata-only; only setup timing kept in task-9 |
+| time | 7 | dropped: project-specific |
+| time | 8 | dropped: project-specific; only setup timing kept in task-9 |
 | time | 9 | task-18 |
 | time | 10 | task-24 |
 | time | 11 | task-16 |
-| time | 12 | dropped: concurrency (kata ci.yml; image jobs must finish); CI poll part in task-27 |
+| time | 12 | dropped: concurrency (project-specific ci.yml; image jobs must finish); CI poll part in task-27 |
 | time | 13 | task-8 |
 | tokens | 1 | task-23 |
 | tokens | 2 | task-20 |

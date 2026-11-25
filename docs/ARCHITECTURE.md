@@ -5,22 +5,21 @@ claude-safe runs Claude Code in a throwaway Docker container. Only the folder yo
 The repo builds the base image and optional toolchain layers, provides host-side dev and release scripts, and carries the pipeline under `.claude/` (agents, tools, practices; not an index module, see `README.md` and `docs/decisions.md`).
 
 ## Modules
-- [scripts](modules/scripts.md) - host-side dev checks, pre-PR gate, VM provisioning, config sync, agent rendering.
-- [profiles](modules/profiles.md) - seven optional toolchain layers (`profiles/*.Dockerfile`) stacked on the base image.
+- [scripts](modules/scripts.md) - host-side dev checks, pre-PR gate, config install and sync, agent rendering.
+- [profiles](modules/profiles.md) - two optional toolchain layers (`profiles/*.Dockerfile`) stacked on the base image.
 
 ## Flow
 1. `Dockerfile` builds the base image (`FROM node:lts-trixie-slim`, `Dockerfile:5`).
 2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:167`, `run.sh:214`), then starts the container (`README.md:6-7`).
 3. Inside the container, `entrypoint.sh` is the entry point (`Dockerfile:180`).
 4. Host side, `scripts/dev.sh` runs lint, format, mypy and the test suite (`ptest.py`); `scripts/image_test.sh` runs the same suite in the image; `scripts/release.sh` runs both plus gitleaks as a pre-PR gate.
-5. `scripts/provision-dev-vm.sh` installs the same toolset on a plain Ubuntu VM; `scripts/sync-claude-config.sh` runs it with `--only claude-config` to copy `.claude/` into `~/.claude`.
+5. `scripts/sync-claude-config.sh` runs `scripts/install-claude-config.sh` to copy `.claude/` into `~/.claude`.
 6. `scripts/host_agents.py` renders `.claude/agents/*.md` for the host (dry run unless `--apply`).
 
 ## Entry points
 - `run.sh` - start a session. `--here` mounts `$PWD`; `--rebuild` rebuilds base and profiles (`README.md:6-8`).
 - `scripts/dev.sh` - subcommands listed in `modules/scripts.md`; dispatch at `scripts/dev.sh:18`.
 - `scripts/release.sh` - pre-PR gate; never merges or pushes (`scripts/release.sh:2-3`).
-- `scripts/provision-dev-vm.sh` - VM provisioning; `main` at `scripts/provision-dev-vm.sh:538`.
 - `scripts/host_agents.py` - agent rendering; `main` at `scripts/host_agents.py:114`.
 
 ## Build and test commands
@@ -29,7 +28,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - Container suite: `scripts/image_test.sh [IMAGE]`.
 - Pre-PR gate: `scripts/release.sh`.
 - Setup: `scripts/dev.sh sync` needs `uv` and a system Python 3.11+ (`README.md:157`).
-- Tests of the pipeline and the provision script live in `.claude/tools/tests/`.
+- Tests of the pipeline live in `.claude/tools/tests/`.
 
 ## Shared state
 - Tool caches and venv: `./.uv` in the checkout, or `DEV_UV_DIR` (`scripts/dev.sh:10`).
