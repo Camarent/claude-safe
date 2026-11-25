@@ -33,6 +33,8 @@ snipOff=false
 ponytailOn=false
 gpuOn=false
 noSecrets=false
+withGhToken=false
+withCloudflareToken=false
 claudeArgs=()
 compactWindow=""
 runCmd=""
@@ -40,11 +42,14 @@ publishPorts=()
 usage() {
     local f p desc
     cat <<HELP
-Usage: claude-safe [--here] [--with PROFILES] [--rebuild] [--compact N] [--no-snip] [--ponytail] [--no-secrets] [--help] [-- CLAUDE_ARGS...]
+Usage: claude-safe [--here] [--with PROFILES] [--rebuild] [--compact N] [--no-snip] [--ponytail] [--no-secrets] [--with-gh-token] [--with-cloudflare-token] [--help] [-- CLAUDE_ARGS...]
 
   --here           mount the current folder (default: empty scratch dir)
   --cmd STRING     run STRING with bash instead of the agent TUI 
   --no-secrets     don't pass GH/Cloudflare tokens or mount the browser profile
+  --with-gh-token  forward the host's GH_TOKEN (or GITHUB_TOKEN) into the session; off by default
+  --with-cloudflare-token
+                   forward the host's CLOUDFLARE_API_TOKEN into the session; off by default
   --                everything after is passed to claude (e.g. -- -p "prompt");
                    without a terminal the container runs non-interactively
   --with a,b       add toolchain profiles on top of the base image, plus the run features below
@@ -91,6 +96,8 @@ while [[ $# -gt 0 ]]; do
         --no-snip) snipOff=true; shift ;;
         --ponytail) ponytailOn=true; shift ;;
         --no-secrets) noSecrets=true; shift ;;
+        --with-gh-token) withGhToken=true; shift ;;
+        --with-cloudflare-token) withCloudflareToken=true; shift ;;
         --) shift; claudeArgs=("$@"); break ;;
         *)
             echo -e "\033[31mUnknown argument '$1'.\033[0m"; usage; exit 1
@@ -266,32 +273,27 @@ else
     echo -e "\033[33mAnother session holds the browser profile — this one uses a temporary profile (no saved logins).\033[0m"
 fi
 
-# Pass a GitHub token through for the session only (gh reads GH_TOKEN natively,
-# no `gh auth login` or on-disk config needed) — nothing persists after --rm.
-# Falls back to the host's own `gh` login so you don't have to set GH_TOKEN by hand.
-ghToken="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-if [[ -z "$ghToken" ]] && command -v gh >/dev/null 2>&1; then
-    ghToken="$(gh auth token 2>/dev/null || true)"
-fi
-
+# Tokens are opt-in: no token reaches the container unless its flag is given.
+# --with-gh-token forwards the host's GH_TOKEN (or GITHUB_TOKEN) for the session
+# only (gh reads GH_TOKEN natively) — nothing persists after --rm.
 ghTokenArgs=()
-if [[ -n "$ghToken" ]]; then
-    export GH_TOKEN="$ghToken"  # docker reads the value from this env; "-e NAME=value" would show it in ps and docker inspect
-    ghTokenArgs=(-e GH_TOKEN)
+if [[ "$withGhToken" == true ]]; then
+    ghToken="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+    if [[ -n "$ghToken" ]]; then
+        export GH_TOKEN="$ghToken"  # docker reads the value from this env; "-e NAME=value" would show it in ps and docker inspect
+        ghTokenArgs=(-e GH_TOKEN)
+    else
+        echo "claude-safe: --with-gh-token given but GH_TOKEN and GITHUB_TOKEN are empty; no GitHub token forwarded" >&2
+    fi
 fi
 
-# Cloudflare API token (wrangler and the API read CLOUDFLARE_API_TOKEN natively).
-# Taken from the host environment, else from a file kept outside this repo.
-cfToken="${CLOUDFLARE_API_TOKEN:-}"
-cfTokenFile="$HOME/.config/claude-safe/cloudflare-token"
-if [[ -z "$cfToken" && -f "$cfTokenFile" ]]; then
-    cfToken="$(<"$cfTokenFile")"
-fi
-
+# --with-cloudflare-token forwards the host's CLOUDFLARE_API_TOKEN (wrangler and the API read it natively).
 cfTokenArgs=()
-if [[ -n "$cfToken" ]]; then
-    export CLOUDFLARE_API_TOKEN="$cfToken"
+if [[ "$withCloudflareToken" == true && -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+    export CLOUDFLARE_API_TOKEN  # docker reads the value from this env; "-e NAME=value" would show it in ps and docker inspect
     cfTokenArgs=(-e CLOUDFLARE_API_TOKEN)
+elif [[ "$withCloudflareToken" == true ]]; then
+    echo "claude-safe: --with-cloudflare-token given but CLOUDFLARE_API_TOKEN is empty; no Cloudflare token forwarded" >&2
 fi
 
 # Second Claude account for the pipeline's headless `claude -p` sessions only

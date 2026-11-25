@@ -131,7 +131,7 @@ Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<st
 
 ### Risks
 
-The container runs as root with network access. The host gh token is forwarded into it today.
+The container runs as root with network access. Host tokens are not forwarded by default: pass `--with-gh-token` to forward the host's GH_TOKEN (or GITHUB_TOKEN), and `--with-cloudflare-token` to forward CLOUDFLARE_API_TOKEN. Each flag forwards only its own token, for the session only.
 The privileged cluster mode no longer exists.
 
 ## Pipeline
