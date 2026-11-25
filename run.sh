@@ -35,7 +35,6 @@ gpuOn=false
 noSecrets=false
 claudeArgs=()
 compactWindow=""
-clusterOn=false
 runCmd=""
 publishPorts=()
 usage() {
@@ -65,15 +64,10 @@ HELP
     done
     cat <<HELP
   gpu      (feature, no image) pass all NVIDIA GPUs into the container (needs nvidia-container-toolkit)
-  cluster  also: PRIVILEGED container with its own dockerd and one-node Slurm (Docker-in-Docker; images in volume claude-safe-docker)
-
-Local model servers (Ollama, Strata) are not part of this image: they run from the model-host project (MODEL_HOST_DIR, default ../model-host).
-When its Docker network model-net exists, the container joins it and gets OLLAMA_URL / STRATA_URL for the engines that are running.
 
 Examples:
   claude-safe --here --with rust
   claude-safe --here --with rust,cpp
-  claude-safe --here --with rust,cluster
 HELP
 }
 
@@ -104,15 +98,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Run features chosen through --with: `gpu` has no image, `cluster` has one and also changes how the container runs.
+# Run features chosen through --with: `gpu` has no image.
 imageProfiles=()
 for p in "${profiles[@]}"; do
     case "$p" in
         gpu) gpuOn=true ;;
-        strata|ollama)
-            echo -e "\033[31m'--with $p' is gone: local model servers moved to the model-host project (modelctl use $p). Start them there; this container connects by itself.\033[0m"
-            exit 1 ;;
-        cluster) clusterOn=true; imageProfiles+=("$p") ;;
         *) imageProfiles+=("$p") ;;
     esac
 done
@@ -351,38 +341,9 @@ if [[ "$gpuOn" == true ]]; then
     gpuArgs=(--gpus all)
 fi
 
-# cluster: the container runs its own dockerd (docker-in-docker), which needs --privileged. The host
-# Docker socket is NOT mounted. /var/lib/docker is a named volume so kind/act images survive restarts.
-clusterArgs=()
-if [[ "$clusterOn" == true ]]; then
-    clusterArgs=(--privileged -e CLUSTER=1 -v claude-safe-docker:/var/lib/docker)
-    echo -e "\033[33mcluster: container is privileged (own Docker + Slurm inside).\033[0m"
-fi
-
 # Per-mode mounts.
 shmSize="1g"
 homeArgs=(-v "$claudeDockerDir:/root/.claude" -v "$claudeDockerDir/.claude.json:/root/.claude.json")
-# Local model servers run from the separate model-host project (Ollama, Strata). Nothing to start here: when its Docker
-# network exists the container joins it, and each engine that is running right now is announced through OLLAMA_URL /
-# STRATA_URL (STRATA_KEY from model-host's generated key file). Without model-host the container starts as before.
-modelHostDir="${MODEL_HOST_DIR:-$scriptDir/../model-host}"
-modelNetArgs=()
-if docker network inspect model-net >/dev/null 2>&1; then
-    modelNetArgs=(--network model-net)
-    engineUp() { [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == true ]]; }
-    if engineUp model-host-ollama; then
-        modelNetArgs+=(-e "OLLAMA_URL=http://model-host-ollama:11434")
-        echo -e "\033[32mmodel-host: Ollama is up (OLLAMA_URL=http://model-host-ollama:11434).\033[0m"
-    fi
-    if engineUp model-host-strata; then
-        if [[ -s "$modelHostDir/secrets/strata.key" ]]; then
-            modelNetArgs+=(-e "STRATA_URL=http://model-host-strata:8080" -e "STRATA_KEY=$(cat "$modelHostDir/secrets/strata.key")" -e ORCH_LEAD=1)
-            echo -e "\033[32mmodel-host: Strata is up (STRATA_URL=http://model-host-strata:8080).\033[0m"
-        else
-            echo -e "\033[33mmodel-host: Strata is running but $modelHostDir/secrets/strata.key is missing or empty (set MODEL_HOST_DIR); Strata is not connected.\033[0m"
-        fi
-    fi
-fi
 echo -e "\033[32mStarting sandboxed Claude...\033[0m"
 
 ttyArgs=(-i)
@@ -405,8 +366,6 @@ docker run "${ttyArgs[@]}" --rm --init \
     "${compactArgs[@]}" \
     "${gpuArgs[@]}" \
     "${publishPorts[@]}" \
-    "${clusterArgs[@]}" \
-    "${modelNetArgs[@]}" \
     "${homeArgs[@]}" \
     "${browserProfileArgs[@]}" \
     -v "$scriptDir/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro" \
