@@ -423,7 +423,7 @@ class LeadRequestTest(OrchTest):
     def test_verdict_line_and_unclear_report(self):
         self.assertEqual(verdicts.verdict("dev", "VERDICT: BLOCKED\nall tests pass"), ("BLOCKED", "report line"))
         self.assertEqual(verdicts.verdict("reviewer", "wrong 0, risky 0, nit 0\nVERDICT: ESCALATE")[0], "PASS")  # nothing found: no second paid review
-        self.assertEqual(verdicts.verdict("reviewer", "wrong 0, risky 1, nit 0\nVERDICT: ESCALATE")[0], "ESCALATE")
+        self.assertEqual(verdicts.verdict("reviewer", "wrong 0, risky 1, nit 0\n- tools/x.py:3 race\nVERDICT: ESCALATE")[0], "ESCALATE")
         self.assertEqual(verdicts.verdict("reviewer", "x\nVERDICT: PASS\n")[0], "PASS")
         self.assertEqual(verdicts.verdict("reviewer", "looks fine to me")[0], "FAIL")  # unclear -> safe
         self.assertEqual(verdicts.verdict("dev", "VERDICT: PASS")[0], "BLOCKED")  # not allowed for dev -> falls through

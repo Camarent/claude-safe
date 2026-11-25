@@ -20,7 +20,10 @@ from .configuration import (  # noqa: F401  # AUDITORS and ROLES are re-exported
 )
 from .configuration.verdicts import FINDING_SKIP_PATTERN, STUB_REASON
 
-WRONG_ZERO_RE = re.compile(r"^\W*wrong\W*0\b", re.I | re.M)  # the reviewer rubric counts line, `wrong 0` first on its line
+ZERO_COUNTS_RE = re.compile(
+    r"^\W*wrong\W*0\W+risky\W*0\W+nit\W*0\b", re.I | re.M
+)  # the reviewer rubric counts line, `wrong 0, risky 0, nit 0`, on its own line
+ESCALATE_DEFECT_RE = re.compile(r"\b[\w./-]+\.\w+:\d+\b")  # E1(c): a reviewer ESCALATE names one defect as file:line, e.g. `<file>:<line>`
 WRONG_NONZERO_RE = re.compile(
     r"^\W*wrong\W*[1-9]|^\W*wrong\W*0\W+risky\W*[1-9]", re.I | re.M
 )  # a wrong or risky finding anywhere in the report keeps the ESCALATE
@@ -88,12 +91,17 @@ def _unverified_clean(role, m, text):
 
 
 def _zero_wrong_downgrade(role, m, text):
-    """True for a reviewer ESCALATE with `wrong 0` among the last lines, no finding `wrong N` (N>0) and no `ESCALATE:` line: nothing to fix, PASS with notes."""
+    """True for a reviewer ESCALATE with `wrong 0, risky 0, nit 0` among the last lines, no finding `wrong N` (N>0) and no `ESCALATE:` line: nothing to fix, PASS with notes."""
     if not (bool(m) and m.group(1) == ESCALATE and role == "reviewer"):
         return False
     lines = [ln for ln in text.splitlines() if ln.strip()]
     tail = "\n".join(lines[-ZERO_TAIL_LINES:])
-    return bool(WRONG_ZERO_RE.search(tail)) and not WRONG_NONZERO_RE.search(text) and not ESCALATE_LINE_RE.search(text)
+    return bool(ZERO_COUNTS_RE.search(tail)) and not WRONG_NONZERO_RE.search(text) and not ESCALATE_LINE_RE.search(text)
+
+
+def _reviewer_undefined_escalate(role, m, text):
+    """True for a reviewer ESCALATE with no `ESCALATE:` security line and no defect named as file:line: nothing for the dev to act on, so the reviewer runs once more."""
+    return bool(m) and m.group(1) == ESCALATE and role == "reviewer" and not ESCALATE_LINE_RE.search(text) and not ESCALATE_DEFECT_RE.search(text)
 
 
 def _has_finding(text):
@@ -106,7 +114,7 @@ def _reviewer_stub(role, m, text):
     return bool(m) and m.group(1) == FAIL and role == REVIEWER and not _has_finding(text)
 
 
-def verdict(role, text):
+def verdict(role, text, report_id=""):
     """-> (verdict, reason). `VERDICT: X` on its own line wins; else ESCALATE:/dev heuristics; unclear = the role's safe verdict."""
     allowed, safe = ROLES[role]
     if role == MERGER:
@@ -122,10 +130,10 @@ def verdict(role, text):
         if _zero_wrong_downgrade(role, m, text):
             return (
                 "PASS",
-                "escalate_downgraded: ESCALATE with wrong 0 and no security line: PASS with notes",
+                f"escalate_downgraded: ESCALATE with wrong 0, risky 0, nit 0 and no security line: PASS with notes, report {report_id or '-'}",
             )  # nothing to fix: a second paid review would only repeat it
-        if _reviewer_stub(role, m, text):
-            return FAIL, STUB_REASON  # a FAIL with no finding line: unclear, the auto retry runs the reviewer once more
+        if _reviewer_stub(role, m, text) or _reviewer_undefined_escalate(role, m, text):
+            return FAIL, STUB_REASON  # no finding line (FAIL) or no defect at file:line (ESCALATE): unclear, the auto retry runs the reviewer once more
         if m.group(1) in allowed:
             return m.group(1), "report line"
         return safe, f"verdict {m.group(1)} not valid for {role}"

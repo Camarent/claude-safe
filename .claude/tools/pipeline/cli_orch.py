@@ -269,12 +269,12 @@ def cmd_chain(a):
     print(text, end="")
 
 
-def _report_verdict(d, text):
+def _report_verdict(d, text, report_id=""):
     if d["role"] not in ROLES:
         return ("REPORTED", "") if text.strip() else ("MISSING", "no report file written")
     if not text.strip():
         return ROLES[d["role"]][1], "no report file written"
-    return verdict(d["role"], text)
+    return verdict(d["role"], text, report_id)
 
 
 WHY_MAX = 300
@@ -374,7 +374,7 @@ def cmd_report(a):
     if a.text and not read_text(f).strip():  # --text only fills a missing/blank file
         write_text(f, a.text)
     body = read_text(f)
-    v, reason = _report_verdict(d, body)
+    v, reason = _report_verdict(d, body, a.id)
     v, ignored = _remit_verdict(a, d, v, body)
     if ignored:
         reason = f"ignored {len(ignored)} finding(s) outside the {d['role']} remit: " + "; ".join(x[:WHY_MAX] for x in ignored)
