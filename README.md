@@ -134,6 +134,28 @@ Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<st
 The container runs as root with network access. Host tokens are not forwarded by default: pass `--with-gh-token` to forward the host's GH_TOKEN (or GITHUB_TOKEN), and `--with-cloudflare-token` to forward CLOUDFLARE_API_TOKEN. Each flag forwards only its own token, for the session only.
 The privileged cluster mode no longer exists.
 
+## Safety
+
+Read this before you run the pipeline unattended.
+
+- Default mode: tool calls outside the allowlist ask for permission.
+- Auto mode (opt-in): `python3 -I scripts/pipeline_auto.py feature --feature F` or
+  `python3 -I scripts/pipeline_auto.py run --stage S` starts a stage in auto permission mode.
+  Claude decides each action; the allowlist prompt is gone. The script keeps the other
+  default flags and then runs `cs-wave`. Use it only on a stage you have read.
+- Container: it starts as root only for the setup steps (see Users and ownership above),
+  then runs as the `node` user. It has network access.
+- Mounts: the folders you mount are read-write, including `./.claude` when you mount the
+  project. A session can change pipeline files there.
+- Tokens: the session gets no host token by default. `--with-gh-token` forwards `GH_TOKEN`
+  or `GITHUB_TOKEN`; `--with-cloudflare-token` forwards `CLOUDFLARE_API_TOKEN`. A forwarded
+  token can be read and used by anything in the session, including auto mode. Pass a flag
+  only when the stage needs it, and use a token with the smallest scope you can.
+- Sync: `scripts/sync-claude-config.sh` is a dry run by default. It lists what it would
+  overwrite in `~/.claude`. Add `--apply` only after you read the list.
+- Images: the base image pins its Node base by digest (`FROM ...@sha256:`). Extra tools are
+  pinned in `.claude/EXTRA-TOOLS.md`.
+
 ## Pipeline
 
 `.claude/` holds the pipeline: agents (`.claude/agents`), practices
