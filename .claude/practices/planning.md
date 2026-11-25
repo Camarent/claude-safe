@@ -51,6 +51,19 @@ The lead may override the line before `/run-feature`; `audit-high` without `high
 ## No bump phase
 When `pipeline.json` has `release_script`, never plan a phase or task for the version bump, CHANGELOG release entry or tag: `cs-plan check` rejects it. The finish step `version-bump` does it. Name the release in the Plan.md goal as `vX.Y.Z` (first 12 lines): that version is the bump target (`pr_ops._goal_version`); a version already at the goal gets no second bump. Without it the level (`release: patch|minor|major`) applies. Push, tag and republish stay behind the owner's word.
 
+## UI and design jobs (grounded process)
+A plan that adds a screen or a UI flow follows this template, in this order. Each step is a task or a named ops step; a later step never starts before the earlier one is signed off.
+
+1. Entity glossary first: one table of entity, API route and screen per entity. Read the entities from `docs/ARCHITECTURE.md` and `docs/modules/` (the task-1 glossary). A screen with no entity or route is not planned.
+2. Owner sign-off ops step on the glossary, before any screen is designed.
+3. Journeys before screens: each user journey is written as steps over the glossary entities.
+4. Screen inventory: per screen the data source, the controls and the exits. Check it with `python3 -I .claude/tools/ui_inventory_check.py`; a failing check blocks the task.
+5. One connected prototype on shared domain sample data: every screen of the inventory is reachable from the others, and all screens read the same sample data.
+6. Rendered review against the inventory: reuse the flows in `.claude/tools/pipeline/ux_flows.py` to walk the rendered prototype and compare each screen with its inventory row.
+7. Owner sign-off gates: the phase does not close until the owner signs off the rendered review.
+
+Phase gate: a UI phase that has no owner step or real-data run is not done. Its gate reason reads exactly: `gate: owner step or real-data run`.
+
 ## Acceptance checklist
 Plan.md `## Acceptance checklist`: one `- cmd: <one shell command> (expected result)` or `- eyes: <item>` line per end-state item. `cs-plan check` rejects a line with another tag, and a cmd with `cd`, `&&`, an env prefix or an absolute main-checkout path. After the final test the `acceptance` step runs each cmd through qrun from a fresh worktree of the stage branch (removed after, stage branch and main checkout untouched), writes `.work/<stage>/acceptance.md` and lists `eyes:` lines as MANUAL for the lead. A failed cmd stops before `master-merged`. Auditors read the file and never run it.
 
