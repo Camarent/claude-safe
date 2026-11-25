@@ -539,6 +539,12 @@ from .publish import (  # noqa: F401  (re-export: the facade keeps every name im
     _escapes_project,
     publish_entries,
 )
+from .qrun import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
+    QRUN_PG_DIR_ENV,
+    QRUN_PG_FLAG,
+    QRUN_PG_START_KEY,
+    QRUN_PG_VAR_KEY,
+)
 from .serve import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     SERVE_DEFAULT_COMMANDS,
     SERVE_DIR_ENV,
