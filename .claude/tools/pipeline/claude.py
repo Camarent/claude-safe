@@ -50,6 +50,7 @@ from .configuration import (
     project,
     scratch_allow,
 )  # module-level names so tests can patch them
+from .util import write_text
 
 ENV_PIPELINE_TOKEN = "PIPELINE_CLAUDE_TOKEN"  # nosec B105 (the env var NAME, not a secret); long-lived `claude setup-token` token of a second account, for headless sessions only
 NO_TOKEN_AGENTS = ("publisher", "pl-publisher")  # container name, host name; need the main login (artifacts): a setup-token token only makes model requests
@@ -146,8 +147,7 @@ def pgid_forget(path, pid):
         except OSError:
             return
         if left:
-            with open(path, "w") as f:
-                f.writelines(left)
+            write_text(path, "".join(left))
         else:
             os.remove(path)
 
@@ -271,7 +271,11 @@ def run_claude(args, cwd, timeout, done_file=None, env_extra=None, pgid_file=Non
             )
         )
         if pgid_file:
-            pgid_record(pgid_file, p.pid)
+            try:
+                pgid_record(pgid_file, p.pid)
+            except OSError:
+                kill_group(p)  # unrecorded session would outlive the driver: kill it, then report the failure
+                raise
         out, err, closed, timed_out = _wait(p, timeout, done_file)
         if STOPPING:  # killed by the stop signal: no answer, no report
             return {"stopped": True, "is_error": True, "result": "wave: driver stopped, session killed"}
