@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install ~/.claude from the .claude/ dir of this checkout: the claude-config step, moved out of
-# provision-dev-vm.sh unchanged. Running it is the step; it has no other provision steps.
+# Install ~/.claude from the .claude/ dir of this checkout: the claude-config step, on its own.
+# Running it is the whole step; it has no other provision steps.
 # Rerunnable: a run that finds nothing to change prints "skip claude-config: already done".
 #   scripts/install-claude-config.sh
 set -euo pipefail
