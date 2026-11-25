@@ -34,7 +34,6 @@ KEY_NAMES = (
     "WORK_DIR",
     "TASKS_FILE",
     "SESSION_TIMEOUT_S",
-    "TASK_FILES_WARN",
     "TASK_FILES_FAIL",
     "DEFAULT_WORKSPACE",
     "ConfigError",

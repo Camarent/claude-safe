@@ -501,7 +501,6 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     STARTED_EVENTS,
     TASK_DIR_WEIGHT,
     TASK_FILES_FAIL,
-    TASK_FILES_WARN,
     TEST_BAN_KEY,
     TEST_BAN_PREFIX,
     TEST_ENV_MAX_BYTES,

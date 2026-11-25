@@ -5,8 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .configuration import TASK_FILES_WARN
-from .plan_files import is_mid_phase, paths_in
+from .plan_files import is_mid_phase
 from .util import read_text
 
 
@@ -32,14 +31,6 @@ def _task_row(line):
         "owner_sonnet": False,
         "review_sonnet": False,
     }
-
-
-def _mark_oversized(rows, tasks_md):
-    """An oversized task (many predicted files) is too much for Haiku: it starts on Sonnet."""
-    for t, row in rows.items():
-        tf = os.path.join(os.path.dirname(tasks_md), t + ".md")
-        if os.path.exists(tf) and len(paths_in(read_text(tf))) > TASK_FILES_WARN:
-            row["owner_sonnet"] = True
 
 
 def _graph_order(rows, tasks_md):
@@ -80,7 +71,6 @@ def parse_tasks(tasks_md):
                 _add_depends(row, line)
     order = _graph_order(rows, tasks_md)
     top = max((rows[t]["wave"] for t in order), default=0)
-    _mark_oversized(rows, tasks_md)
     for t in rows:  # not in the Graph: one wave each, after the planned ones (sequential, as before)
         if t not in order:
             top += 1

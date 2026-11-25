@@ -120,6 +120,12 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(self.p("stage-init", "--stage", "s", "--goal", "g", "--flags", "docs", "--pr-title", "docs(readme): add demo")[0], 0)
         self.assertNotIn("pr-title", Path(f"{self.d}/.work/s/TASKS.md").read_text(encoding="utf-8"))
 
+    def test_task_with_16_files_still_starts_on_haiku(self):
+        self.stage()
+        self.assertEqual(self.task(1, ", ".join(f"a/f{i}.js" for i in range(16)))[0], 0)
+        got = parse_tasks(f"{self.d}/.work/s/TASKS.md")
+        self.assertEqual([(x["id"], x["owner_sonnet"]) for x in got], [(tid(1), False)])
+
     def test_stage_and_tasks_parse(self):
         self.stage()
         self.assertEqual(self.task(1, "a/x.js", affected="none")[0], 0)

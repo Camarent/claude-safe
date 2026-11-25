@@ -1,4 +1,4 @@
-"""plan_rules: task size cap, protected gates, untracked/ignored Predicted paths, done_when files, release flag; tasks.parse_tasks sends an oversized task to Sonnet."""
+"""plan_rules: task size cap, protected gates, untracked/ignored Predicted paths, done_when files, release flag; tasks.parse_tasks keeps an oversized task on Haiku."""
 
 import os
 import subprocess
@@ -31,25 +31,24 @@ class T(unittest.TestCase):
     def paths(self, n):
         return "Predicted paths: " + ", ".join(f"src/f{i}.py" for i in range(n)) + "\n"
 
-    def test_size_warn_and_fail(self):
+    def test_size_fail_only(self):
         self.task("task-1.md", self.paths(15))
         self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
-        self.task("task-1.md", self.paths(25))  # at the fail cap: warning only
-        self.assertTrue(plan_rules.check_task_size(self.d, "task-1")[0].startswith("size:"))
-        self.task("task-1.md", self.paths(16))
-        got = plan_rules.check_task_size(self.d, "task-1")
-        self.assertTrue(got[0].startswith("size:") and "split by seam" in got[0])
+        self.task("task-1.md", self.paths(16))  # no size warning any more
+        self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
+        self.task("task-1.md", self.paths(25))  # at the fail cap: still no problem
+        self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
         self.task("task-1.md", self.paths(26))
-        got = plan_rules.check_task_size(self.d, "task-1")
+        got = plan_rules.check_task_size(self.d, T1)
         self.assertIn("split by seam", got[0])
         self.assertEqual(plan_check.errors_of(got), got)  # fails the check
 
-    def test_oversized_task_starts_on_sonnet(self):
+    def test_oversized_task_keeps_haiku(self):
         self.task("TASKS.md", "- [ ] task-1 a\n- [ ] task-2 b\n\n## Graph\nwave 1: task-1, task-2\n")
         self.task("task-1.md", self.paths(16))
         self.task("task-2.md", self.paths(3))
         got = {t["id"]: t["owner_sonnet"] for t in parse_tasks(os.path.join(self.d, "TASKS.md"))}
-        self.assertEqual(got, {T1: True, T2: False})
+        self.assertEqual(got, {T1: False, T2: False})
 
     def test_gate_mention_warns_only_when_unnamed(self):
         gates = [("insert-only", ["data/*.json"])]
@@ -140,8 +139,8 @@ class T(unittest.TestCase):
         self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
         self.task("task-1.md", "Predicted paths: src/, lib/*.py, a.py\n")  # 5 + 5 + 1
         self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
-        self.task("task-1.md", "Predicted paths: a/, b/, c/, d.py\n")  # 16
-        self.assertTrue(plan_rules.check_task_size(self.d, "task-1")[0].startswith("size:"))
+        self.task("task-1.md", "Predicted paths: a/, b/, c/, d.py\n")  # 16: no size warning
+        self.assertEqual(plan_rules.check_task_size(self.d, T1), [])
 
     def test_quoted_paths_with_commas(self):
         from pipeline.plan_files import paths_in

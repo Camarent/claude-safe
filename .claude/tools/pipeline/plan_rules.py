@@ -41,7 +41,6 @@ from .configuration import (
     SKIP_GATE_WARN_PREFIX,
     TASK_DIR_WEIGHT,
     TASK_FILES_FAIL,
-    TASK_FILES_WARN,
     TEST_NAME_RE,
     TOOL_FIELD,
     TOOLS_DIR,
@@ -320,13 +319,11 @@ def _bulk_warning(tid, text):
 
 
 def check_task_size(d, tid):
-    """Problems for one task file: more than TASK_FILES_WARN predicted files (`size:` warning, the dev starts on Sonnet), more than TASK_FILES_FAIL (error); a `size:` warning for a hand edit over BULK_MIN rows."""
+    """Problems for one task file: more than TASK_FILES_FAIL predicted files (error); a `size:` warning for a hand edit over BULK_MIN rows."""
     text = read_text(os.path.join(d, tid + ".md"))
     n = sum(TASK_DIR_WEIGHT if p.endswith("/") or glob.has_magic(p) else 1 for p in set(paths_in(text)))
     if n > TASK_FILES_FAIL:
         return [f"{tid}: {n} predicted files (> {TASK_FILES_FAIL}): too big for one dev, architect: split by seam (one concern or module per task)"]
-    if n > TASK_FILES_WARN:
-        return [f"size: {tid}: {n} predicted files (> {TASK_FILES_WARN}): architect, split by seam; kept as one task it starts on Sonnet"]
     return _bulk_warning(tid, text)
 
 

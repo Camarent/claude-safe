@@ -3,7 +3,6 @@
 from .limits import EV_DISPATCH, EV_SKIP
 from .paths import QRUN_WRAPPER
 
-TASK_FILES_WARN = 15  # predicted files above this: `size:` warning and the dev starts on Sonnet
 NO_TASKS_HINT = "cs-wave feature --feature {stage}"  # `cs-wave run` on a stage that has Plan.md and no TASKS.md: the command that plans its phases instead
 STARTED_EVENTS = (EV_DISPATCH, EV_SKIP)  # orch.jsonl events that mark a task as started (plan.py task --before never renumbers or delays such a task)
 TASK_FILES_FAIL = 25  # above this plan_check fails: split the task by seam
