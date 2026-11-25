@@ -52,7 +52,7 @@ Reason: A cleanup step in the finish phase removes merged or gone job worktrees 
 
 ## Problem 13
 
-Reason: `scripts/sync-claude-config.sh` syncs `~/.claude` in one command. It refuses while a driver is mid-step and never runs `host_agents.py --apply`.
+Reason: `scripts/sync-claude-config.sh` syncs `~/.claude` in one command. It is a dry run by default (lists the files it would overwrite, writes nothing); `--apply` writes. It refuses while a driver is mid-step and never runs `host_agents.py --apply`.
 
 ## Problem 14
 

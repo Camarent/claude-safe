@@ -12,7 +12,7 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `scripts/dev.sh` subcommands: `sync` (`scripts/dev.sh:19`), `check` (`:21`), `fix` (`:22`), `test` (`:23`), `pytest` (`:24`), `itest` (`:25`, needs `PIPELINE_PROJECT_DIR`), `cov` (`:27`), `covserial` (`:28`), `dead` (`:29`), `sec` (`:30`), `ccn` (`:31`), `clean` (`:32`). Dispatch: `scripts/dev.sh:18`.
 - `scripts/release.sh` (no args; any arg prints usage, exit 2 at `:10`). Pre-PR gate: host checks, then container suite and gitleaks.
 - `scripts/image_test.sh [IMAGE]` (`scripts/image_test.sh:5`, default `claude-safe:rust`). Runs the test suite in the image, repo mounted read-only.
-- `scripts/sync-claude-config.sh [REF]`: sync `~/.claude` from a git ref; refuses while a driver holds `.work/*/wave.lock` (`scripts/sync-claude-config.sh:15`).
+- `scripts/sync-claude-config.sh [--apply] [REF]`: sync `~/.claude` from a git ref; dry run by default (lists the files that would be overwritten, writes nothing), `--apply` writes; refuses while a driver holds `.work/*/wave.lock` (`scripts/sync-claude-config.sh:34`).
 - `scripts/host_agents.py [--home DIR] [--out DIR] [--prefix pl-] [--apply]`: `main` at `scripts/host_agents.py:114`, `render` at `:103`.
 
 ## Key files
@@ -20,7 +20,7 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `scripts/release.sh` - refuses on uncommitted tracked changes (`:15`). Never merges or pushes.
 - `scripts/host_agents.py` - renders `.claude/agents/*.md` for the host: `lp` lines become Grep/Glob, `cs-*` names become wrapper paths. Dry run unless `--apply`.
 - `scripts/install-claude-config.sh` - installs `~/.claude` from this checkout's `.claude/` dir; rerunnable, prints `skip claude-config: already done` when nothing changes.
-- `scripts/sync-claude-config.sh` - runs `install-claude-config.sh` from a detached worktree of a git ref.
+- `scripts/sync-claude-config.sh` - runs `install-claude-config.sh` from a detached worktree of a git ref: dry run by default (no flag), `--apply` to write.
 - `scripts/image_test.sh`, `scripts/dev.sh` - the image and host tests share `.claude/tools/ptest.py`.
 
 ## Invariants and gotchas

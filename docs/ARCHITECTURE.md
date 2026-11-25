@@ -13,7 +13,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:157`, `run.sh:204`), then starts the container (`README.md:6-7`).
 3. Inside the container, `entrypoint.sh` is the entry point (`Dockerfile:180`).
 4. Host side, `scripts/dev.sh` runs lint, format, mypy and the test suite (`ptest.py`); `scripts/image_test.sh` runs the same suite in the image; `scripts/release.sh` runs both plus gitleaks as a pre-PR gate.
-5. `scripts/sync-claude-config.sh` runs `scripts/install-claude-config.sh` to copy `.claude/` into `~/.claude`.
+5. `scripts/sync-claude-config.sh` runs `scripts/install-claude-config.sh` to copy `.claude/` into `~/.claude`: a dry run by default (no flag; it passes `--dry-run` to `install-claude-config.sh`), which only lists the files it would overwrite; `--apply` writes.
 6. `scripts/host_agents.py` renders `.claude/agents/*.md` for the host (dry run unless `--apply`).
 
 ## Entry points

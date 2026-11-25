@@ -168,7 +168,7 @@ Deferred (decided, not done):
 
 Decisions of the pipeline-hardening stage, one section per problem: `docs/decisions.md`.
 
-- Sync `~/.claude` from one ref: `scripts/sync-claude-config.sh [REF]` (REF defaults to HEAD). It refuses while a wave driver runs, works in a detached worktree, and never passes `host_agents.py --apply`.
+- Sync `~/.claude` from one ref: `scripts/sync-claude-config.sh [REF]` (REF defaults to HEAD). It is a dry run by default: it lists the `~/.claude` files that would be overwritten and writes nothing. `scripts/sync-claude-config.sh --apply [REF]` writes them; replaced files are saved in `~/.claude/.provision-backup/<UTC time>/`. It refuses while a wave driver runs, works in a detached worktree, and never passes `host_agents.py --apply`.
 - Retry without a new dev run: `orch.py retry --verify` runs the task's Test lines and Done checks on the existing job commit and writes the report. Red records nothing.
 - Cleanup step (finish phase): removes merged or gone job worktrees and run temp dirs. Preview with `python3 -I .claude/tools/pipeline/cleanup.py --dry-run`; it changes nothing.
 - Public-words baseline: the pipeline.json key `public_words_baseline` (default `docs/public-words-baseline.txt`, repo-relative) lists accepted public-words hits, one per line. A hit key is `file TAB word TAB line text stripped`, with no line number, so the key stays the same when lines above the hit move. Blank lines and `#` lines are ignored; a missing file is an empty baseline. A key listed once covers every identical line. The generator is `.claude/tools/public_words_baseline.py`: `--write` rewrites the file from the current hits, `--dry-run` prints how many lines would change, `--check` exits 1 when a hit is not in the baseline, `--words a,b` overrides the configured words.
@@ -178,7 +178,7 @@ Decisions of the pipeline-hardening stage, one section per problem: `docs/decisi
 
 1. Clone the repo, then `scripts/dev.sh sync` (needs `uv` and a system Python 3.11+).
 2. Docker host: `./run.sh --rebuild`.
-3. Install `.claude` into `~/.claude` with `scripts/sync-claude-config.sh`.
+3. Install `.claude` into `~/.claude` with `scripts/sync-claude-config.sh --apply` (run it without `--apply` first to see what would be overwritten).
 4. Per-machine values stay out of git: host paths come from `~` or `$HOME` in `.claude/paths.json`, tokens from the
    environment or an untracked `~/.config/secrets.env` (`chmod 600`), never from the repo.
 5. Privacy blocklist: copy `.claude/git/privacy.gitconfig.example` to `.claude/git/privacy.gitconfig` (untracked) and set

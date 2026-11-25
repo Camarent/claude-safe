@@ -1,4 +1,8 @@
-"""scripts/sync-claude-config.sh: refuses during a driver step, runs claude-config from a detached worktree, never --apply."""
+"""scripts/sync-claude-config.sh: refuses during a driver step, runs claude-config from a detached worktree; dry run by default, --apply writes.
+
+install-claude-config.sh is stubbed here. The real install is covered in test_install_claude_config.py: dry run lists
+would-overwrite names and leaves HOME byte-identical, and a real run keeps the old copy under .provision-backup.
+"""
 
 import fcntl
 import os
@@ -41,24 +45,41 @@ class SyncScriptTests(unittest.TestCase):
             ["git", "-C", str(self.repo), "-c", "commit.gpgsign=false", *args], check=True, capture_output=True, text=True, env={**os.environ, **GIT_ENV}
         )
 
-    def _run(self):
+    def _run(self, *args):
         return subprocess.run(
-            ["bash", str(self.repo / "scripts" / "sync-claude-config.sh")], check=False, capture_output=True, text=True, env=self.env, timeout=60
+            ["bash", str(self.repo / "scripts" / "sync-claude-config.sh"), *args], check=False, capture_output=True, text=True, env=self.env, timeout=60
         )
 
     def _calls(self):
         return self.log.read_text().splitlines() if self.log.exists() else []
 
-    def test_runs_claude_config_and_rehosts_without_apply(self):
+    def test_default_run_is_dry_run_and_writes_nothing(self):
         res = self._run()
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn("install ", self._calls())
-        self.assertIn("host_agents ", self._calls())  # dry run: no arguments at all
-        self.assertIn("restart Claude Code", res.stdout)
-        self.assertIn("synced ~/.claude from commit", res.stdout)
-        self.assertNotIn("--apply", " ".join(self._calls()))
+        self.assertEqual(self._calls(), ["install --dry-run", "host_agents "])  # install gets --dry-run, host_agents no args
+        self.assertIn("nothing written", res.stdout)
+        self.assertIn("rerun with --apply to write", res.stdout)
+        self.assertNotIn("restart Claude Code", res.stdout)
         worktrees = self._git("worktree", "list", "--porcelain").stdout
         self.assertEqual(worktrees.count("worktree "), 1, worktrees)  # the temp worktree is removed
+
+    def test_apply_writes_through_install_without_dry_run(self):
+        res = self._run("--apply")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self._calls(), ["install ", "host_agents "])  # install writes: no --dry-run, no --apply
+        self.assertIn("restart Claude Code", res.stdout)
+        self.assertIn("synced ~/.claude from commit", res.stdout)
+        worktrees = self._git("worktree", "list", "--porcelain").stdout
+        self.assertEqual(worktrees.count("worktree "), 1, worktrees)  # the temp worktree is removed
+
+    def test_usage_and_unknown_flag(self):
+        res = self._run("--help")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("usage: scripts/sync-claude-config.sh [--apply] [REF]", res.stdout)
+        self.assertIn("dry run", res.stdout)
+        res = self._run("--bogus")
+        self.assertEqual(res.returncode, 2)
+        self.assertEqual(self._calls(), [])
 
     def test_refuses_while_driver_holds_stage_lock(self):
         lock_dir = self.repo / ".work" / "pipeline-hardening"
@@ -71,8 +92,12 @@ class SyncScriptTests(unittest.TestCase):
         self.assertIn("mid-step", res.stdout)
         self.assertEqual(self._calls(), [])
 
-    def test_script_never_passes_apply(self):
-        self.assertNotIn("--apply", SCRIPT.read_text())
+    def test_script_never_passes_apply_to_host_agents(self):
+        # join backslash continuations so a multi-line host_agents.py call is checked as one statement
+        text = SCRIPT.read_text().replace("\\\n", " ")
+        calls = [ln for ln in text.splitlines() if "host_agents.py" in ln]
+        self.assertTrue(calls, "host_agents.py call not found")
+        self.assertEqual([ln for ln in calls if "--apply" in ln], [])
 
 
 if __name__ == "__main__":

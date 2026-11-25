@@ -3,6 +3,7 @@
 # Running it is the whole step; it has no other provision steps.
 # Rerunnable: a run that finds nothing to change prints "skip claude-config: already done".
 #   scripts/install-claude-config.sh
+#   scripts/install-claude-config.sh --dry-run   lists the files it would overwrite in ~/.claude, writes nothing
 set -euo pipefail
 
 say() { printf '%s\n' "$*"; }
@@ -25,10 +26,12 @@ claude_config_sync() {
   rsync -a "${CLAUDE_CONFIG_EXCLUDE[@]}" "$@" "$SRC_CLAUDE/$n" "$HOME/.claude/"
 }
 # claude_config_drift: succeeds when some file of the checkout is missing or different in ~/.claude (`>f` = file to send).
+# A failing rsync dies here: it must not read as "no drift" and print "already done".
 claude_config_drift() {
-  local n
+  local n out
   for n in $(claude_config_items); do
-    claude_config_sync "$n" -n -i 2>/dev/null | grep -q '^>f' && return 0
+    out="$(claude_config_sync "$n" -n -i)" || die "rsync dry run failed for $n: nothing checked, nothing changed"
+    grep -q '^>f' <<<"$out" && return 0
   done
   return 1
 }
@@ -81,11 +84,32 @@ step_claude_config() {
   say "reminder: hooks in settings.json need snip (step snip) and ~/.local/bin on PATH; restart Claude Code to pick them up"
 }
 
+# dry_run_claude_config: print the checkout files that a real run would overwrite or add in ~/.claude (rsync -n -i, `>f` lines); writes nothing.
+dry_run_claude_config() {
+  local n line out count=0
+  say "dry run: files that would change in $HOME/.claude (nothing written):"
+  for n in $(claude_config_items); do
+    out="$(claude_config_sync "$n" -n -i)" || die "rsync dry run failed for $n: nothing listed, nothing changed"
+    while IFS= read -r line; do
+      case "$line" in '>f'*) say "  ${line:12}"; count=$((count + 1)) ;; esac
+    done <<<"$out"
+  done
+  if [ "$count" = 0 ]; then say "  none: no file would be overwritten; the changes below may still apply"; fi
+  say "not listed here, a real run also changes: settings.json (merged; old copy kept as settings.json.bak), ~/.local/bin symlinks, ~/.profile PATH line"
+  return 0
+}
 main() {
   [ "$(id -u)" != 0 ] || die "run as a normal user, not as root"
+  local dry_run=0
+  case "${1:-}" in
+    "") ;;
+    --dry-run) dry_run=1 ;;
+    *) die "usage: scripts/install-claude-config.sh [--dry-run]" ;;
+  esac
   if check_claude_config; then
     say "skip claude-config: already done"; return 0
   fi
+  if [ "$dry_run" = 1 ]; then dry_run_claude_config; return 0; fi
   say "start claude-config"
   local rc
   set +e
