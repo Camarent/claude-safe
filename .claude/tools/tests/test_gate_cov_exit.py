@@ -27,10 +27,14 @@ class GateCovExitTest(unittest.TestCase):
 
     def test_pipeline_gates_have_no_test_gate(self):
         with open(os.path.join(ROOT, "pipeline.json"), encoding="utf-8") as f:
-            names = [g["name"] for g in json.load(f)["gates"]]
+            config = json.load(f)
+        names = [g["name"] for g in config["gates"]]
+        final_names = [g["name"] for g in config["gates_final"]]
         self.assertNotIn("test", names)
-        for name in ("check", "cov", "dead", "sec", "ccn"):
+        self.assertNotIn("cov", names)
+        for name in ("check", "dead", "sec", "ccn"):
             self.assertIn(name, names)
+        self.assertEqual(final_names, ["cov"])
 
     def test_cov_exits_non_zero_on_failing_test(self):
         with tempfile.TemporaryDirectory() as d:
