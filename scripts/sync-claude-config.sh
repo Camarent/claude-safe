@@ -2,7 +2,7 @@
 # Sync ~/.claude from one git ref of this repo, without touching the checkout you run it from.
 #   scripts/sync-claude-config.sh [REF]     (REF defaults to HEAD)
 # Steps: refuse while a wave driver runs (.work/<stage>/wave.lock held), make a detached worktree of REF,
-# run its provision-dev-vm.sh --only claude-config, print the agents rehosted by host_agents.py (dry run
+# run its scripts/install-claude-config.sh, print the agents rehosted by host_agents.py (dry run
 # only: no write flag is ever passed), remove the worktree, print the commit and the restart reminder.
 set -euo pipefail
 
@@ -40,7 +40,7 @@ git -C "$root" worktree add --detach "$tree" "$ref" >/dev/null
 commit="$(git -C "$tree" rev-parse --short HEAD)"
 say "syncing ~/.claude from $ref ($commit)"
 
-bash "$tree/scripts/provision-dev-vm.sh" --only claude-config
+bash "$tree/scripts/install-claude-config.sh"
 
 say "agents rehosted by host_agents.py (dry run, nothing written):"
 python3 -I "$tree/scripts/host_agents.py"
