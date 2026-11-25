@@ -41,6 +41,19 @@ PHRASES = {
 }
 
 
+AGENT_DOCS = [
+    os.path.join(".claude", "agents", "dev.md"),
+    os.path.join(".claude", "agents", "reviewer.md"),
+]
+DENIAL_PHRASES = (
+    "cwd is the job worktree; run plain `git <args>`, never `cd` before git.",
+    "`cs-qrun -- <cmd>` alone in one Bash call: no pipe, no `;`, no `cd`.",
+    "Tests take env only through the documented flag, never a `VAR=x` prefix.",
+    "Read a range with the Read tool (offset/limit); `sed -n 'A,Bp' file` is one range per call.",
+    "No shell variable assignment before a command; write absolute paths.",
+)
+
+
 def missing_phrases(text):
     """-> the rule ids (E1-E4) whose phrase is not in TEXT word for word."""
     return [rule for rule, phrase in PHRASES.items() if phrase not in text]
@@ -49,6 +62,18 @@ def missing_phrases(text):
 def _read(rel):
     with open(os.path.join(REPO, rel), encoding="utf-8") as f:
         return f.read()
+
+
+class DenialFormsDocsTest(unittest.TestCase):
+    def test_each_agent_doc_states_the_five_denial_rules(self):
+        for rel in AGENT_DOCS:
+            text = _read(rel)
+            for phrase in DENIAL_PHRASES:
+                with self.subTest(doc=rel, phrase=phrase):
+                    self.assertIn(phrase, text)
+
+    def test_reviewer_doc_has_no_review_ccn_route(self):
+        self.assertNotIn("review_ccn", _read(os.path.join(".claude", "agents", "reviewer.md")))
 
 
 class EscalationDocsTest(unittest.TestCase):
