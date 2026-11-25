@@ -87,7 +87,6 @@ PROJECT_DEFAULTS: dict = {
     "branch_work": "stage/{feature}",  # tasks are merged and tested here; {feature} = feature (or stage) name; a fixed name wins
     "branch_release": None,  # the lead merges work -> release; only release is pushed. None = detected per repo (release_branch); project() fills the main repo's
     "test_env": {},  # env vars the test commands need, e.g. {"SOME_ROOT": "."}
-    "review_ccn": 10,  # a task whose diff changes a function with cyclomatic complexity above this gets the Sonnet reviewer (lizard; any error -> Haiku)
     "pin_manifest": "Cargo.toml",  # manifest file name whose `path =` dependency pins version-bump rewrites to the new version when the target crate uses `version.workspace`; empty = off
     "release_script": None,  # repo-relative script run by version-bump and release: `current [REF]` prints X.Y.Z, `set OLD NEW ENTRY` edits the version files and prints them; None = no release steps
     "quality_tools": None,  # {".ext": ["tool", ...]} for the advisory quality run (audit/qualityrun.py); None = QUALITY_TOOLS. Python/C++ tools run only when listed here, e.g. {".py": ["ruff", "mypy"], ".cpp": ["clang-tidy", "cppcheck"]}
