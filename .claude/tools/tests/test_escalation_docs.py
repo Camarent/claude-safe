@@ -95,5 +95,39 @@ class EscalationDocsTest(unittest.TestCase):
         self.assertEqual(missing_phrases(mutated), ["E1"])
 
 
+ORCHESTRATOR = os.path.join(".claude", "ORCHESTRATOR.md")
+DECISIONS = os.path.join("docs", "decisions.md")
+MODEL_LOG_LINE = "The driver (`pipeline/e1.py` `model_for`) logs each Sonnet dev or reviewer dispatch as `E1(a|b|c)`."
+REMOVED_ROUTE_WORDS = ("review_ccn", "15 predicted", "escalates by the ccn gate")
+
+
+def _section(text, heading):
+    """-> the text from HEADING up to the next level-2 heading (or the end)."""
+    start = text.index(heading)
+    end = text.find("\n## ", start + len(heading))
+    return text[start:] if end < 0 else text[start:end]
+
+
+class ModelRouteDocsTest(unittest.TestCase):
+    def test_models_section_names_the_e1_driver_and_log_line(self):
+        section = _section(_read(ORCHESTRATOR), "## Models: Haiku first")
+        self.assertIn(MODEL_LOG_LINE, section)
+
+    def test_orchestrator_states_the_reviewer_escalation_route(self):
+        self.assertIn("escalates only by E1(c), its own ESCALATE, and a Sonnet reviewer stays Sonnet.", _read(ORCHESTRATOR))
+
+    def test_no_doc_keeps_the_removed_ccn_or_extra_round_route(self):
+        for rel in (ORCHESTRATOR, os.path.join(".claude", "practices", "orch-pipeline.md"), DECISIONS):
+            text = _read(rel)
+            for word in REMOVED_ROUTE_WORDS:
+                with self.subTest(doc=rel, word=word):
+                    self.assertNotIn(word, text)
+
+    def test_decisions_entry_pins_heading_and_next_dispatch_rule(self):
+        text = _read(DECISIONS)
+        self.assertIn("## E1 dispatch and old logs", text)
+        self.assertIn("gets Haiku at its next dispatch", text)
+
+
 if __name__ == "__main__":
     unittest.main()

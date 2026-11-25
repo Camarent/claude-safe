@@ -86,7 +86,7 @@ Stage decisions, one per task. Reason = the report item it fixes.
 - task-11: zero-count ESCALATE with no security keyword is PASS with notes. Reason: stability 15.
 - task-12: env failures classified; worktree_setup reruns once before asking. Reason: stability 1, 16.
 - task-13: dev BLOCKED with committed work and an env/test reason runs the verify path. Reason: stability 2.
-- task-14: rework ladder: Haiku rework first, Sonnet only after it fails; review_ccn starts on Haiku. Reason: tokens 3, 5.
+- task-14: rework ladder: Haiku rework first, Sonnet only after it fails; the complexity review route starts on Haiku. Reason: tokens 3, 5.
 - task-15: final-test FAIL reruns failing files alone, then on the preflight head. Reason: stability 6.
 - task-16: third round of a repeating docs-only finding becomes a script step; auditor retry is the default. Reason: stability 16, time 11.
 - task-17: task gate skips docs-only diffs; linkguard flags line-number cites. Reason: time 3, 4.
@@ -190,3 +190,7 @@ Owner decisions for the packaging and safety task (task-9). Reason = the report 
 - Token opt-in: host tokens are not forwarded by default. `--with-gh-token` and `--with-cloudflare-token` in `run.sh` forward one token each, for the session only. Reason: a forwarded token is readable by anything in the session.
 - Auto mode is opt-in by script: `scripts/pipeline_auto.py` starts a stage in auto permission mode (`PERMISSION_MODE_AUTO`). The default run keeps the allowlist prompt. Reason: auto mode removes the prompt, so it needs a deliberate start.
 - Packaging: `package = false` in `pyproject.toml`. The supported install is the `.claude/bin` wrappers on PATH; the project metadata documents the entry points only. Reason: the tools have no runtime dependencies and the wrappers are the install path.
+
+## E1 dispatch and old logs
+
+Reason: the model route is one rule now: a Sonnet dev or reviewer needs an E1 event, logged as `E1(a|b|c)` (`pipeline/e1.py`). Old logs with a ccn or extra-round why still parse: the task state reads the why as text and no parser drops it. A running stage whose task sits on Sonnet without an E1 event gets Haiku at its next dispatch, because the model is read from the events, not from a flag. Reason for the change: owner cost decision, fewer Sonnet dispatches.
