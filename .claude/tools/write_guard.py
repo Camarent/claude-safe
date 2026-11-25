@@ -86,6 +86,17 @@ def log_denial(tool, path):
 
 
 def main():
+    """Fail closed while the guard is active: an unexpected exception denies the write (exit 2). Inactive guard: exceptions propagate."""
+    try:
+        return check()
+    except Exception as err:
+        if not os.environ.get(ENV_GUARD_WORKTREE):
+            raise
+        print(f"write_guard: unexpected error ({err}); the write is denied. Fix the hook and retry.", file=sys.stderr)
+        return 2
+
+
+def check():
     worktree = os.environ.get(ENV_GUARD_WORKTREE, "")
     if not worktree:
         return 0

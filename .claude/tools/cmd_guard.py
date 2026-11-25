@@ -503,7 +503,7 @@ def git_cd_reason(why):
     return why.startswith("No `cd ")
 
 
-def main():
+def check():
     try:
         tool_input = json.load(sys.stdin).get("tool_input", {})
         cmd = tool_input.get("command", "")
@@ -523,6 +523,15 @@ def main():
             denial_log.append(rule, cmd, os.getcwd())
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why}}))
     return 0
+
+
+def main():
+    """Fail closed: an unexpected exception denies the command (exit 2, reason on stderr), it never allows it."""
+    try:
+        return check()
+    except Exception as err:
+        print(f"cmd_guard: unexpected error ({err}); the Bash command is denied. Fix the hook and retry.", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
