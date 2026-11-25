@@ -9,9 +9,9 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - [profiles](modules/profiles.md) - two optional toolchain layers (`profiles/*.Dockerfile`) stacked on the base image.
 
 ## Flow
-1. `Dockerfile` builds the base image (`FROM node:lts-trixie-slim`, `Dockerfile:5`).
-2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:157`, `run.sh:204`), then starts the container (`README.md:6-7`).
-3. Inside the container, `entrypoint.sh` is the entry point (`Dockerfile:180`).
+1. `Dockerfile` builds the base image (`FROM node:lts-trixie-slim`, `Dockerfile:6`).
+2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:163`, `run.sh:211`), then starts the container (`README.md:6-7`).
+3. Inside the container, `entrypoint.sh` is the entry point (`Dockerfile:193`).
 4. Host side, `scripts/dev.sh` runs lint, format, mypy and the test suite (`ptest.py`); `scripts/image_test.sh` runs the same suite in the image; `scripts/release.sh` runs both plus gitleaks as a pre-PR gate.
 5. `scripts/sync-claude-config.sh` runs `scripts/install-claude-config.sh` to copy `.claude/` into `~/.claude`: a dry run by default (no flag; it passes `--dry-run` to `install-claude-config.sh`), which only lists the files it would overwrite; `--apply` writes.
 6. `scripts/host_agents.py` renders `.claude/agents/*.md` for the host (dry run unless `--apply`).
@@ -21,6 +21,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - `scripts/dev.sh` - subcommands listed in `modules/scripts.md`; dispatch at `scripts/dev.sh:18`.
 - `scripts/release.sh` - pre-PR gate; never merges or pushes (`scripts/release.sh:2-3`).
 - `scripts/host_agents.py` - agent rendering; `main` at `scripts/host_agents.py:114`.
+- `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode (opt-in); `main` at `scripts/pipeline_auto.py:44`.
 
 ## Build and test commands
 - Build images: `./run.sh --rebuild` (`README.md:8`).
