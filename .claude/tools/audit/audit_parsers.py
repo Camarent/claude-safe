@@ -24,7 +24,7 @@ def json_doc(text):
     text = text.strip()
     try:
         return json.loads(text)
-    except ValueError:
+    except ValueError:  # KEEP: not a plain JSON document (log noise first); scan_json finds the document
         pass
     found, doc = scan_json(text, "[{", line_start=True)
     if found:

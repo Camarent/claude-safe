@@ -112,7 +112,7 @@ def _parsed(p, name, parser, mirror, orig_cwd):
         return "findings", [], f"UNKNOWN-PARSER {parser} (rc {p.returncode}); last lines:\n" + "\n".join(tail)
     try:
         fl, summ = fn(p.stdout, p.stderr)
-    except Exception as e:  # parser failure means the tool crashed or its format changed
+    except Exception as e:  # KEEP: returned as status "crash" with the text; the caller reports it
         return "crash", [], f"{type(e).__name__}: {e}"
     for f in fl:
         f["tool"] = name
@@ -130,7 +130,7 @@ def _stamp(repo):
         sha = gitx.run(repo, "rev-parse", "--short", "HEAD", timeout=GIT_QUICK_TIMEOUT_S)
         if sha.returncode == 0 and sha.stdout.strip():
             stamp += "-" + sha.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):  # KEEP: no git means no short sha in the stamp; the date stays
         pass
     return stamp
 

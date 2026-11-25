@@ -39,7 +39,7 @@ from pipeline.configuration import (  # noqa: E402
     test_env,
     work_branch,
 )
-from pipeline.util import read_text, write_text  # noqa: E402
+from pipeline.util import read_text, swallowed, write_text  # noqa: E402
 
 from audit import final_check, gatewatch  # noqa: E402
 
@@ -70,7 +70,8 @@ def no_change(d, stage, task, git=gitx.try_out):
             head, base = (git(w, "rev-parse", "HEAD") or "").strip(), (git(repo, "rev-parse", "--verify", info["base"]) or "").strip()
             if not head or head != base or git(w, "status", "--porcelain") is None or wt._dirty(w, repo):
                 return False
-    except (RuntimeError, OSError):
+    except (RuntimeError, OSError) as ex:  # a git that cannot answer means "changed": the gates run
+        swallowed("taskgates.no_change", ex)
         return False
     return True
 
@@ -162,7 +163,8 @@ def docs_only(d, stage, task, git=gitx.try_out):
             if out is None or new is None:
                 return False
             names += out.splitlines() + new.splitlines()
-    except (RuntimeError, OSError):
+    except (RuntimeError, OSError) as ex:  # a git that cannot answer means "changed": the gates run
+        swallowed("taskgates.docs_only", ex)
         return False
     return bool(names) and all(any(fnmatch.fnmatch(n, g) for g in GATE_SKIP_PATHS) for n in names)
 
