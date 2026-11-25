@@ -80,6 +80,10 @@ Code blocks unchanged. Commands, paths, API names exact. Errors quoted exact, sh
 
 No text between routine calls. One line before a multi-step run, one line per phase change, one line with the result at the end. Otherwise text before a call only to clarify, warn, or disambiguate.
 
+### 8. Rendered review and glossary
+
+Rendered review: compare each screen of the rendered prototype with the screen inventory (data source, controls, exits) and the glossary. A control or term that is not in the inventory or glossary is a finding. Owner sign-off follows the review.
+
 ## When to break the rules
 
 Plain prose, then resume:
