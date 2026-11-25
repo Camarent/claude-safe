@@ -50,10 +50,10 @@ class RetroLessonsCheckTest(unittest.TestCase):
         self.dir = tracked_mkdtemp()
         self.report = make_report(self.dir)
 
-    def run_check(self, path):
+    def run_check(self, path, *flags):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = rlc.main([path])
+            code = rlc.main([path, *flags])
         return code, out.getvalue()
 
     def test_good_fixture_passes(self):
@@ -99,7 +99,8 @@ class RetroLessonsCheckTest(unittest.TestCase):
         self.assertIn("do not match rows 1, 1", out)
 
     def test_real_doc_passes(self):
-        code, out = self.run_check(str(DOC))
+        # the cited reports are git-ignored `.work` files that cleanup prunes: check the doc's shape only
+        code, out = self.run_check(str(DOC), "--no-file-check")
         self.assertEqual(code, 0, out)
 
 

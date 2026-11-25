@@ -41,8 +41,8 @@ def parse(text):
     return sections, totals
 
 
-def problems(path):
-    """-> [message] for the retro lessons report at PATH; [] when it is good."""
+def problems(path, check_files=True):
+    """-> [message] for the retro lessons report at PATH; [] when it is good. CHECK_FILES False skips the report-file existence check (the cited reports live in git-ignored `.work`, so a clean checkout never has them)."""
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
@@ -57,7 +57,7 @@ def problems(path):
         for cells in sections.get(name, []):
             if len(cells) != ROW_CELLS or not all(cells):
                 out.append(f"{name}: row needs {ROW_CELLS} non-empty cells: {cells}")
-            elif not os.path.isfile(cells[2]):
+            elif check_files and not os.path.isfile(cells[2]):
                 out.append(f"{name}: report file missing: {cells[2]}")
     if totals is None:
         out.append("missing totals footer: Totals: stuck causes N, useless escalations M.")
@@ -71,8 +71,9 @@ def problems(path):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
+    ap.add_argument("--no-file-check", action="store_true", help="do not require the cited report files to exist")
     a = ap.parse_args(argv)
-    found = problems(a.report)
+    found = problems(a.report, check_files=not a.no_file_check)
     for msg in found:
         print(f"FAIL: {msg}")
     if found:
