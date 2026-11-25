@@ -448,7 +448,7 @@ def _reset_fix_chain(log, a):
 
 
 def _record_conflict(a, log, e):
-    """retry hit a rebase conflict: record the step BLOCKED (a dev report, so the next retry and the lead see it) with the conflicting files and the resolve command."""
+    """retry hit a rebase conflict: record the step BLOCKED (a dev report, so the next retry and the lead see it) with the conflicting files and the resolve command. -> the reason text."""
     evs = read_jsonl(log)
     nums = [int(m.group(1)) for x in evs if (m := re.fullmatch(r"retry-(\d+)", str(x.get("id", ""))))]
     rid = f"retry-{max(nums, default=0) + 1}"
@@ -460,15 +460,16 @@ def _record_conflict(a, log, e):
     f = work_path(paths(a)[0], f"report-{rid}.md", create=True)
     write_text(f, f"VERDICT: BLOCKED\n{reason}\n")
     append_event(log, {"ev": "report", "id": rid, "task": a.step, "role": "dev", "verdict": BLOCKED, "reason": reason, "why": reason[:WHY_MAX], "file": f})
+    return reason
 
 
 def _refresh_job(a, log):
-    """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry."""
+    """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry with the resolve command."""
     try:
         res = worktree.refresh(a.dir, a.stage, a.step, discard=True)
     except worktree.RefreshConflict as e:
-        _record_conflict(a, log, e)
-        sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
+        reason = _record_conflict(a, log, e)
+        sys.exit(f"orch: retry {a.step} BLOCKED: {reason}")
     except RuntimeError as e:
         sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
     if res["rebased"] or res["discarded"]:
