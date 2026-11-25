@@ -39,7 +39,7 @@ from pipeline.configuration import (
     repo_dir,
 )
 from pipeline.stagedir import resolve_stage
-from pipeline.util import add_common_args, read_jsonl, read_text, work_path
+from pipeline.util import add_common_args, read_jsonl, read_text, work_path, write_text
 from pipeline.worktree import nested_repos
 
 KEEP_REPORT_RE = re.compile(r"^\s*(?:VERDICT\s*:\s*)?(BLOCKED|FAIL|ESCALATE)\b")  # the retro reads these reports
@@ -144,8 +144,7 @@ def digest(d, stage):
     out += [f"- {r.get('task') or r.get('id')} {r.get('verdict')}: {r.get('reason', '')}" for r in bad[:TOP_SESSIONS]]
     out += webskip.skips(d, stage)  # a skipped browser check stays visible in the retro
     f = work_path(stage_dir(d, stage), "retro-digest.md", create=True)
-    with open(f, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(out) + "\n")
+    write_text(f, "\n".join(out) + "\n")
     return True, out
 
 
