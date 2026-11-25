@@ -7,7 +7,8 @@ import unittest
 AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "agents")
 
 # Recorded caps in bytes: the split files hold the rarely used rules, the main files stay small.
-CAPS = {"architect.md": 26000, "dev.md": 13500, "reviewer.md": 12200}
+# architect.md: 27000 (was 26000) because task-8 moved four always-read brief rules into it; they must sit in the main file, not rare-rules.md.
+CAPS = {"architect.md": 27000, "dev.md": 13500, "reviewer.md": 12200}
 
 # Gate-rule keywords that existed in the agent files before the split.
 KEYWORDS = ("ccn", "mutation check", "PLAN GAP", "Predicted paths", "VERDICT")
