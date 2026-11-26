@@ -138,7 +138,7 @@ class WaveTest(unittest.TestCase):
         rep = f"{self.d}/report-review.md"
         lines = ["VERDICT: FAIL"] + [f"W{i}: fix text {i}" for i in range(1, 11)]
         Path(rep).write_text("\n".join(lines) + "\n", encoding="utf-8")
-        msg = f"task-1: review failed 2 rounds; findings {rep}; fix the cause, then `orch.py retry --stage s --step task-1` (or `skip`)"
+        msg = f"task-1: review failed 2 rounds; findings {rep}; fix the cause, then `orch.py retry s --step task-1` (or `skip`)"
         text = cli_wave._ask_text(type("A", (), {"stage": "s"})(), msg)
         self.assertIn("W1: fix text 1", text)  # beyond the 5-line tail
         note_cmd = '--step task-1 --note "<quote the reviewer\'s exact fix text>"'

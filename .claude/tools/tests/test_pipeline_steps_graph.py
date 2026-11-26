@@ -85,7 +85,7 @@ class NextStepTest(unittest.TestCase):
         self.assertEqual(r["action"], "ask_main")
         self.assertEqual(
             r["message"],
-            f"a1 (dev on {TASK1}) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step {TASK1}` (or `skip`)",
+            f"a1 (dev on {TASK1}) was dispatched but never reported; fix the cause, then `orch.py retry s --step {TASK1}` (or `skip`)",
         )
 
     def test_dev_done_goes_to_reviewer_or_prereview(self):
@@ -266,7 +266,7 @@ class NextStepTest(unittest.TestCase):
         r = self.nxt([dispatch("a1", "dev"), dev_rep("a1", "BLOCKED", "b.md")])
         self.assertEqual(r["action"], "ask_main")
         self.assertTrue(r["message"].startswith("task-1: dev verdict BLOCKED ("))
-        self.assertIn(f"report b.md; fix the cause, then `orch.py retry --stage s --step {TASK1}`", r["message"])
+        self.assertIn(f"report b.md; fix the cause, then `orch.py retry s --step {TASK1}`", r["message"])
         # owner_sonnet dev escalating also asks the lead
         r = self.nxt([dispatch("a1", "dev", "sonnet"), dev_rep("a1", "ESCALATE")], {**TASK, "owner_sonnet": True})
         self.assertEqual(r["action"], "ask_main")
@@ -348,12 +348,12 @@ class RunPhaseTest(unittest.TestCase):
         assert r is not None
         lines = r["message"].split("\n")
         self.assertEqual(r["action"], "ask_main")
-        self.assertEqual(lines[0], "x (ops) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step x` (or `skip`)")
-        self.assertEqual(lines[1], "y: ops verdict FAIL (boom); report y.md; fix the cause, then `orch.py retry --stage s --step y` (or `skip`)")
+        self.assertEqual(lines[0], "x (ops) was dispatched but never reported; fix the cause, then `orch.py retry s --step x` (or `skip`)")
+        self.assertEqual(lines[1], "y: ops verdict FAIL (boom); report y.md; fix the cause, then `orch.py retry s --step y` (or `skip`)")
         self.assertEqual(
             lines[2],
             "tools-check: ops verdict FAIL (); report t.md; tools missing, see .work/s/audits/tools-check.md; lead: retry or skip --step tools-check"
-            "; fix the cause, then `orch.py retry --stage s --step tools-check` (or `skip`)",
+            "; fix the cause, then `orch.py retry s --step tools-check` (or `skip`)",
         )
 
     def test_dispatch_wins_over_asks(self):

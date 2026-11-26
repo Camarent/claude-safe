@@ -17,8 +17,15 @@ class StaleReportBriefTest(unittest.TestCase):
         with mock.patch.object(audit_phases, "leads_for", return_value=""), mock.patch.object(audit_phases, "read_head", return_value=""):
             st = audit_phases.fix_step(a, [{"id": "task-1", "wave": 1}], "fix-plan-test", ["r.md"], "it failed.", "k", "why")
         self.assertIn(STALE_REPORT_NOTE.format(retry="X").split("X")[0], st["prompt"])
-        self.assertIn("retry --stage s1 --step final-test", st["prompt"])
+        self.assertIn("retry s1 --step final-test", st["prompt"])
         self.assertIn("HEAD", st["prompt"])
+
+    def test_a_phase_stage_retry_names_the_feature_not_the_phase_path(self):
+        a = argparse.Namespace(stage="F/phases/05-one-entry", dir=".")
+        with mock.patch.object(audit_phases, "leads_for", return_value=""), mock.patch.object(audit_phases, "read_head", return_value=""):
+            st = audit_phases.fix_step(a, [{"id": "task-1", "wave": 1}], "fix-plan-test", ["r.md"], "it failed.", "k", "why")
+        self.assertIn("retry F --step final-test", st["prompt"])
+        self.assertNotIn("phases/05-one-entry --step", st["prompt"])
 
 
 if __name__ == "__main__":

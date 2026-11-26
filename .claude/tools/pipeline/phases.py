@@ -71,6 +71,7 @@ from .configuration import (
     webtest_model,
     webtest_tools_missing,
 )
+from .entry import name_of_stage
 from .phase_audit import DEFAULT_EVERY, audit_due
 from .plan_files import acceptance_items, is_finish_phase, task_paths
 from .steps import history, last_verdict, ops_as_script, step
@@ -124,7 +125,7 @@ def _nested_note(a, br, rel):
 def _release_message(a, cfg, name):
     """Lead message of `master-merged`: how to squash the stage branch into the release branch (never --ff-only)."""
     S, br, rel = a.stage, _wb(a, cfg), cfg["branch_release"]
-    skip = f"then run `{tool_cmd('orch.py')} skip --stage {S} --step master-merged` so cleanup, push, republish and index follow."
+    skip = f"then run `{tool_cmd('orch.py')} skip {name_of_stage(S)} --step master-merged` so cleanup, push, republish and index follow."
     extra = _nested_note(a, br, rel) if pr_mode.derived(a) else ""
     if pr_mode.derived(a) and pr_mode.pr_active(a):
         return f"Stage {S}: CI is green on the PR of `{br}`. Squash-merge it on GitHub with `gh pr merge {br} --squash --delete-branch` (title `<type>(<area>): <what>`){extra}, {skip}"

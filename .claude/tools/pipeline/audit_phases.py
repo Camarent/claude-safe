@@ -45,6 +45,7 @@ from .configuration import (
     tool_cmd,
     work_branch,
 )
+from .entry import name_of_stage
 from .phase_context import brief_digest
 from .steps import history, last_verdict, step
 from .util import read_text, work_path, write_text
@@ -160,7 +161,7 @@ def fix_step(a, tasks, sid, reports, what, key, why) -> dict:
         f"`wave {last_wave + 1}: task-a, task-b` (parallel only when they share no paths). Do not touch existing rows. Skip nits. "
         f"If the report shows the tool or environment failed (browser did not start, server unreachable, toolchain missing) and not a defect in the change, plan nothing and reply BLOCKED."
         + digest
-        + STALE_REPORT_NOTE.format(retry=f"{tool_cmd('orch.py')} retry --stage {S} --step {STALE_RETRY_STEP}")
+        + STALE_REPORT_NOTE.format(retry=f"{tool_cmd('orch.py')} retry {name_of_stage(S)} --step {STALE_RETRY_STEP}")
         + NAV
         + leads_for(a, key, " ".join(read_head(a, os.path.basename(r), 500) for r in reports))
         + tail(a, "{rid}", allowed(DONE, BLOCKED), "a 3-line summary naming the new tasks"),
