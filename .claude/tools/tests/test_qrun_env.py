@@ -46,12 +46,13 @@ class TestSubreaper(unittest.TestCase):
         saved = sys.modules.get("ctypes")
         sys.modules["ctypes"] = None  # type: ignore[assignment]  # import ctypes -> ImportError
         try:
-            qrun._become_subreaper()
+            self.assertIsNone(qrun._become_subreaper())  # ImportError is suppressed: no raise, no return value
         finally:
             if saved is not None:
                 sys.modules["ctypes"] = saved
             else:
                 del sys.modules["ctypes"]
+        self.assertIs(sys.modules.get("ctypes"), saved)  # sys.modules restored
 
 
 if __name__ == "__main__":
