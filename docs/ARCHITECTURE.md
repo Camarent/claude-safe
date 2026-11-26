@@ -34,7 +34,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - Tests of the pipeline live in `.claude/tools/tests/`.
 
 ## Pipeline model route and tool settings
-- Model route: `.claude/tools/pipeline/e1.py:88` (`model_for`) decides every dev and reviewer model. Each dispatch starts on Haiku. Sonnet runs only when an E1 event holds (`.claude/tools/pipeline/e1.py:79`, `e1_event`): (a) the dev gate stayed red after the Haiku tries, (b) the dev reported ESCALATE, (c) a reviewer reported ESCALATE, (d) a fix-gate dev ended BLOCKED or its re-merge FAILed.
+- Model route: `.claude/tools/pipeline/e1.py:102` (`model_for`) decides every dev and reviewer model. Each dispatch starts on Haiku. Sonnet runs only when an E1 event holds (`.claude/tools/pipeline/e1.py:91`, `e1_event`): (a) the dev gate stayed red after the Haiku tries, (b) the dev reported ESCALATE, (c) a reviewer reported ESCALATE, (d) a fix-gate dev ended BLOCKED or its re-merge FAILed.
 - Tool settings: `.claude/tools/pipeline/configuration/literals.py:80` (`_SETTINGS`) holds the named settings (timeouts, the usage-limit recheck slice `limit_recheck_s`, origin remote, price table), each with a default. An env override `CS_<NAME>` (`.claude/tools/pipeline/configuration/literals.py:15`) or the `tool_settings` object in `pipeline.json` (`.claude/tools/pipeline/configuration/literals.py:14`) replaces the default. Read them with `tool_setting` (`.claude/tools/pipeline/configuration/literals.py:100`).
 
 ## Pipeline module splits
