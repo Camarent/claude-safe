@@ -24,6 +24,7 @@ INLINE_LP = (
     ("(`lp nav refs FILE SYMBOL`, exact; grep only to confirm literal text)", "(Grep for the symbol; read the matches)"),
     ("a script made it with `lp`", "a script made it"),
     ("Bash is for `lp` and read-only commands only", "Bash is for read-only commands only"),
+    ("Bash is for `git diff`, `git show`, `lp` and read-only commands only", "Bash is for `git diff`, `git show` and read-only commands only"),
 )
 LP_SPAN = re.compile(r"`lp [^`]*`")  # catch-all: any other `lp <subcommand> ...` code span
 LP_SPAN_HOST = "Grep/Glob"

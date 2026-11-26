@@ -12,7 +12,9 @@ AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "a
 # dev.md: 14600 (was 13700) and reviewer.md: 13300 (was 12300) because task-8 put the E1-E4 escalation rules in both main files: test_escalation_docs.py requires them word for word in each doc, so they cannot move to rare-rules.md.
 # dev.md: 15100 (was 14600) and reviewer.md: 13700 (was 13300) because the five denial brief rules (cd_git, qrun, segments, sed, guard) sit in both main files: test_escalation_docs.py requires them word for word in each doc, so they cannot move to rare-rules.md.
 # architect.md: 27400 (was 27000) because the UI job rule bullet (glossary, sign-off, prototype) is always-read planning guidance; it sits in the main file, not rare-rules.md.
-CAPS = {"architect.md": 27400, "dev.md": 15100, "reviewer.md": 13700}
+# architect.md: 27700 (was 27400) because the three plan-check rules (qrun-op, pins, docs-count) are always-read planning guidance; they sit in the main file, not rare-rules.md.
+# architect.md: 28000 (was 27700) because task-8 replaced the .work output bullet with the output-path rule and added the research and ops-input bullets; they are always-read planning guidance, so they sit in the main file, not rare-rules.md.
+CAPS = {"architect.md": 28000, "dev.md": 15100, "reviewer.md": 13700}
 
 # Gate-rule keywords that existed in the agent files before the split.
 KEYWORDS = ("ccn", "mutation check", "PLAN GAP", "Predicted paths", "VERDICT")
@@ -56,6 +58,34 @@ class AgentRules(unittest.TestCase):
     def test_architect_uses_batch(self):
         text = read(os.path.join(AGENTS, "architect.md"))
         self.assertIn("`cs-plan batch`", text)
+
+    def test_architect_research_and_ops_input_rules(self):
+        text = read(os.path.join(AGENTS, "architect.md"))
+        self.assertNotIn("absolute main-tree paths", text)
+        self.assertIn("Research task (`Type: research`", text)
+        self.assertIn("the driver blocks once up front", text)
+
+    def test_merger_auto_merges_only_init_add_add_conflicts(self):
+        text = read(os.path.join(AGENTS, "merger.md"))
+        self.assertIn("an add/add conflict on an `__init__.py` (both branches added the file) keeps both sides' lines", text)
+        self.assertIn("any other add/add conflict stays a CONFLICT for the lead", text)
+        self.assertIn("keeps both sides' lines, each line once, base side first", text)
+        self.assertNotIn("any file", text)
+        self.assertIn("reports CONFLICT except add/add on `__init__.py`, merged per step 4", text)
+        self.assertIn("Edit and resolve nothing except step 4's `__init__.py` case", text)
+
+
+class FreshnessAuditorAgent(unittest.TestCase):
+    def test_freshness_auditor_is_read_only_haiku(self):
+        text = read(os.path.join(AGENTS, "freshness-auditor.md"))
+        front = text.split("---", 2)[1]
+        self.assertIn("model: haiku", front)
+        self.assertIn("effort: low", front)
+        tools = next(ln for ln in front.splitlines() if ln.startswith("tools:"))
+        self.assertNotIn("Edit", tools)
+        self.assertNotIn("Write", tools)
+        self.assertIn("VERDICT: CLEAN", text)
+        self.assertIn("VERDICT: FIXES", text)
 
 
 if __name__ == "__main__":

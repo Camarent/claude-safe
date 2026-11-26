@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # -I drops the script dir
 from pipeline import gitx
-from pipeline.configuration import ORCH_LOG, WORK_DIR
+from pipeline.configuration import ORCH_LOG, RETRO_DIR, SLOW_SUITE_FILE, SLOW_SUITE_KIND, WORK_DIR
 from pipeline.util import read_jsonl, work_path
 
 from retro.feature_retro import read
@@ -53,8 +53,28 @@ def _is_trigger(e):
     return any(t.startswith(name) and (verdict is None or e.get("verdict") == verdict) for name, verdict in TRIGGERS)
 
 
+def _slow_row_ok(r):
+    """A slow-suite row from slow_suite.record: kind, project, step, and numeric seconds and limit."""
+    nums = all(isinstance(r.get(k), (int, float)) and not isinstance(r.get(k), bool) for k in ("seconds", "limit"))
+    return r.get("kind") == SLOW_SUITE_KIND and nums and isinstance(r.get("project"), str) and isinstance(r.get("step"), str)
+
+
+def _slow_stub(r):
+    """A slow-suite row -> an incident stub with no candidates (no patch matches a timed-out command)."""
+    text = f"{r['project']} {r['step']} {r['seconds']}s over limit {r['limit']}s"
+    return {
+        "trigger": SLOW_SUITE_KIND,
+        "project": r["project"],
+        "step": r["step"],
+        "seconds": r["seconds"],
+        "limit": r["limit"],
+        "failure": text,
+        "candidates": [],
+    }
+
+
 def scan(d, stage):
-    """-> list of incident stubs; also written to .work/<stage>/retro/incidents.json."""
+    """-> list of incident stubs; also written to .work/<stage>/retro/incidents.json. Slow-suite stubs come first."""
     base = os.path.join(d, WORK_DIR, stage)
     evs = _events(os.path.join(base, ORCH_LOG))
     pdir = os.path.join(base, "patches")
@@ -63,7 +83,8 @@ def scan(d, stage):
         for name in sorted(os.listdir(pdir)):
             if name.endswith(".patch"):
                 patches[name] = read(os.path.join(pdir, name))
-    stubs: list = []
+    slow = [_slow_stub(r) for r in _events(os.path.join(base, RETRO_DIR, SLOW_SUITE_FILE)) if _slow_row_ok(r)]
+    trig = []
     for e in evs:
         if not _is_trigger(e):
             continue
@@ -74,15 +95,17 @@ def scan(d, stage):
             if hit:
                 task = name[: -len(".patch")].split("__")[0]
                 cands.append({"task": task, "patch": name, "files_hit": hit[:8], "reviewer": _reviewer_verdicts(evs, task)})
-        stubs.append(
+        trig.append(
             {
-                "id": f"i{len(stubs) + 1}",
                 "trigger": f"{e['task']} {e.get('verdict', '')}".strip(),
                 "event": e.get("id"),
                 "failure": text[-MAX_FAILURE:],
                 "candidates": cands,
             }
         )
+    stubs = slow + trig
+    for n, s in enumerate(stubs, 1):
+        s["id"] = f"i{n}"
     os.makedirs(base, exist_ok=True)
     with open(work_path(base, "incidents.json", create=True), "w", encoding="utf-8") as f:
         json.dump(stubs, f, indent=1)
@@ -96,6 +119,11 @@ def render(stubs, stage):
         f'INCIDENTS: {len(stubs)} suspected; read each, then label with `retro/incidents.py keep --stage {stage} --id <id> --label reviewer-miss|not-a-miss|unclear --cause ".."`'
     ]
     for s in stubs:
+        if s["trigger"] == SLOW_SUITE_KIND:
+            out.append(
+                f"  {s['id']}: {SLOW_SUITE_KIND} {s['project']} {s['step']} {s['seconds']}s over limit {s['limit']}s: raise tool_settings.script_timeout_s or skip with --note"
+            )
+            continue
         who = (
             ", ".join(f"{c['task']} (review: {'/'.join(map(str, c['reviewer'])) or 'none'})" for c in s["candidates"])
             or "no task patch matches the failure text"

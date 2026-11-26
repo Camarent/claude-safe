@@ -34,6 +34,7 @@ from .configuration import (
     tool_cmd,
     work_branch,
 )
+from .e1 import model_for
 from .phases import final_phases, merge_prompt
 from .plan_files import earlier_phase_tasks_mds, is_finish_phase
 from .run import Run
@@ -213,18 +214,23 @@ def _fix_gate_prompt(a, wave, rep):
 
 def _fix_gate(a, evs, members, wave, n, parts, cmd, rep, merger_ok=True, tag=""):
     """Red gate after a script merge: a dev fixes it (Haiku, then Sonnet), the script re-runs the merge and gates. The lead is asked only after both fixes failed.
+    The model of each fix is e1.model_for("fix-gate"): Sonnet (E1(d)) only after an earlier fix ended BLOCKED or its re-merge FAILed.
     merger_ok=False (after a merger fix already): a conflict on the re-merge goes to the lead, not to a second merger. tag: the late-merge suffix, so step ids stay unique."""
-    for i, model in enumerate((MODEL_HAIKU, MODEL_SONNET), 1):
+    mine: list = []  # the events of the earlier fix-gate steps of this wave: E1(d) reads them
+    for i in (1, 2):
         fid = f"fix-gate-w{wave}{tag}" + ("" if i == 1 else f"-{i}")
-        r = run_phase(a, evs, [step(fid, "dev", model, _fix_gate_prompt(a, wave, rep), {DONE, BLOCKED}, None, "merge gate red")], n)
+        model, why = model_for("fix-gate", None, mine)
+        r = run_phase(a, evs, [step(fid, "dev", model, _fix_gate_prompt(a, wave, rep), {DONE, BLOCKED}, None, why or "merge gate red")], n)
         if r:
             return r
+        mine += history(evs, fid)
         if last_verdict(evs, fid) != DONE:
             continue
         mid = f"merge-w{wave}{tag}-g{i}"
         r = run_phase(a, evs, [step(mid, "script", None, cmd, {DONE, FAIL}, None, "merge by script, after the gate fix")], n)
         if r:
             return r
+        mine += history(evs, mid)
         if last_verdict(evs, mid) != FAIL:
             return None
         rep = last_report(evs, mid)

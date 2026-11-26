@@ -30,6 +30,14 @@ flags: {flags}
 PRE-APPROVED: master merge
 """
 NOFLAGS = "no-test no-audit no-retro no-push no-clean"
+# task ids as constants: a job worktree path holds its task name, so asserts read exact argument tokens, never a substring of the prompt
+T1, T2, T3, T4 = "task-1", "task-2", "task-3", "task-4"
+
+
+def tasks_arg(prompt):
+    """The ids after --tasks in a dispatch prompt (exact tokens, comma-split)."""
+    args = shlex.split(prompt)
+    return args[args.index("--tasks") + 1].split(",")
 
 
 def ev(kind, task, **kw):
@@ -64,7 +72,10 @@ class Base(unittest.TestCase):
         self.cfg()
 
     def cfg(self, **kw):
-        Path(self.d, "pipeline.json").write_text(json.dumps({"gate": False, "testrun": False, "qualityrun": False, "worktrees": True, **kw}), encoding="utf-8")
+        Path(self.d, "pipeline.json").write_text(
+            json.dumps({"gate": False, "testrun": False, "qualityrun": False, "worktrees": True, "docs_cite_final": False, **kw}),
+            encoding="utf-8",
+        )
 
     def tasks(self, flags=NOFLAGS):
         (self.w / "TASKS.md").write_text(TASKS.format(flags=flags), encoding="utf-8")
@@ -98,7 +109,8 @@ class ScriptMerge(Base):
         d = self.one()
         self.assertEqual((d["task"], d["agent"], d["why"]), ("merge-w1", "script", "merge by script"))
         self.assertIn("merge_wave.py", d["prompt"])
-        self.assertIn(f"--dir {os.path.abspath(self.d)} --stage s --tasks task-1", d["prompt"])
+        self.assertEqual(tasks_arg(d["prompt"]), [T1])
+        self.assertIn(f"--dir {os.path.abspath(self.d)} --stage s", d["prompt"])
         self.log(*done("merge-w1", "a3", "script", "FAIL", "m1.md"))
         d = self.one()
         self.assertEqual((d["task"], d["agent"], d["model"], d["why"]), ("merge-fix-w1", "merger", "sonnet", "script merge said FAIL"))
@@ -150,6 +162,13 @@ class ScriptMerge(Base):
         self.red_merge(*done("fix-gate-w1", "a4", "dev", "BLOCKED"))
         d = self.one()
         self.assertEqual((d["task"], d["model"]), ("fix-gate-w1-2", "sonnet"))
+        self.assertTrue(d["why"].startswith("E1(d)"))  # the Sonnet fix names its E1 event
+
+    def test_red_gate_first_fix_is_haiku_with_plain_why(self):
+        self.red_merge()
+        d = self.one()
+        self.assertEqual((d["task"], d["model"]), ("fix-gate-w1", "haiku"))
+        self.assertEqual(d["why"], "merge gate red")
 
     def test_conflict_on_remerge_after_fix_goes_to_the_merger(self):
         rep2 = self.w / "m2.md"
@@ -252,7 +271,7 @@ class ScriptMerge(Base):
         self.tasks()
         self.log(*passed("task-1", "a1"), *done("merge-w1", "a3", "script", "DONE"))
         r = graph.decide(self.a)
-        self.assertEqual(r["dispatches"][0]["task"], "task-2")
+        self.assertEqual(r["dispatches"][0]["task"], T2)
         self.assertEqual(sum(1 for e in self.evs if e["task"] == "merge-fix-w1"), 0)
 
     def test_script_blocked_asks_lead(self):
@@ -340,13 +359,12 @@ PRE-APPROVED: master merge
         self.assertEqual(r["action"], "dispatch")
         (d,) = r["dispatches"]
         self.assertEqual(d["task"], "merge-w1-p1")
-        self.assertIn("--tasks task-1", d["prompt"])
-        self.assertNotIn("task-2", d["prompt"].split("--tasks")[1])
+        self.assertEqual(tasks_arg(d["prompt"]), [T1])
         # merged: the stuck task and its dependent are reported together
         self.log(*done("merge-w1-p1", "a5", "script"))
         r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")
-        self.assertIn("held back by them, not started: task-3", r["message"])
+        self.assertIn(f"held back by them, not started: {T3}", r["message"])
 
     def test_conflict_in_the_partial_merge_gets_a_merger_fix_before_the_lead(self):
         text = """| task | what | owner | price | review |
@@ -374,7 +392,7 @@ flags: no-test no-audit no-retro no-push no-clean no-index
         self.log(*done("merge-w1-p1-2", "a7", "script"))
         r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")
-        self.assertIn("held back by them, not started: task-3", r["message"])
+        self.assertIn(f"held back by them, not started: {T3}", r["message"])
 
 
 class JobBranches(Base):
@@ -438,7 +456,7 @@ class FinishPhase(Base):
 
     def test_feature_retro_gets_lead_log_from_pipeline_json(self):
         with open(os.path.join(self.d, "pipeline.json"), "w") as fh:
-            json.dump({"lead_log": ["/x/lead.jsonl"]}, fh)
+            json.dump({"lead_log": ["/x/lead.jsonl"], "docs_cite_final": False}, fh)
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("PIPELINE_LEAD_LOG", None)
             prompt = self._feature_retro_prompt()
@@ -478,7 +496,8 @@ class LateMerge(Base):
         self.assertEqual(r["action"], "dispatch")
         (d,) = r["dispatches"]
         self.assertEqual((d["task"], d["agent"], d["why"]), ("merge-w1-late", "script", "merge the retried tasks by script"))
-        self.assertIn(f"--dir {os.path.abspath(self.d)} --stage s --tasks task-1,task-2", d["prompt"])
+        self.assertEqual(tasks_arg(d["prompt"]), [T1, T2])
+        self.assertIn(f"--dir {os.path.abspath(self.d)} --stage s", d["prompt"])
         self.gone |= {"task-1", "task-2"}
         self.log(*done("merge-w1-late", "a6", "script"))
         r = self.decide()
@@ -520,7 +539,7 @@ class LateMerge(Base):
         r = self.decide()
         self.assertEqual(r["action"], "ask_main")
         self.assertIn("still have an unmerged worktree branch", r["message"])
-        self.assertIn("task-1,task-2", r["message"])
+        self.assertIn(f"{T1},{T2}", r["message"])
 
 
 LATE_TWO_WAVES = """| task | what | owner | price | review |
@@ -552,12 +571,12 @@ class LateTaskBeforeNextWave(Base):
 
     def test_the_next_wave_waits_for_a_late_merge_of_the_done_task(self):
         (d,) = graph.decide(self.a)["dispatches"]
-        self.assertEqual((d["task"], d["agent"]), ("merge-w1-late", "script"))  # not task-2 of wave 2
-        self.assertIn("--tasks task-3", d["prompt"])
-        self.unmerged.discard("task-3")
+        self.assertEqual((d["task"], d["agent"]), ("merge-w1-late", "script"))  # not the next wave's task
+        self.assertEqual(tasks_arg(d["prompt"]), [T3])
+        self.unmerged.discard(T3)
         self.log(*done("merge-w1-late", "a4", "script"))
         (d,) = graph.decide(self.a)["dispatches"]
-        self.assertEqual(d["task"], "task-2")  # now the next wave starts, from a base that holds task-3
+        self.assertEqual(d["task"], T2)  # now the next wave starts, from a base that holds the late task
 
     def late_done(self, step, rid, tasks, verdict="DONE"):
         """A late-merge dispatch that records the tasks it covers, and its report."""
@@ -579,10 +598,10 @@ class LateTaskBeforeNextWave(Base):
         self.log(*passed("task-4", "a5"))
         (d,) = graph.decide(self.a)["dispatches"]
         self.assertEqual((d["task"], d["agent"]), ("merge-w1-late2", "script"))
-        self.assertIn("--tasks task-4", d["prompt"])
-        self.assertEqual(d["tasks"], ["task-4"])  # logged with the dispatch
+        self.assertEqual(tasks_arg(d["prompt"]), [T4])
+        self.assertEqual(d["tasks"], [T4])  # logged with the dispatch
         # compare argument tokens, not the line: the worktree path of task-3 also contains "task-3"
-        self.assertNotIn("task-3", shlex.split(d["prompt"]))
+        self.assertNotIn(T3, shlex.split(d["prompt"]))
 
     def test_a_failed_late_ladder_that_ended_green_does_not_block_the_next_batch(self):
         self.log(
@@ -608,7 +627,7 @@ class LateTaskBeforeNextWave(Base):
         self.log(*passed("task-3", "a9"))  # retried: a new DONE after the batch (the worktree is back)
         (d,) = graph.decide(self.a)["dispatches"]
         self.assertEqual((d["task"], d["agent"]), ("merge-w1-late2", "script"))
-        self.assertIn("--tasks task-3", d["prompt"])
+        self.assertEqual(tasks_arg(d["prompt"]), [T3])
 
     def test_a_retry_of_a_late_step_after_a_finished_ladder_runs_it_again(self):
         self.log(
@@ -628,7 +647,7 @@ class LateTaskBeforeNextWave(Base):
         r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")
         self.assertIn("still have an unmerged worktree branch", r["message"])
-        self.assertIn("task-3", r["message"])
+        self.assertIn(T3, r["message"])
 
 
 if __name__ == "__main__":

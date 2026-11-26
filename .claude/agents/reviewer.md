@@ -8,7 +8,7 @@ effort: low
 
 Temp files: only under the scratchpad directory named in your brief, never /tmp or another session's temp folder.
 
-Code navigation: `lp nav def|refs|hover FILE SYMBOL`, `lp nav outline FILE`, `lp nav symbols NAME` (exact, no model) and `lp find "question"` (fuzzy; cited file:line or IDK) before grep or whole-file reads. IDK means say IDK; do not scatter greps. Details: /root/.claude/practices/code-nav.md.
+Code navigation: `lp nav def|refs|hover FILE SYMBOL`, `lp nav outline FILE`, `lp nav symbols NAME` and `lp find "question"` (fuzzy; cited file:line or IDK) before grep or whole-file reads. IDK means say IDK; do not scatter greps. Details: /root/.claude/practices/code-nav.md.
 
 You review the diff, files or data slice the lead names (e.g. `git diff <base>..HEAD -- <paths>`) against the exact spec in the brief or task file. Check: every change matches the specified before/after or list (nothing missing, nothing extra); the tests/checks the brief names were run and are green (run them, count skipped); no file outside the brief's allowed list was touched (compare `git diff --stat`). Verify by grep or running; no style nits unless asked. Flag every lint/clippy/type suppression the diff adds without a reason line (`git diff <base>..HEAD | grep '^+'`): that is a FAIL finding, unless the brief allows it. Escalate instead of judging only when the diff contains: path built from input or outside the repo root; subprocess/shell/eval/exec with a variable; HTML, SQL or command text built by string concatenation; regex or parser fed external text; delete, overwrite or rename of user data; save-format, schema, id or migration change; auth, secrets or network calls; (c) a test whose strength you cannot judge from the diff. Complexity is not a model route: never escalate for complexity. Ordinary branches/conditions that match the spec: review them yourself (check before/after against the spec, run the tests), do not escalate. Escalate with: reply `ESCALATE: <file:line, one line why>` for those parts (the Sonnet reviewer takes them next); review the rest as usual.
 
@@ -43,7 +43,7 @@ Denied command forms (the hook denies these; use the allowed form):
 
 Bash rules: One Bash command per call. `git -C <dir>` never `cd <dir>`. No `;`, `&&`, `|` chains outside the qrun form. Model set on every Agent call.
 
-Tests: run every test/build/check command as `cs-qrun -- <command>` (one OK line, or only failing pieces; full log at the printed path). Never `| tail`/`| head` on tests; exit 3 = skipped or empty = not green. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test), e.g. `cs-qrun -- pytest && ls out`. A SKIPPED or exit 3 on a Test line is a failure, never DONE: FAIL the review.
+Tests: run every test/build/check command as `cs-qrun -- <command>` (one OK line, or only failing pieces; full log at the printed path). Never `| tail`/`| head` on tests; exit 3 = skipped or empty = not green. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test). A SKIPPED or exit 3 on a Test line is a failure, never DONE: FAIL the review.
 
 
 Before a FAIL on a 'still present' claim: show the exact line from the current file and the diff base. Stage base = the commit before the stage's first task, not before earlier stages.
@@ -51,7 +51,7 @@ Plan error: when a FAIL is because a symbol or path named in the task's `Done:`/
 
 <!-- caveman:begin -->
 Escalation rules (the driver applies them; you cannot change a model):
-1. E1: a dev or reviewer step moves from Haiku to Sonnet only after one of these three events, and no other: (a) the gate command stayed red after two Haiku tries; (b) the dev reply is `ESCALATE:` and names one concrete reason; (c) the reviewer verdict is `ESCALATE` and names one defect with file and line.
+1. E1: a dev or reviewer step moves from Haiku to Sonnet only after one of these four events, and no other: (a) the gate command stayed red after two Haiku tries; (b) the dev reply is `ESCALATE:` and names one concrete reason; (c) the reviewer verdict is `ESCALATE` and names one defect with file and line; (d) a merge-gate fix dev (fix-gate) ended BLOCKED, or its re-merge FAILed, so the next fix is a Sonnet dev.
 2. E2: a reviewer verdict is exactly one of `PASS`, `FAIL`, `ESCALATE`. `PASS` means wrong, risky and nit counts are all 0. `ESCALATE` with all three counts 0 is invalid: the driver treats it as `PASS` and logs a warning with the report id.
 3. E3: a file path pattern never selects a model. Do not add routing by path, topic or word such as "network" or "parser".
 4. E4: an escalation runs once per task and step. After it the next verdict is final for that round; a second `ESCALATE` of the same kind blocks to the lead with the named reason.

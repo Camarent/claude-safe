@@ -1,0 +1,5 @@
+{"type": "user", "timestamp": "2026-10-27T10:00:00Z", "message": {"content": "run task-2"}}
+{"type": "assistant", "timestamp": "2026-10-27T10:00:05Z", "message": {"id": "msg-1", "model": "claude-sonnet-5-5", "usage": {"input_tokens": 100, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 5000, "output_tokens": 50}}}
+{"type": "assistant", "timestamp": "2026-10-27T10:00:09Z", "message": {"id": "msg-1", "model": "claude-sonnet-5-5", "usage": {"input_tokens": 100, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 5000, "output_tokens": 300}}}
+{"type": "assistant", "timestamp": "2026-10-27T10:00:20Z", "message": {"id": "msg-2", "model": "claude-sonnet-5-5", "usage": {"input_tokens": 120, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 5200, "output_tokens": 80}}}
+{"type": "user", "timestamp": "2026-10-27T10:00:30Z", "message": {"content": "done"}}

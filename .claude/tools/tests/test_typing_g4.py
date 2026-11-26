@@ -25,6 +25,7 @@ GROUP = [
     "task_affected_tests",
     "task_type",
     "task_inputs",
+    "task_outputs",
     "task_paths",
     "task_path_modes",
     "with_qrun",

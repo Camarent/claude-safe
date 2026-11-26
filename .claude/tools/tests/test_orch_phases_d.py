@@ -75,6 +75,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")  # one first pass
@@ -91,6 +92,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         Path(t).write_text(txt, encoding="utf-8")
         self.base()
         self.go("skip", "--step", "master-merged")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")
         self.run_batch(["script"], "DONE")
         d = self.batch()
@@ -112,6 +114,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "FIXES")  # one first pass
@@ -134,6 +137,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "FIXES")  # one first pass
@@ -150,7 +154,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["dev"], "BLOCKED")
         r = self.go("next")
         self.assertEqual(r["action"], "ask_main")
-        self.assertIn(f"retry --stage s --step {step}", r["message"])
+        self.assertIn(f"retry s --step {step}", r["message"])
         self.go("retry", "--step", step, "--note", "I fixed the env var")
         d = self.batch()
         self.assertTrue(d[0]["prompt"].startswith("Lead note (read first): the findings of the last try are in "))

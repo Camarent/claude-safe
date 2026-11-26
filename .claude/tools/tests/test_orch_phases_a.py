@@ -41,6 +41,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "FAIL")
         r = self.go("next")
@@ -52,6 +53,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         self.run_batch(["script"], "DONE")
@@ -64,6 +66,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.tailpost()
         self.assertEqual(self.go("next")["action"], "done")
@@ -75,6 +78,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.assertIn(f"{TASK_ONE} (dev report", m[0]["prompt"])
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         ds = self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")  # one first pass; arch is first in sorted order
@@ -105,6 +109,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         self.assertEqual(sorted(x["agent"] for x in self.batch()), ["arch-auditor", "sec-auditor"])
@@ -114,6 +119,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         ds = self.run_batch(["arch-auditor", "sec-auditor", "ux-reviewer"], "CLEAN", "CLEAN", "CLEAN")

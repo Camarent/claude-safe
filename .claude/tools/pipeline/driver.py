@@ -9,11 +9,13 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from . import claude, metrics, util
+from . import claude, metrics, slow_suite, util
 from .audit_phases import save_audit_reply
 from .configuration import (
+    ACCEPTANCE_STEP,
     AUDIT_ESCALATE_SUFFIX,
     AUDITORS,
+    BLOCKED,
     ENV_AGENT_KIND,
     ENV_GATE_KIND,
     ENV_GUARD_ALLOW,
@@ -91,8 +93,8 @@ def script_step_limit(cfg) -> float:
     return script_timeout() + checks_timeout(cfg)
 
 
-def run_script(cmd, cwd, timeout=None) -> dict:
-    """A no-model step: only commands under tools/ run. timeout: this step's own limit (None = script_timeout()). -> session dict with the output as result."""
+def run_script(cmd, cwd, timeout=None, step=None, stage_dir=None) -> dict:
+    """A no-model step: only commands under tools/ run. timeout: this step's own limit (None = script_timeout()). step: the driver step id; a timed-out ACCEPTANCE_STEP is BLOCKED `timed out, not verified` and gets a slow-suite row in STAGE_DIR, any other timeout is FAIL. -> session dict with the output as result."""
     if not cmd.startswith(SCRIPT_PREFIX):
         return dict(claude.usage({}), error=True, result=f"{VERDICT_PREFIX}FAIL\nwave: refused script {cmd[:80]}")
     limit = timeout or script_timeout()
@@ -111,9 +113,18 @@ def run_script(cmd, cwd, timeout=None) -> dict:
             claude.untrack(p)
         r = subprocess.CompletedProcess(p.args, p.returncode, stdout, stderr)
     except subprocess.TimeoutExpired:
+        seconds = time.time() - t0
+        if step == ACCEPTANCE_STEP:  # slow-suite incident: BLOCKED, not FAIL; the retro row says which limit was hit
+            slow_suite.record(stage_dir, os.path.basename(os.path.abspath(cwd)), step, seconds, limit)
+            return dict(
+                claude.usage({}),
+                seconds=round(seconds),
+                error=True,
+                result=f"{VERDICT_PREFIX}{BLOCKED}\nwave: {slow_suite.REASON}: {limit:.0f}s limit: {cmd[:80]}",
+            )
         return dict(
             claude.usage({}),
-            seconds=round(time.time() - t0),
+            seconds=round(seconds),
             error=True,
             result=f"{VERDICT_PREFIX}FAIL\nwave: script timed out after {limit:.0f}s: {cmd[:80]}",
         )
@@ -191,7 +202,7 @@ def run_one(c, d) -> tuple[dict, dict, dict]:
     f = work_path(c.w, f"report-{d['id']}.md", create=True)
     reset_failed = False
     if d["agent"] == "script":
-        u = run_script(d["prompt"], c.dir, timeout=script_step_limit(project(c.dir)))
+        u = run_script(d["prompt"], c.dir, timeout=script_step_limit(project(c.dir)), step=dispatch_task(c, d), stage_dir=c.w)
     else:
         turns = _auditor_turns(c, d) if d["agent"] in AUDITORS else None
         dev_dirs = (

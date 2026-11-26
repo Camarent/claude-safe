@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 
 from . import gitx
@@ -20,14 +21,19 @@ from .configuration import (
     ACCEPTANCE_MANUAL,
     ACCEPTANCE_REVIEW_AGENT,
     ACCEPTANCE_REVIEW_FILE,
+    ACCEPTANCE_STEP,
     ACCEPTANCE_TAIL_LINES,
+    ACCEPTANCE_TIMING_FLAG_KEY,
+    ACCEPTANCE_TIMINGS_LOG,
     ACCEPTANCE_TMP_PREFIX,
+    BLOCKED,
     DONE,
     ENV_SCRIPT_TIMEOUT,
     FAIL,
     GIT_LONG_TIMEOUT_S,
     PLAN_FILE,
     REPORTS_DIR,
+    TESTCMD_HINT_KEY,
     TOOLS_DIR,
     WORK_DIR,
     project,
@@ -35,6 +41,7 @@ from .configuration import (
     work_branch,
 )
 from .plan_files import acceptance_items
+from .slow_suite import REASON, is_timeout, record
 from .util import read_text, write_text
 from .worktree import _seed_build, link_private, nested_repos
 
@@ -110,20 +117,46 @@ def _keep_failed_log(out, dest, n):
         write_text(os.path.join(dest, f"acceptance-{n}.log"), out + "\n")
 
 
-def run_items(items, cwd, runner, timeout, keep=None) -> tuple[list[str], int]:
-    """-> (lines, failed count) for the checklist ITEMS [(tag, text)], run in CWD with RUNNER(cmd, cwd, timeout) -> (rc, text).
-    KEEP(n, text), when given, gets the output of each failed command (n = 1, 2, ...) before the caller drops CWD."""
-    lines, bad = [], 0
+def _timed_cmd(text, hint, flag) -> str:
+    """-> the command to run: TEXT with FLAG appended when TEXT starts with the project test command HINT; otherwise TEXT unchanged (an unset HINT or FLAG changes nothing)."""
+    if hint and flag and text.startswith(hint):
+        return f"{text} {flag}"
+    return text
+
+
+def _keep_timing_log(out, dest, n):
+    """Write the full output of a flagged (timed) acceptance command into DEST (the stage reports folder) as timings log N, before the temp checkout is dropped; pass or fail."""
+    write_text(os.path.join(dest, ACCEPTANCE_TIMINGS_LOG.format(n=n)), out + "\n")
+
+
+def run_items(items, cwd, runner, timeout, keep=None, hint=None, flag=None, keep_all=None) -> tuple[list[str], int, list[float]]:
+    """-> (lines, failed count, seconds of each timed-out command) for the checklist ITEMS [(tag, text)], run in CWD with RUNNER(cmd, cwd, timeout) -> (rc, text).
+    KEEP(n, text), when given, gets the output of each failed command (n = 1, 2, ...) before the caller drops CWD.
+    A command that starts with HINT runs with FLAG appended; KEEP_ALL(n, text), when given, gets the output of each such command, pass or fail (n = 1, 2, ...).
+    A command that hits its time limit (slow_suite.is_timeout) is not a failed command: its line says REASON and its seconds go to the list; the other commands still run.
+    The lines show the command as written, never the flagged one."""
+    lines, bad, timed, slow = [], 0, 0, []
     for tag, text in items:
         if tag == ACCEPTANCE_EYES_TAG:
             lines.append(f"- {ACCEPTANCE_MANUAL}: {text}")
         elif tag == ACCEPTANCE_CMD_TAG:
-            rc, out = runner(text, cwd, timeout)
+            cmd = _timed_cmd(text, hint, flag)
+            started = time.monotonic()
+            rc, out = runner(cmd, cwd, timeout)
+            seconds = time.monotonic() - started
+            if cmd != text:
+                timed += 1
+                if keep_all:
+                    keep_all(timed, out)
+            if is_timeout(rc, out):
+                slow.append(seconds)
+                lines.append(_line(REASON, rc, text, out))
+                continue
             bad += rc != 0
             if rc and keep:
                 keep(bad, out)
             lines.append(_line(FAIL if rc else "PASS", rc, text, out))
-    return lines, bad
+    return lines, bad, slow
 
 
 def _add_worktree(repo, branch):
@@ -181,8 +214,26 @@ def _apply_review(lines, items, branch, cfg, reviewer):
     return lines, sum(v != PASS for v in verdicts)
 
 
+def _record_slow(workspace, stage, slow):
+    """One slow-suite row per timed-out command in SLOW (seconds), under .work/<stage>/retro/."""
+    stage_dir = os.path.join(workspace, WORK_DIR, stage)
+    for seconds in slow:
+        record(stage_dir, os.path.basename(os.path.abspath(workspace)), ACCEPTANCE_STEP, seconds, ACCEPTANCE_CMD_TIMEOUT_S)
+
+
+def _head(bad, not_pass, slow, n_cmds, n_manual) -> str:
+    """-> the first line of the step text: the failed, not-PASS or timed-out count, or all passed. N_CMDS: automatic commands; N_MANUAL: MANUAL items."""
+    if bad:
+        return f"{bad} of {n_cmds} commands failed"
+    if not_pass:
+        return f"{not_pass} of {n_manual} {ACCEPTANCE_MANUAL} item(s) not PASS"
+    if slow:
+        return f"{REASON}: {len(slow)} command(s) hit the {ACCEPTANCE_CMD_TIMEOUT_S} s limit"
+    return "all commands passed"
+
+
 def run(workspace, stage, name, runner=qrun_runner, reviewer=None) -> tuple[str, str]:
-    """-> (verdict, text). Writes .work/<stage>/acceptance.md; DONE when every cmd passed (no cmd = DONE), else FAIL.
+    """-> (verdict, text). Writes .work/<stage>/acceptance.md; DONE when every cmd passed (no cmd = DONE), else FAIL; BLOCKED when a cmd timed out and none failed (slow_suite: REASON, one slow-suite row each).
     REVIEWER(brief) -> reply text dispatches the reviewer for the MANUAL items: any item not PASS (UNKNOWN when its line is missing) makes the step FAIL. No reviewer: MANUAL items stay for the lead."""
     cfg = project(workspace)
     repo, branch = repo_dir(workspace, cfg), work_branch(cfg, name)
@@ -197,18 +248,26 @@ def run(workspace, stage, name, runner=qrun_runner, reviewer=None) -> tuple[str,
         nested = _populate(repo, branch, wt, cfg)
         prep = [(ACCEPTANCE_CMD_TAG, c) for c in cfg.get("acceptance_prep") or []]
         reports = os.path.join(workspace, WORK_DIR, stage, REPORTS_DIR)
-        lines, bad = run_items(prep + items, wt, runner, ACCEPTANCE_CMD_TIMEOUT_S, keep=lambda n, out: _keep_failed_log(out, reports, n))
+        prep_lines, prep_bad, prep_slow = run_items(prep, wt, runner, ACCEPTANCE_CMD_TIMEOUT_S, keep=lambda n, out: _keep_failed_log(out, reports, n))
+        lines, bad, slow = run_items(
+            items,
+            wt,
+            runner,
+            ACCEPTANCE_CMD_TIMEOUT_S,
+            keep=lambda n, out: _keep_failed_log(out, reports, prep_bad + n),
+            hint=cfg.get(TESTCMD_HINT_KEY),
+            flag=cfg.get(ACCEPTANCE_TIMING_FLAG_KEY),
+            keep_all=lambda n, out: _keep_timing_log(out, reports, n),
+        )
+        lines, bad = prep_lines + lines, prep_bad + bad
+        slow = prep_slow + slow
     finally:
         _drop_worktree(repo, wt, nested)
     lines, not_pass = _apply_review(lines, items, branch, cfg, reviewer)
-    verdict = FAIL if bad or not_pass else DONE
+    verdict = FAIL if bad or not_pass else BLOCKED if slow else DONE
     body = "\n".join(lines)
     write_text(os.path.join(workspace, WORK_DIR, stage, ACCEPTANCE_FILE), f"# Acceptance of `{branch}`: {verdict}\n\n{body}\n")
+    _record_slow(workspace, stage, slow)
     manual = [ln for ln in lines if ln.startswith(f"- {ACCEPTANCE_MANUAL}")]
-    if bad:
-        head = f"{bad} of {len(items) - len(manual)} commands failed"
-    elif not_pass:
-        head = f"{not_pass} of {len(manual)} {ACCEPTANCE_MANUAL} item(s) not PASS"
-    else:
-        head = "all commands passed"
+    head = _head(bad, not_pass, slow, len(items) - len(manual), len(manual))
     return verdict, f"{head}; {len(manual)} {ACCEPTANCE_MANUAL} item(s) for the lead\n{body}"

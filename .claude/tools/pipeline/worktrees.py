@@ -2,12 +2,13 @@
 
 import hashlib
 import os
+import re
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from . import gitx
-from .configuration import DIFF_SHA_LEN, JOB_DIFF_MAX_CHARS, NO_REVIEW_ROOT, PREREVIEW_FILE_EXTS, PREREVIEW_GIT_TIMEOUT_S, project, work_branch
+from .configuration import DIFF_SHA_LEN, JOB_DIFF_MAX_CHARS, NO_REVIEW_ROOT, PREREVIEW_FILE_EXTS, PREREVIEW_GIT_TIMEOUT_S, ConfigError, project, work_branch
 from .util import TOOLS, swallowed
 
 sys.path.insert(0, str(TOOLS))
@@ -28,17 +29,29 @@ def job_info(a: Any, task_id: str, create: bool) -> dict[str, Any] | None:
     return info
 
 
+def drop_generated_index(text: str, docs_dir: str) -> str:
+    """Drop the stat line and the diff section of `<docs_dir>/INDEX.md` (the generated docs index) from a wt diff text. docs_dir "" keeps the text."""
+    docs = docs_dir.strip("/")
+    if not docs:
+        return text
+    path = re.escape(f"{docs}/INDEX.md")
+    text = re.sub(rf"(?ms)^diff --git a/{path} b/{path}\n.*?(?=^diff --git |^=== |\Z)", "", text)
+    return re.sub(rf"(?m)^ {path} \|.*\n?", "", text)
+
+
 def job_diff(a: Any, task_id: str, limit: int = JOB_DIFF_MAX_CHARS) -> str:
-    """The task's committed change as text (stat + diff per repo, cut at `limit` characters per repo) for the reviewer brief, or "" when there is none."""
+    """The task's committed change as text (stat + diff per repo, cut at `limit` characters per repo) for the reviewer brief, or "" when there is none.
+    The generated docs INDEX.md is left out (drop_generated_index)."""
     memo = getattr(a, "wt_memo", None)  # decide() sets it: one git call per task and limit while the event log stands
     key = ("diff", task_id, limit)
     if memo is not None and key in memo:
         return memo[key]
     out = ""
     if job_info(a, task_id, create=False):
+        d = getattr(a, "dir", ".")
         try:
-            out = wt.diff(getattr(a, "dir", "."), a.stage, task_id, limit)
-        except (RuntimeError, OSError):
+            out = drop_generated_index(wt.diff(d, a.stage, task_id, limit), str(project(d).get("docs_dir") or ""))
+        except (RuntimeError, OSError, ConfigError):  # ConfigError: docs_dir read from a broken pipeline.json; the review gets no diff, not a crash
             out = ""
     if memo is not None:
         memo[key] = out

@@ -40,7 +40,9 @@ class OrchHarness(unittest.TestCase):
 
     def config(self, **kw):
         with open(f"{self.d}/pipeline.json", "w") as f:
-            f.write(json.dumps({"gate": False, "testrun": False, "qualityrun": False, **kw}))  # the test-run step is off unless a test turns it on
+            f.write(
+                json.dumps({"gate": False, "testrun": False, "qualityrun": False, "docs_cite_final": False, **kw})
+            )  # the test-run and doc-cites steps are off unless a test turns them on
 
     def go(self, *args):
         out = io.StringIO()

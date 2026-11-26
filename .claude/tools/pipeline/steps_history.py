@@ -3,6 +3,7 @@
 import re
 
 from .configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, EV_RETRY, EXTRA_ROUND_WHY, FAIL, MODEL_SONNET, PLAN_ERROR
+from .entry import name_of_stage
 from .util import read_text
 
 
@@ -29,7 +30,7 @@ def _after_retry(mine, i):
 
 
 def hint(a, tid: str) -> str:
-    return f"; fix the cause, then `orch.py retry --stage {a.stage} --step {tid}` (or `skip`)"
+    return f"; fix the cause, then `orch.py retry {name_of_stage(a.stage)} --step {tid}` (or `skip`)"
 
 
 def script_ids(mine: list[dict], word: str) -> set[str]:

@@ -7,7 +7,7 @@ import shlex
 import subprocess
 from collections.abc import Iterator
 
-from . import gitx
+from . import gitx, plan_files
 from .briefs import NAV, leads_for, read_head, tail, ux_flows_note
 from .configuration import (
     ACCEPTANCE_FILE,
@@ -23,6 +23,7 @@ from .configuration import (
     ESCALATE,
     EV_REPORT,
     FIXES,
+    FRESHNESS_AUDITOR,
     MODEL_HAIKU,
     MODEL_OPUS,
     MODEL_SONNET,
@@ -44,6 +45,7 @@ from .configuration import (
     tool_cmd,
     work_branch,
 )
+from .entry import name_of_stage
 from .phase_context import brief_digest
 from .steps import history, last_verdict, step
 from .util import read_text, work_path, write_text
@@ -159,7 +161,7 @@ def fix_step(a, tasks, sid, reports, what, key, why) -> dict:
         f"`wave {last_wave + 1}: task-a, task-b` (parallel only when they share no paths). Do not touch existing rows. Skip nits. "
         f"If the report shows the tool or environment failed (browser did not start, server unreachable, toolchain missing) and not a defect in the change, plan nothing and reply BLOCKED."
         + digest
-        + STALE_REPORT_NOTE.format(retry=f"{tool_cmd('orch.py')} retry --stage {S} --step {STALE_RETRY_STEP}")
+        + STALE_REPORT_NOTE.format(retry=f"{tool_cmd('orch.py')} retry {name_of_stage(S)} --step {STALE_RETRY_STEP}")
         + NAV
         + leads_for(a, key, " ".join(read_head(a, os.path.basename(r), 500) for r in reports))
         + tail(a, "{rid}", allowed(DONE, BLOCKED), "a 3-line summary naming the new tasks"),
@@ -199,6 +201,8 @@ def audit_dir_of(a, cfg) -> str:
 
 def _audit_effort_model(flags, ag, suffix, small):
     """-> (effort, model) of one audit step."""
+    if ag == FRESHNESS_AUDITOR:  # docs check: always Haiku, whatever the effort flags
+        return "low", MODEL_HAIKU
     cheap = bool(suffix) and ag != "ux-reviewer" and small
     effort = (
         ("low" if suffix else None) if ag == "ux-reviewer" else "low" if cheap else flags["effort"]
@@ -292,6 +296,16 @@ def _audit_tail(a, ag, suffix, esc):
     return tail(a, "{rid}", allowed(*verdicts), "a 3-line summary with the path of the full report")
 
 
+def _freshness_clause(a, cfg, ag) -> str:
+    """The freshness-auditor's task: the stage diff against the docs folder and the tests (report path is the generic `{k}.md` line)."""
+    if ag != FRESHNESS_AUDITOR:
+        return ""
+    return (
+        f" Diff to check: `git diff {audit_base(a, cfg)}...{_wb(a, cfg)}`; docs folder `{cfg.get('docs_dir')}`. Compare the changed code with the docs and the tests: "
+        "report each doc statement the code now contradicts or omits, and each changed behaviour with no test. Edit nothing."
+    )
+
+
 def _audit_prompt(a, cfg, flags, has_audit_md, k, ag, suffix, effort, esc=False):
     S = a.stage
     return (
@@ -319,6 +333,7 @@ def _audit_prompt(a, cfg, flags, has_audit_md, k, ag, suffix, effort, esc=False)
             if ag in ("sec-auditor", "arch-auditor")
             else ""
         )
+        + _freshness_clause(a, cfg, ag)
         + _arch_clause(a, flags, ag, suffix)
         + _reaudit_clause(a, cfg, k, suffix)
         + checklist_clause(a, cfg, ag)
@@ -478,8 +493,13 @@ def _fix_phases(a, cfg, flags, tasks, audit_dir, has_audit_md, small, bad, rnd=1
 
 
 def _first_audits(a, cfg, audit_dir, has_ux):
-    """The audits that run in parallel with arch on the first pass: sec unless `sec_audit_paths` rules it out, ux when it applies."""
-    return ([("audit-sec", "sec-auditor")] if sec_audit_needed(a, cfg, audit_dir) else []) + ([("audit-ux", "ux-reviewer")] if has_ux else [])
+    """The audits that run in parallel with arch on the first pass: sec unless `sec_audit_paths` rules it out, ux when it applies, the docs freshness audit once per feature (its finish phase)."""
+    fresh = cfg.get("docs_fresh_audit") and plan_files.is_finish_dir(a.stage.split("/")[-1])
+    return (
+        ([("audit-sec", "sec-auditor")] if sec_audit_needed(a, cfg, audit_dir) else [])
+        + ([("audit-ux", "ux-reviewer")] if has_ux else [])
+        + ([("audit-fresh", FRESHNESS_AUDITOR)] if fresh else [])
+    )
 
 
 def _escalated_steps(a, cfg, flags, has_audit_md, small, evs, kinds):

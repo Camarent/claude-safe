@@ -60,6 +60,10 @@ GUIDELINES_HEADING = "## Guidelines"  # heading of the CLAUDE.md section that po
 GUIDELINES_SECTION_TEMPLATE = "{heading}\n\n{lines}\n"  # prepare_repo.py: the section written for the detected languages
 GUIDELINES_LANG_LINE = "{lang}: read {dir}/{lang}.md before editing {lang} files"  # one line per detected language
 GUIDELINES_BASE_LINE = "all: {dir}/base.md"  # always listed
+GUIDELINES_RUNBOOK_LINES = (
+    "driver: read {dir}/driver-runbook.md when you watch a running pipeline driver, when it blocks, or when you wake up to check a stage",
+    "lead: read {dir}/lead-rules.md when you change the pipeline, plan a pipeline fix, or sync installed pipeline config",
+)  # prepare_repo.py: practices links appended to the guidelines section ({dir} = PRACTICES_DIR); one line per file
 LANG_MARKERS = (
     ("cpp", ("CMakeLists.txt", "meson.build", "*.cpp", "*.cc", "*.hpp"), ("", "src")),
     ("rust", ("Cargo.toml",), ("",)),
@@ -158,6 +162,11 @@ ACCEPTANCE_REVIEW_AGENT = "reviewer"  # agent that checks the MANUAL items
 ACCEPTANCE_FILE = "acceptance.md"  # written to .work/<stage>/: one line per checklist item
 ACCEPTANCE_CMD_TIMEOUT_S = 900  # one acceptance command (qrun kills its process group at this limit)
 ACCEPTANCE_TAIL_LINES = 3  # last output lines kept per command in acceptance.md
+ACCEPTANCE_TIMING_FLAG_KEY = "acceptance_timing_flag"  # pipeline.json: flag appended to the project test command in the acceptance command lines
+ACCEPTANCE_TIMINGS_LOG = "acceptance-timings-{n}.log"  # full output of each flagged acceptance command, in the stage reports folder
+RETRO_DIR = "retro"  # under .work/<stage>/: the retro inputs the pipeline writes (pipeline/slow_suite.py)
+SLOW_SUITE_FILE = "slow-suite.jsonl"  # .work/<stage>/retro/: one row per acceptance command that hit ACCEPTANCE_CMD_TIMEOUT_S
+SLOW_SUITE_KIND = "slow-suite"  # `kind` of a row of SLOW_SUITE_FILE
 ACCEPTANCE_CMD_TAG, ACCEPTANCE_EYES_TAG = "cmd:", "eyes:"  # tags of a Plan.md checklist line
 ACCEPTANCE_PROSE_WORDS = frozenset(
     {
@@ -320,6 +329,7 @@ DIGEST_TOTAL_RE = r"\((\d+) sessions, \$([\d.]+)\)"  # header of retro-digest.md
 LIMIT_TEXT_MAX = 300  # a usage-limit notice is a short line; longer text is an agent talking about limits, never a notice
 LIMIT_MARGIN_S = 120  # wait this long after the printed reset time before running the session again
 LIMIT_FALLBACK_S = 900  # no parsable reset time: wait this long, then try again
+LIMIT_RECHECK_S = 900  # a usage-limit wait runs in slices of this many seconds; the session re-reads the clock after each slice (tool setting limit_recheck_s)
 LIMIT_WAIT_MAX_S = 8 * 3600  # total waiting per session; beyond this the limit notice stays the result (the run then stops as before)
 QRUN_LOG_MAX_AGE_S = int(os.environ.get("QRUN_LOG_MAX_AGE_S", 7 * 24 * 3600))  # qrun-*.log older than this may be pruned by the next qrun run ...
 QRUN_LOG_MIN_KEEP = int(os.environ.get("QRUN_LOG_MIN_KEEP", 20))  # ... but only while at least this many newer logs remain (a minimum, no cap)

@@ -10,10 +10,10 @@ from pipeline.shellwords import short_flag
 
 
 class Check(unittest.TestCase):
-    def ok(self, cmd):
+    def assert_ok(self, cmd):
         self.assertIsNone(ss.check(cmd), cmd)
 
-    def bad(self, cmd):
+    def assert_bad(self, cmd):
         self.assertIsNotNone(ss.check(cmd), cmd)
 
     def test_allowed(self):
@@ -30,13 +30,13 @@ class Check(unittest.TestCase):
             "echo 'a > b'",
             "jq .a x.json",
         ]:
-            self.ok(c)
+            self.assert_ok(c)
 
     def test_sed_words_with_r_w_e_are_fine(self):
         for c in ("sed -n '/error/p' a.txt", "sed 's/a/replace/' a.txt", "sed -n 's/the end/x/p' a.txt", "sed", "sed -n"):
-            self.ok(c)
+            self.assert_ok(c)
         for c in ("sed 's/a/b/w out' a.txt", "sed 's/a/b/e' a.txt", "sed -n '1r x' a.txt"):
-            self.bad(c)
+            self.assert_bad(c)
 
     def test_refused(self):
         for c in [
@@ -68,7 +68,7 @@ class Check(unittest.TestCase):
             "git",
             "",
         ]:
-            self.bad(c)
+            self.assert_bad(c)
 
     def test_bypasses_refused(self):
         for c in [
@@ -99,11 +99,11 @@ class Check(unittest.TestCase):
             "uniq a b",
             "cat 'a",
         ]:
-            self.bad(c)
+            self.assert_bad(c)
 
     def test_tokens_that_are_harmless(self):
         for c in ["> /dev/null", "tail -f a.txt | head -1", "find . -follow -name x", "cut -f1 a.txt", "sort -n a.txt"]:
-            self.ok(c)
+            self.assert_ok(c)
 
     def test_run(self):
         with tempfile.TemporaryDirectory() as d:

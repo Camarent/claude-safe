@@ -6,7 +6,7 @@ import re
 import shlex
 
 from . import maincheck
-from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
+from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, research_prompt, testrun_on, webtest_prompt
 from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
     ARCHITECT,
@@ -37,6 +37,7 @@ from .configuration import (
     PREREVIEW_SKIP_REVIEWER,
     REVIEW_EXTRA_ROUNDS,
     RULES_FILE,
+    SCOUT,
     SKIPPED,
     WEB_TESTER,
     WORK_DIR,
@@ -722,9 +723,53 @@ def _next_webtest(a, task, mine, rid):
     }
 
 
+def is_research(a, task) -> bool:
+    """True when the task file says `Type: research`: a scout (Haiku, read-only) answers its question; research_apply.py commits the answer to the task's Outputs path; the task's Test lines check it."""
+    repo = getattr(a, "dir", ".")
+    return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "research"
+
+
+def _research_ask(a, task, what, rep) -> dict:
+    return {"action": "ask_main", "message": f"{task['id']}: {what}; report {rep['file']}" + hint(a, task["id"])}
+
+
+def _next_research(a, task, mine, rid):
+    """The steps of a `Type: research` task: scout (DONE) -> research_apply.py (commits the report) -> the task's Test lines by script -> done. Anything else goes to the lead once."""
+    if any(e["ev"] == EV_SKIP for e in mine):
+        return None
+    last = mine[-1] if mine else None
+    if last is None:
+        d = _disp(a, task, rid, SCOUT)
+        d["prompt"] = research_prompt(a, task, rid)
+        d["why"] = "research task (Type: research): the scout answers it on Haiku, research_apply.py commits the answer, the task's Test lines check it"
+        return d
+    if last["ev"] == EV_DISPATCH:
+        return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
+    if last.get("role") == SCOUT:
+        if last["verdict"] != DONE:
+            return _research_ask(a, task, f"scout verdict {last['verdict']} ({last.get('reason', '')})", last)
+        return _script(
+            task,
+            rid,
+            "research apply (the scout's report committed to the task's Outputs path by research_apply.py)",
+            f"{tool_cmd('research_apply.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')} --report {last['file']}",
+        )
+    if last.get("role") == "script" and last["id"] in script_ids(mine, "research apply"):
+        if last["verdict"] != DONE:
+            return _research_ask(a, task, f"research apply {last['verdict']}: the scout's report was not committed to the task's Outputs path", last)
+        if testrun_on(a) and not script_ids(mine, "test run"):
+            return _test_run_script(a, task, rid, "test run (the task's Test lines check the scout's report on the stage branch checkout)")
+        return None
+    if last["verdict"] in (DONE, SKIPPED):
+        return None
+    return _research_ask(a, task, "the Test lines failed on the scout's report", last)
+
+
 def _next_step(a, task, mine, rid):
     if is_webtest(a, task):
         return _next_webtest(a, task, mine, rid)
+    if is_research(a, task):
+        return _next_research(a, task, mine, rid)
     if any(e["ev"] == EV_SKIP or (e["ev"] == EV_REPORT and e["role"] == "reviewer" and e["verdict"] == PASS) for e in mine):
         return None
     last = mine[-1] if mine else None

@@ -186,6 +186,7 @@ from .plan_check_task import (
 )
 from .plan_commands import command_findings
 from .plan_depends import depends_line_problems
+from .plan_docs_counts import check_docs_counts
 from .plan_files import (
     PATH_DIRS as PATH_DIRS,  # re-exported: pre-split name of pipeline.plan_check
 )
@@ -210,6 +211,7 @@ from .plan_files import (
 from .plan_files import (
     paths_in as paths_in,  # re-exported: pre-split name of pipeline.plan_check
 )
+from .plan_kinds import check_kinds
 from .plan_lint import (
     classify_shared,
     shared_file_errors,
@@ -249,7 +251,7 @@ from .plan_rules import (
 from .plan_rules import (
     nested_repo as nested_repo,  # re-exported: pre-split name of pipeline.plan_check
 )
-from .plan_testcmd import check_bare_test_runner, check_test_ban
+from .plan_testcmd import check_bare_test_runner, check_qrun_operator, check_test_ban
 from .shellwords import split_commands as split_commands  # re-exported: pre-split name of pipeline.plan_check
 from .stagedir import workspace_of as workspace_of  # re-exported: pre-split name of pipeline.plan_check
 from .tasks import parse_flags, parse_tasks
@@ -265,8 +267,8 @@ def _preflight_denied(d):
     return v if isinstance(v, list) else []
 
 
-def _task_file_problems(d, e, ents, repo, gates, git, produced):
-    """Problems of one entry: its task file (lint, anchors) and its dependencies."""
+def _task_file_problems(d, e, ents, repo, gates, git, produced, rows=None):
+    """Problems of one entry: its task file (lint, anchors) and its dependencies. ROWS (optional) are the parse_tasks rows: they carry the ops-N `manual` text the Inputs check reads."""
     probs: list[str] = []
     f = os.path.join(d, e["id"] + ".md")
     probs += (
@@ -289,9 +291,10 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_denied_commands(d, e["id"], _preflight_denied(d))
         + check_bare_test_runner(d, e["id"], _workspace(d))
         + check_test_ban(d, e["id"], _workspace(d))
-        + check_work_paths(d, e["id"])
+        + check_qrun_operator(d, e["id"])
+        + check_kinds(d, e, ents, repo)
         + check_task_size(d, e["id"])
-        + check_type_inputs(d, e["id"], repo, _workspace(d))
+        + check_type_inputs(d, e["id"], repo, _workspace(d), ents if rows is None else rows)
         + check_report_validator(d, e["id"])
         + check_nested_repo_paths(d, e["id"], repo, project(_workspace(d)).get("nested_repo_dir_prefix") or "")
         + check_negative_tag(d, e["id"])
@@ -301,6 +304,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_affected_tests(d, e["id"], repo)
         + check_unlisted_prereq(d, e, ents)
         + check_docs_wave(d, e, ents)
+        + check_docs_counts(d, e["id"])
         + check_open_edit(d, e["id"], project(_workspace(d)).get("nested_repo_dir_prefix") or "")
         + check_gate_mentions(d, e["id"], gates)
         + per_file_problems(d, e["id"])
@@ -474,7 +478,8 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
     probs += _limit_problems(d, ents)
     probs += check_docs_target(tasks_path(d), _workspace(d))
     repo = repo or _repo_root(d)
-    parsed = {t["id"]: t for t in parse_tasks(tasks_path(d))}
+    rows = parse_tasks(tasks_path(d))
+    parsed = {t["id"]: t for t in rows}
     ids = {e["id"] for e in ents}
     for e in ents:
         if parsed.get(e["id"], {}).get("wave") != e["wave"]:
@@ -486,7 +491,7 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
     git = git_state(repo, [p for e in ents for p in task_paths(d, e["id"])])
     produced = _stage_produced(d, ents)
     for e in ents:
-        probs += _task_file_problems(d, e, ents, repo, gates, git, produced)
+        probs += _task_file_problems(d, e, ents, repo, gates, git, produced, rows)
     return len(ents), probs + _overlap_problems(d, ents) + _carried_problems(d, ents) + publish_problems(d, ents) + shared_warnings(
         d, ents
     ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(

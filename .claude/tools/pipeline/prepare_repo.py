@@ -22,10 +22,12 @@ from pipeline.configuration import (  # noqa: E402
     GUIDELINES_DIR,
     GUIDELINES_HEADING,
     GUIDELINES_LANG_LINE,
+    GUIDELINES_RUNBOOK_LINES,
     GUIDELINES_SECTION_TEMPLATE,
     LANG_IGNORES,
     PIPELINE_EXCLUDES,
     PIPELINE_JSON,
+    PRACTICES_DIR,
     WORKTREES_KEY,
     project,
 )
@@ -112,6 +114,7 @@ def _guidelines_text(repo):
     if not langs:
         return ""
     lines = [GUIDELINES_LANG_LINE.format(lang=lang, dir=GUIDELINES_DIR) for lang in langs] + [GUIDELINES_BASE_LINE.format(dir=GUIDELINES_DIR)]
+    lines += [ln.format(dir=PRACTICES_DIR) for ln in GUIDELINES_RUNBOOK_LINES]
     return GUIDELINES_SECTION_TEMPLATE.format(heading=GUIDELINES_HEADING, lines="\n".join(lines))
 
 

@@ -67,6 +67,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")
         self.run_batch(["script"], "DONE")
@@ -79,6 +80,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")
         self.run_batch(["docs-writer"], "DONE")
+        self.run_batch(["script"], "DONE")  # docs-cite-final: every doc's path:line cites hold
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         ds = self.run_batch(["script"], "DONE")
         self.assertIn("tools-check", ds[0]["prompt"])

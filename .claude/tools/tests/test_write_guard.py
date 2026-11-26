@@ -36,7 +36,7 @@ class WriteGuardTest(unittest.TestCase):
     def payload(self, path, tool="Write", key="file_path"):
         return {"tool_name": tool, "tool_input": {key: path}, "cwd": self.wt}
 
-    def denied(self, done):
+    def assert_denied(self, done):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertTrue(done.stdout, "expected a deny decision")
         return json.loads(done.stdout)["hookSpecificOutput"]
@@ -64,26 +64,26 @@ class WriteGuardTest(unittest.TestCase):
         self.assertEqual((done.returncode, done.stdout), (0, ""))
 
     def test_main_path_denied(self):
-        why = self.denied(run_hook(self.payload(f"{self.main}/README.md"), self.env))["permissionDecisionReason"]
+        why = self.assert_denied(run_hook(self.payload(f"{self.main}/README.md"), self.env))["permissionDecisionReason"]
         self.assertIn(self.wt, why)
         self.assertIn(f"Retry once with the same relative path under the worktree: {self.wt}/README.md.", why)
         self.assertNotIn(ENV_SCRATCH_DIR, why)
 
     def test_main_scratch_path_names_scratch_dir(self):
-        why = self.denied(run_hook(self.payload(f"{self.main}/.work/dev-cwd/tmp/x.txt"), self.env))["permissionDecisionReason"]
+        why = self.assert_denied(run_hook(self.payload(f"{self.main}/.work/dev-cwd/tmp/x.txt"), self.env))["permissionDecisionReason"]
         self.assertIn(f"{self.wt}/.work/dev-cwd/tmp/x.txt", why)
         self.assertIn(f"${ENV_SCRATCH_DIR}", why)
 
     def test_dotdot_escape_denied(self):
-        self.denied(run_hook(self.payload(f"{self.wt}/../../../README.md"), self.env))
+        self.assert_denied(run_hook(self.payload(f"{self.wt}/../../../README.md"), self.env))
 
     def test_sibling_sharing_prefix_allowed(self):
         done = run_hook(self.payload(f"{self.sibling}/x.py"), self.env)
         self.assertEqual((done.returncode, done.stdout), (0, ""))
 
     def test_multiedit_and_notebook_checked(self):
-        self.denied(run_hook(self.payload(f"{self.main}/a.py", tool="MultiEdit"), self.env))
-        self.denied(run_hook(self.payload(f"{self.main}/n.ipynb", tool="NotebookEdit", key="notebook_path"), self.env))
+        self.assert_denied(run_hook(self.payload(f"{self.main}/a.py", tool="MultiEdit"), self.env))
+        self.assert_denied(run_hook(self.payload(f"{self.main}/n.ipynb", tool="NotebookEdit", key="notebook_path"), self.env))
 
     def test_other_tool_ignored(self):
         done = run_hook(self.payload(f"{self.main}/README.md", tool="Bash"), self.env)

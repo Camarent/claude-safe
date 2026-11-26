@@ -25,9 +25,10 @@ def _verdicts():
 
 PHRASES = {
     "E1": (
-        "E1: a dev or reviewer step moves from Haiku to Sonnet only after one of these three events, and no other: "
+        "E1: a dev or reviewer step moves from Haiku to Sonnet only after one of these four events, and no other: "
         f"(a) the gate command stayed red after {TRIES} Haiku tries; (b) the dev reply is `{ESCALATE}:` and names one concrete reason; "
-        f"(c) the reviewer verdict is `{ESCALATE}` and names one defect with file and line."
+        f"(c) the reviewer verdict is `{ESCALATE}` and names one defect with file and line; "
+        "(d) a merge-gate fix dev (fix-gate) ended BLOCKED, or its re-merge FAILed, so the next fix is a Sonnet dev."
     ),
     "E2": (
         f"E2: a reviewer verdict is exactly one of {_verdicts()}. `{PASS}` means wrong, risky and nit counts are all 0. "
@@ -97,7 +98,7 @@ class EscalationDocsTest(unittest.TestCase):
 
 ORCHESTRATOR = os.path.join(".claude", "ORCHESTRATOR.md")
 DECISIONS = os.path.join("docs", "decisions.md")
-MODEL_LOG_LINE = "The driver (`pipeline/e1.py` `model_for`) logs each Sonnet dev or reviewer dispatch as `E1(a|b|c)`."
+MODEL_LOG_LINE = "The driver (`pipeline/e1.py` `model_for`) logs each Sonnet dev or reviewer dispatch as `E1(a|b|c|d)`."
 REMOVED_ROUTE_WORDS = ("review_ccn", "15 predicted", "escalates by the ccn gate")
 
 

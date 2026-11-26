@@ -24,6 +24,10 @@ from .briefs import UNVERIFIED_RULE, serve_dir, tail, ux_flows_note, webtest_bui
 from .configuration import (
     ACCEPTANCE_STEP,
     BLOCKED,
+    DOC_CITES_DEFAULT,
+    DOC_CITES_FLAG,
+    DOC_CITES_KEY,
+    DOC_CITES_STEP,
     DONE,
     EV_DISPATCH,
     FAIL,
@@ -67,6 +71,7 @@ from .configuration import (
     webtest_model,
     webtest_tools_missing,
 )
+from .entry import name_of_stage
 from .phase_audit import DEFAULT_EVERY, audit_due
 from .plan_files import acceptance_items, is_finish_phase, task_paths
 from .steps import history, last_verdict, ops_as_script, step
@@ -120,7 +125,7 @@ def _nested_note(a, br, rel):
 def _release_message(a, cfg, name):
     """Lead message of `master-merged`: how to squash the stage branch into the release branch (never --ff-only)."""
     S, br, rel = a.stage, _wb(a, cfg), cfg["branch_release"]
-    skip = f"then run `{tool_cmd('orch.py')} skip --stage {S} --step master-merged` so cleanup, push, republish and index follow."
+    skip = f"then run `{tool_cmd('orch.py')} skip {name_of_stage(S)} --step master-merged` so cleanup, push, republish and index follow."
     extra = _nested_note(a, br, rel) if pr_mode.derived(a) else ""
     if pr_mode.derived(a) and pr_mode.pr_active(a):
         return f"Stage {S}: CI is green on the PR of `{br}`. Squash-merge it on GitHub with `gh pr merge {br} --squash --delete-branch` (title `<type>(<area>): <what>`){extra}, {skip}"
@@ -532,6 +537,20 @@ def _triage_step(a, report, base_head):
     )
 
 
+def _doc_cites_step(a):
+    """Script at every stage end: the cites of every doc under the docs folder must hold (steps_finaltest.py --doc-cites); FAIL stops the driver, no fix flow."""
+    cmd = f"{tool_cmd('pipeline/steps_finaltest.py')} --dir {shlex.quote(a.dir)} {DOC_CITES_FLAG}"
+    return step(
+        DOC_CITES_STEP,
+        "script",
+        None,
+        cmd,
+        {DONE},
+        None,
+        "docs: every path:line cite in the whole docs folder must hold (by script, changed docs or not)",
+    )
+
+
 def _test_phases(a, cfg, flags, tasks, evs):
     """Final verification, each with one bounded fix round when it comes back FAIL. A failed run is triaged first: flaky -> no fix; PRE_EXISTING_RED -> the lead."""
     ids = ", ".join(t["id"] for t in tasks)
@@ -605,6 +624,9 @@ def audit_phases(a, flags, tasks, evs) -> Iterator[list[dict]]:
             beside = [_docs_step(a, cfg)]  # no file the docs writer edits is in the stage diff: starts with the audits
         else:
             yield [_docs_step(a, cfg)]
+    cite_on = cfg.get(DOC_CITES_KEY, DOC_CITES_DEFAULT)  # every stage end, docs flag or not: the whole docs folder, not only the stage's changes
+    if cite_on and not beside:
+        yield [_doc_cites_step(a)]
     if flags["test"]:  # recall is logged for every tested stage and phase, not only audited ones
         yield [
             step(
@@ -619,4 +641,17 @@ def audit_phases(a, flags, tasks, evs) -> Iterator[list[dict]]:
         ]
     if not audits_follow:
         return
-    yield from audit_rounds(a, cfg, flags, tasks, evs, beside)
+    rounds = audit_rounds(a, cfg, flags, tasks, evs, beside)
+    if beside and cite_on:  # the beside docs writer runs in the first audit batch: the cite step follows that batch
+        rounds = _after_first_batch(rounds, [_doc_cites_step(a)])
+    yield from rounds
+
+
+def _after_first_batch(batches, extra):
+    """Yield the first batch, then `extra` as its own batch, then the rest."""
+    it = iter(batches)
+    first = next(it, None)
+    if first is not None:
+        yield first
+    yield extra
+    yield from it

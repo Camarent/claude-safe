@@ -66,6 +66,36 @@ class TestJobDiff(unittest.TestCase):
                 with mock.patch.object(worktrees.wt, "diff", side_effect=exc):
                     self.assertEqual(worktrees.job_diff(a, "alpha"), "")
 
+    def test_drops_generated_docs_index_from_review_diff(self):
+        d = workspace()
+        a = SimpleNamespace(dir=d, stage="s")
+        text = "=== repo . (w, branch b) ===\n src/a.py | 1 +\n docs/INDEX.md | 2 +-\n 2 files changed\n\ndiff --git a/src/a.py b/src/a.py\n+x\ndiff --git a/docs/INDEX.md b/docs/INDEX.md\n+idx\n"
+        with mock.patch.object(worktrees, "job_info", return_value={"root": "/x"}), mock.patch.object(worktrees.wt, "diff", return_value=text):
+            out = worktrees.job_diff(a, "alpha")
+        self.assertIn("src/a.py", out)
+        self.assertIn("+x", out)
+        self.assertNotIn("INDEX.md", out)
+        self.assertNotIn("+idx", out)
+
+    def test_keeps_index_files_outside_docs_dir(self):
+        text = (
+            " docs/guide.md | 1 +\n other/INDEX.md | 1 +\n\ndiff --git a/docs/guide.md b/docs/guide.md\n+g\ndiff --git a/other/INDEX.md b/other/INDEX.md\n+o\n"
+        )
+        self.assertEqual(worktrees.drop_generated_index(text, "docs"), text)
+
+    def test_config_error_gives_empty_diff_not_a_crash(self):
+        a = SimpleNamespace(dir=workspace(), stage="s")
+        with (
+            mock.patch.object(worktrees, "job_info", return_value={"root": "/x"}),
+            mock.patch.object(worktrees.wt, "diff", return_value="DIFF"),
+            mock.patch.object(worktrees, "project", side_effect=worktrees.ConfigError("bad gates")),
+        ):
+            self.assertEqual(worktrees.job_diff(a, "alpha"), "")
+
+    def test_docs_dir_setting_names_the_index(self):
+        text = " site/docs/INDEX.md | 1 +\n\ndiff --git a/site/docs/INDEX.md b/site/docs/INDEX.md\n+i\n"
+        self.assertEqual(worktrees.drop_generated_index(text, "/site/docs/").strip(), "")
+
 
 if __name__ == "__main__":
     unittest.main()

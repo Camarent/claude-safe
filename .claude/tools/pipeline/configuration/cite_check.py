@@ -41,3 +41,24 @@ CITE_FIXED_WORDS = (
 CITE_CHECK_KEY = "cite_check"  # pipeline.json key: the cite check runs after the Test lines are green (testrun.py)
 CITE_CHECK_DEFAULT = True  # the key when pipeline.json does not set it
 CITE_DIFF_MAX_CHARS = 10**7  # the cite check reads the whole committed diff: a cut would hide the cites past it
+CITE_SPLIT_MIN_REMOVED = 40  # a file whose diff removes at least this many lines is split: its report cites by line are not checked (cite_check.split_files)
+CITE_MSG_PATH_RE = re.compile(r" cites ([^\s:]+):")  # the path of a cite in a cite check message
+DOCS_IMPACT_KEY = "docs_impact_gate"  # pipeline.json key: the docs impact check runs after the cite check (docs_impact.py)
+DOCS_IMPACT_DEFAULT = True  # the key when pipeline.json does not set it
+DOCS_IMPACT_EXEMPT_KEY = "docs_impact_exempt"  # pipeline.json key: globs of docs the docs impact check never flags as stale
+DOCS_IMPACT_SYMBOL_MIN = 3  # a top-level def or class name shorter than this is not read as a symbol a doc can cite
+DOCS_IMPACT_GENERIC_SYMBOLS = frozenset({"main"})  # def names every script has: a doc citing another file's `main` is not made stale by this diff
+DOCS_IMPACT_DEF_RE = re.compile(r"^(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)")  # a column-0 def, async def or class line; group 1 = the name
+DOCS_IMPACT_HEADER_RE = re.compile(r"^@@ .* @@ ?(.*)$")  # a hunk header; group 1 = the function context git puts after it
+DOCS_IMPACT_PATH_RE = r"(?<![\w/.-]){path}(?![\w/-]|\.\w)"  # template: a changed path word-bounded in a doc
+DOCS_IMPACT_TICK_RE = r"`{sym}`"  # template: a symbol in backticks in a doc
+DOC_CITES_KEY = "docs_cite_final"  # pipeline.json key: the cite check over the whole docs folder runs at every stage end; False = no step
+DOC_CITES_DEFAULT = True  # the key when pipeline.json does not set it
+DOC_CITES_STEP = "docs-cite-final"  # id of the script step that runs the whole-docs cite check (phases.audit_phases)
+DOC_CITES_FLAG = "--doc-cites"  # steps_finaltest.py mode: check every doc under docs_dir, no --report needed
+DOCS_DIR_KEY = "docs_dir"  # pipeline.json key: folder below the repo that holds the docs
+
+
+def docs_dir_of(cfg: dict) -> str:
+    """-> the docs folder of pipeline.json `cfg` (DOCS_DIR_KEY), "" when unset: the docs checks are off."""
+    return str(cfg.get(DOCS_DIR_KEY) or "")

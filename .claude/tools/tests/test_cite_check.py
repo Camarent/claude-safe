@@ -146,6 +146,35 @@ class CiteCheck(unittest.TestCase):
             ["report:1 cites a.py:900 but a.py has 5 lines"],
         )
 
+    def test_split_files_deleted_renamed_and_big_removal(self):
+        diff = (
+            "diff --git a/gone.py b/gone.py\ndeleted file mode 100644\n--- a/gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-x = 1\n"
+            "diff --git a/old.py b/new.py\nsimilarity index 90%\nrename from old.py\nrename to new.py\n"
+            "diff --git a/big.py b/big.py\n--- a/big.py\n+++ b/big.py\n@@ -1,40 +1 @@\n" + "-x\n" * 40 + "+y = 1\n"
+            "diff --git a/small.py b/small.py\n--- a/small.py\n+++ b/small.py\n@@ -1,39 +1 @@\n" + "-x\n" * 39 + "+y = 1\n"
+        )
+        self.assertEqual(cite_check.split_files(diff), {"gone.py", "old.py", "new.py", "big.py"})
+
+    def test_split_cite_in_report_skips_line_and_symbol_tests(self):
+        wt = self.tree({"big.py": "x = 1\n" * 5, "progress.py": progress_py(136)})
+        report = "the cite big.py:900 moved\n`save_progress` (progress.py:82) moved\n"
+        self.assertEqual(cite_check.check(wt, [], report, split={"big.py"}), ["report:2 cites progress.py:82 but save_progress is at 136"])
+        self.assertEqual(
+            cite_check.check(wt, [], report), ["report:1 cites big.py:900 but big.py has 5 lines", "report:2 cites progress.py:82 but save_progress is at 136"]
+        )
+
+    def test_split_cite_missing_file_still_fails(self):
+        wt = self.tree({})
+        self.assertEqual(cite_check.check(wt, [], "gone.py:3\n", split={"gone.py"}), ["report:1 cites gone.py:3 but gone.py is missing"])
+
+    def test_split_cite_in_added_doc_line_still_fully_checked(self):
+        wt = self.tree({"big.py": "x = 1\n" * 5})
+        self.assertEqual(cite_check.check(wt, [("core.md", 2, "see big.py:900")], "", split={"big.py"}), ["core.md:2 cites big.py:900 but big.py has 5 lines"])
+
+    def test_bare_names_flags_only_paths_without_directory(self):
+        self.assertTrue(cite_check.bare_names(["core.md:1 cites progress.py:82 but x"]))
+        self.assertFalse(cite_check.bare_names(["core.md:1 cites pipeline/progress.py:82 but x"]))
+
 
 if __name__ == "__main__":
     unittest.main()

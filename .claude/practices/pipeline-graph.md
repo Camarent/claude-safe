@@ -1,6 +1,6 @@
 # Execution graph: what runs, in which order
 
-Read `orch-pipeline.md` for the rules and `pipeline-dev.md` for working on the tools. This file is the map: three levels, from the entry point down to one task. Every box is a tool call (`script`, no model) or an agent session (`agent: model`). Source of truth is the code; to see the real sequence of a stage without model calls run `cs-wave run --stage S --dir D --dry-run` (the fixtures in `tools/tests/support/project.py` do the same for the tests).
+Read `orch-pipeline.md` for the rules and `pipeline-dev.md` for working on the tools. This file is the map: three levels, from the entry point down to one task. Every box is a tool call (`script`, no model) or an agent session (`agent: model`). Source of truth is the code; to see the real sequence of a stage without model calls run `cs-wave run S --dir D --dry-run` (the fixtures in `tools/tests/support/project.py` do the same for the tests).
 
 ## 1. Entry: `cs-plan run --feature F --prompt-file P`
 ```
@@ -15,11 +15,11 @@ cs-plan run
  |- cs-plan check (script) until OK: task graph, 30-task cap, phase gates, one-phase plan = stage, combine hints
  `- metrics.jsonl: context event, session lines, estimates
         |
-        |-- small: run the stage        `/run-feature F`  = cs-wave run --stage F        (level 2)
-        `-- big:   cs-wave feature --feature F                                        (level 3, below)
+        |-- small: run the stage        `/run-feature F`  = cs-wave run F                (level 2)
+        `-- big:   cs-wave run F                                                       (level 3, below)
 ```
 
-## 2. One stage: `cs-wave run --stage S`
+## 2. One stage: `cs-wave run S`
 `orch.py` walks this list and decides the next step from the event log (`orch.jsonl`); it makes no model call. Steps in `[ ]` exist only with the flag or config named.
 
 ```
@@ -54,18 +54,18 @@ final phases, in this order:
    retro-numbers       script (transcript numbers), then a haiku cost digest; a failure here never stops the stage
 ```
 
-## 3. A big plan: `cs-wave feature --feature F`
+## 3. A big plan: `cs-wave run F`
 ```
 loop over the phases of .work/F/Plan.md in dependency order (_pick_phase):
    if the phase has no TASKS.md yet:
       [phase context  script (Strata, optional): goal, paths, plan-notes decisions, earlier phases' diff stat -> phases/<dir>/plan-context.md]   
       architect (agent: sonnet|opus)   plans ONE phase: stage-init + tasks, `cs-plan check --stage` until OK
-   cs-wave run --stage F/phases/<dir>        (level 2, whole list above; audits per the rule above)
+   cs-wave run F/phases/<dir>        (level 2, whole list above; audits per the rule above)
    done_when (script)   the phase's own command in the repo with the project's test_env; red -> BLOCKED.md, back to the lead
    phase done
 the `NN-finish` phase ends with the master-merge pause of level 2
 ```
-Dry run: `cs-wave feature --feature F --dry-run` prints the phases only; planning and the run are not started.
+Dry run: `cs-wave run F --dry-run` prints the phases only; planning and the run are not started.
 
 ## 4. One task (inside a wave)
 Model ladder and limits: `orch-pipeline.md` "Rounds and fix routes".
@@ -78,6 +78,8 @@ dev (haiku)  --DONE-->  [prereview (script, Strata, config `prereview`): FAIL go
                                                                                                           a second FAIL asks the lead
 ```
 The plan never picks models (a `sonnet` word in an old TASKS.md is ignored). Agents talk through report files under `.work/` with `VERDICT:` as the first line.
+
+The reviewer diff view (`worktrees.job_diff`) drops the generated docs INDEX.md diff: its stat line and its `diff --git` section (`<docs_dir>/INDEX.md`, `docs_dir` from the project settings) are cut from the text. Other INDEX.md files stay. The reviewer does not see that index change.
 
 ## Where Strata is optional
 Everything marked "Strata, optional" is skipped with a visible note when the local model is down; no step needs it to finish. It is used in: planner context (levels 1 and 3), audit-context "Related, unchanged", prereview.

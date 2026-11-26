@@ -21,7 +21,7 @@ class HonestNumbersDocsTest(unittest.TestCase):
     def test_lead_rules_one_keyword_each(self):
         text = read(os.path.join(".claude", "ORCHESTRATOR.md"))
         self.assertIn("## Lead session rules", text)
-        for word in ("Monitor until-loop", "cleared or compacted", "Notify on finish", "separate session"):
+        for word in ("Watch rules", "cleared or compacted", "Notify on finish", "separate session"):
             self.assertIn(word, text)
 
     def test_deferred_bullets_in_readme(self):

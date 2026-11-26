@@ -370,6 +370,9 @@ if __name__ == "__main__":
         self.assertIn("rust: read ", text)
         self.assertIn("js: read ", text)
         self.assertIn("all: ", text)
+        self.assertIn("driver: read ", text)
+        self.assertIn(os.path.join(prepare_repo.PRACTICES_DIR, "driver-runbook.md"), text)
+        self.assertIn(os.path.join(prepare_repo.PRACTICES_DIR, "lead-rules.md"), text)
         self.assertIn("CLAUDE.md", lines(self.repo))
 
     def test_no_language_no_guidelines_section(self):

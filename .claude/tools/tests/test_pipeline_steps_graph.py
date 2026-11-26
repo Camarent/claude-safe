@@ -85,7 +85,7 @@ class NextStepTest(unittest.TestCase):
         self.assertEqual(r["action"], "ask_main")
         self.assertEqual(
             r["message"],
-            f"a1 (dev on {TASK1}) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step {TASK1}` (or `skip`)",
+            f"a1 (dev on {TASK1}) was dispatched but never reported; fix the cause, then `orch.py retry s --step {TASK1}` (or `skip`)",
         )
 
     def test_dev_done_goes_to_reviewer_or_prereview(self):
@@ -266,7 +266,7 @@ class NextStepTest(unittest.TestCase):
         r = self.nxt([dispatch("a1", "dev"), dev_rep("a1", "BLOCKED", "b.md")])
         self.assertEqual(r["action"], "ask_main")
         self.assertTrue(r["message"].startswith("task-1: dev verdict BLOCKED ("))
-        self.assertIn(f"report b.md; fix the cause, then `orch.py retry --stage s --step {TASK1}`", r["message"])
+        self.assertIn(f"report b.md; fix the cause, then `orch.py retry s --step {TASK1}`", r["message"])
         # owner_sonnet dev escalating also asks the lead
         r = self.nxt([dispatch("a1", "dev", "sonnet"), dev_rep("a1", "ESCALATE")], {**TASK, "owner_sonnet": True})
         self.assertEqual(r["action"], "ask_main")
@@ -348,12 +348,12 @@ class RunPhaseTest(unittest.TestCase):
         assert r is not None
         lines = r["message"].split("\n")
         self.assertEqual(r["action"], "ask_main")
-        self.assertEqual(lines[0], "x (ops) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step x` (or `skip`)")
-        self.assertEqual(lines[1], "y: ops verdict FAIL (boom); report y.md; fix the cause, then `orch.py retry --stage s --step y` (or `skip`)")
+        self.assertEqual(lines[0], "x (ops) was dispatched but never reported; fix the cause, then `orch.py retry s --step x` (or `skip`)")
+        self.assertEqual(lines[1], "y: ops verdict FAIL (boom); report y.md; fix the cause, then `orch.py retry s --step y` (or `skip`)")
         self.assertEqual(
             lines[2],
             "tools-check: ops verdict FAIL (); report t.md; tools missing, see .work/s/audits/tools-check.md; lead: retry or skip --step tools-check"
-            "; fix the cause, then `orch.py retry --stage s --step tools-check` (or `skip`)",
+            "; fix the cause, then `orch.py retry s --step tools-check` (or `skip`)",
         )
 
     def test_dispatch_wins_over_asks(self):
@@ -445,9 +445,19 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(r["message"].count("was dispatched but never reported"), 2)
         self.assertEqual(len(r["message"].split("\n")), 2)
 
+    def cite_check_passes(self):
+        """The stage-end cite check of every doc is the next dispatch (every stage, flags or not); log it DONE."""
+        (c,) = graph.decide(self.a)["dispatches"]
+        self.assertEqual((c["task"], c["agent"]), ("docs-cite-final", "script"))
+        self.log(
+            {"ev": "dispatch", "task": "docs-cite-final", "id": "cite1", "agent": "script", "role": "script", "model": None},
+            {"ev": "report", "task": "docs-cite-final", "role": "script", "verdict": "DONE", "file": "cite.md"},
+        )
+
     def test_all_passed_no_flags_is_done(self):
         self.tasks()
         self.passed()
+        self.cite_check_passes()
         self.assertEqual(graph.decide(self.a), {"action": "done", "message": "all 1 task(s) reviewed PASS"})
 
     def test_merge_ladder_and_index(self):
@@ -477,6 +487,10 @@ class DecideTest(unittest.TestCase):
             {"ev": "report", "task": "merge-w1-2", "role": "merger", "verdict": "DONE", "file": "m2.md"},
         )
         # merged -> index refresh recorded once, then done
+        self.log(  # the stage-end cite check passed (logged without a decide call, so the index refresh still runs once)
+            {"ev": "dispatch", "task": "docs-cite-final", "id": "cite1", "agent": "script", "role": "script", "model": None},
+            {"ev": "report", "task": "docs-cite-final", "role": "script", "verdict": "DONE", "file": "cite.md"},
+        )
         r = graph.decide(self.a)
         self.assertEqual(r["dispatches"][0]["task"], "index-refresh")  # the post-publish phase follows the per-wave refresh
         self.run_index.assert_called_once()
@@ -636,6 +650,7 @@ class DecideTest(unittest.TestCase):
     def test_retro_phases_then_done(self):
         self.tasks(flags="no-merge no-test no-audit no-index no-push no-clean")
         self.passed()
+        self.cite_check_passes()
         (n,) = graph.decide(self.a)["dispatches"]
         self.assertEqual((n["task"], n["agent"], n["model"]), ("retro-numbers", "script", None))
         self.assertIn("retro_numbers.py --verdict --orch .work/s/orch.jsonl --out .work/s/retro/retro-numbers.md", n["prompt"])

@@ -10,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import testrun
-from pipeline.configuration import CITE_CHECK_KEY, JOB_DIFF_MAX_CHARS
+from pipeline.configuration import CITE_CHECK_KEY, EMPTY_TEST_KEY, JOB_DIFF_MAX_CHARS, docs_dir_of
 from tests.support.tmpdirs import tracked_mkdtemp
 
 GOOD_CITE = "see pipeline/code.py:2"  # real line 2 of the source below
@@ -86,7 +86,44 @@ class TestRunCite(unittest.TestCase):
         d = box("Test: true\n")
         verdict, note = testrun.run("s", "task-1", d, runner=green, scan=scan_clean, diff_fn=lambda *_a: None)
         self.assertEqual(verdict, testrun.DONE)
-        self.assertIn("cite check skipped: the job diff is unavailable", note)
+        self.assertIn("job-diff checks skipped: the job diff is unavailable", note)
+        self.assertEqual(note.count("job-diff checks skipped"), 1)
+
+    def test_job_diff_is_fetched_once_per_run(self):
+        d = box("Test: true\n")
+        calls = []
+
+        def counting_diff(*args):
+            calls.append(args)
+            return diff_of(GOOD_CITE)
+
+        verdict, _note = testrun.run("s", "task-1", d, runner=green, scan=scan_clean, diff_fn=counting_diff)
+        self.assertEqual(verdict, testrun.DONE)
+        self.assertEqual(len(calls), 1)
+
+    def test_docs_impact_skip_note_when_cite_check_off_and_diff_unavailable(self):
+        # empty_test_gate off too: it also returns NO_DIFF_NOTE, so only the docs-impact check can supply it
+        d = box("Test: true\n", cite_switch=False)
+        with open(f"{d}/pipeline.json", "w") as f:
+            json.dump({CITE_CHECK_KEY: False, EMPTY_TEST_KEY: False}, f)
+        verdict, note = testrun.run("s", "task-1", d, runner=green, scan=scan_clean, diff_fn=lambda *_a: None)
+        self.assertEqual(verdict, testrun.DONE)
+        self.assertIn(testrun.NO_DIFF_NOTE, note)
+
+    def test_empty_docs_dir_turns_docs_impact_check_off(self):
+        d = box("Test: true\n")
+        with open(f"{d}/pipeline.json", "w") as f:
+            json.dump({"docs_dir": ""}, f)
+        with mock.patch.object(testrun.docs_impact, "doc_files") as doc_files:
+            verdict, note = testrun.run("s", "task-1", d, runner=green, scan=scan_clean, diff_fn=lambda *_a: diff_of(GOOD_CITE))
+        self.assertEqual(verdict, testrun.DONE)
+        self.assertNotIn("docs impact", note)
+        doc_files.assert_not_called()
+
+    def test_docs_dir_of_reads_the_setting(self):
+        self.assertEqual(docs_dir_of({"docs_dir": "docs"}), "docs")
+        self.assertEqual(docs_dir_of({"docs_dir": ""}), "")
+        self.assertEqual(docs_dir_of({}), "")
 
     def test_cite_past_the_old_diff_cut_is_checked(self):
         d = box("Test: true\n")
@@ -128,6 +165,32 @@ class TestRunCite(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(seen["report"], report)
         self.assertTrue(Path(report).is_file())
+
+    def test_report_cite_into_split_file_is_done(self):
+        # code.py loses 40 lines in the job diff: it is split, so the report's line cite into it is not read
+        split_diff = (
+            "diff --git a/pipeline/code.py b/pipeline/code.py\n--- a/pipeline/code.py\n+++ b/pipeline/code.py\n@@ -1,40 +1,2 @@\n"
+            + "-x\n" * 40
+            + "+a = 1\n+b = 2\n"
+        )
+        d = box("Test: true\n", report=f"done, {BAD_CITE}\n")
+        verdict, note = testrun.run(
+            "s", "task-1", d, runner=green, scan=scan_clean, diff_fn=lambda *_a: split_diff, report=os.path.join(d, ".work", "s", "report-x.md")
+        )
+        self.assertEqual(verdict, testrun.DONE)
+        self.assertNotIn("cite check", note)
+
+    def test_bare_file_name_cite_fail_names_full_path(self):
+        d = box("Test: true\n", report="done, see code.py:99\n")
+        verdict, note = self.run_task(d, GOOD_CITE, report=os.path.join(d, ".work", "s", "report-x.md"))
+        self.assertEqual(verdict, testrun.FAIL)
+        self.assertIn("cite the full repo-relative path, not a bare file name", note.splitlines())
+
+    def test_full_path_cite_fail_has_no_bare_name_line(self):
+        d = box("Test: true\n")
+        verdict, note = self.run_task(d, BAD_CITE)
+        self.assertEqual(verdict, testrun.FAIL)
+        self.assertNotIn("cite the full repo-relative path, not a bare file name", note)
 
 
 if __name__ == "__main__":

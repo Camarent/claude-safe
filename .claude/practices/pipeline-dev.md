@@ -27,6 +27,7 @@ claude-safe/                      git repo (this repo only: master + dev); push 
 - Parked = `parked/<name>/` + a MANIFEST entry. Dead experiments are deleted (git history and tags are the archive).
 - Open work goes in `practices/pipeline-backlog.md`, nowhere else.
 - Tests that start real processes or wait on clocks and sockets carry `@timing_sensitive` (`tests/support/timing.py`): off by default, run with `TIMING_TESTS=1`. They flake while a code-index build or the local model loads the host; the gate must not depend on them.
+- A test with no assertion needs the `# noassert:` marker and a reason on its def line or the line above; `empty_tests.py` (testrun gate) reports the others.
 - Tests clean up after themselves (temp dirs, files, sockets, processes, worktrees, env): see `.claude/CLAUDE.md`. `ptest.py` and `tests/conftest.py` set a scratch `TMPDIR` per run as a safety net only.
 
 ## How to add a step / an agent
@@ -54,7 +55,7 @@ Agent (a file in `agents/`):
 | `scripts/dev.sh cov` | tests with branch coverage; fails below `fail_under` (90) |
 | `scripts/dev.sh dead` / `sec` | vulture / bandit (reviewed skips and `# nosec Bxxx  # reason` markers) |
 | `scripts/dev.sh clean` | delete `./.uv` and all caches: the host is clean again |
-In the container the full suite also runs as `cs-ptest`. After a stage-sequence change read `cs-wave run --stage S --dir D --dry-run` and add a case to `tests/test_stage_sequence.py`.
+In the container the full suite also runs as `cs-ptest`. After a stage-sequence change read `cs-wave run S --dir D --dry-run` and add a case to `tests/test_stage_sequence.py`.
 
 ## Commands and paths
 - `.claude/paths.json` is the single place to remap on a move: roots (`/root/.claude`, `/workspace`, host dirs) and the `cs-*` command names.
@@ -100,6 +101,9 @@ Out of scope: <what not to touch>
 
 ## Rework path note
 - A rework or retry note names the file, the line and the replacement text (task-12 rule; `cli_orch.py`, `ORCHESTRATOR.md`).
+- Cite check skips split files: a report cite into a file the job diff deletes, renames or shrinks by 40+ lines (`CITE_SPLIT_MIN_REMOVED`) is checked for existence only, not line or symbol (`cite_check.split_files`).
+- Added doc and code lines are always checked in full; only report cites into split files are relaxed.
+- The FAIL note of a cite check ends with "cite the full repo-relative path, not a bare file name" when a failing cite has no directory.
 
 ## Mechanical changes
 Moves, renames and rewrites go through a script with a dry run first (print the plan, `--apply` to execute), then the tests decide.
@@ -115,7 +119,7 @@ Moves, renames and rewrites go through a script with a dry run first (print the 
 - A dev that sees a red gate on the base must not stop with BLOCKED or fix it; the brief and `agents/dev.md` say so. A rule that sends a base-red test to BLOCKED contradicts the driver's base clearing: check both when changing either.
 - An event with a `task` key must carry what the retry ladder reads (`role` on a dispatch or report): a log-only event uses another key (`forced_remove` uses `job`).
 - Messages and file names for this live in `pipeline.configuration` (`LINK_*`, `BASE_WHY_*`, `CLEAR_WHY_*`).
-- Time-based or non-isolated tests are bad design (code not separated): inject the clock, isolate the test; only if impossible put it in `gates_merge`. See `agents/dev.md`, `agents/architect.md`, `ORCHESTRATOR.md`.
+- Wait and sleep functions take an injected clock and sleep (keyword arguments, defaults to the real ones), so a test drives them with fakes; a test never sleeps for real. Time-based or non-isolated tests are bad design (code not separated): inject the clock, isolate the test; only if impossible put it in `gates_merge`. See `agents/dev.md`, `agents/architect.md`, `ORCHESTRATOR.md`.
 - Main-checkout guard: `main_guard_ignore_globs` (pipeline.json key; default `("qrun-*.log",)` from `MAIN_GUARD_IGNORE_GLOBS` in `limits.py` under `.claude/tools/pipeline/configuration/`) lists path globs of the main checkout the dirt check never reports. Set it in the project `pipeline.json`; a list replaces the default (`[]` ignores nothing).
 
 ## Lesson: a missing hook binary on Edit or Write must fail open

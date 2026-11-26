@@ -1,4 +1,4 @@
-"""pipeline.e1: the E1 events a, b, c derived from a task's events, and model_for on top of them."""
+"""pipeline.e1: the E1 events a, b, c, d derived from a task's events, and model_for on top of them."""
 
 import os
 import sys
@@ -8,7 +8,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import e1, steps
-from pipeline.configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, FAIL, HAIKU_DEV_TRIES, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+from pipeline.configuration import BLOCKED, DONE, ESCALATE, EV_DISPATCH, EV_REPORT, FAIL, HAIKU_DEV_TRIES, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 from test_task_gates import TASK, _SeqBase, dev, done, ev
 
 
@@ -87,6 +87,34 @@ class E1EventTest(unittest.TestCase):
         mine = [dispatch("r1", "reviewer"), report("r1", "reviewer", ESCALATE, self.plain)]
         self.assertEqual(e1.e1_event("reviewer", mine), "c")
         self.assertIsNone(e1.e1_event("dev", mine))
+
+    def test_d_no_earlier_fix_gate_step_is_none(self):
+        self.assertIsNone(e1.e1_event("fix-gate", []))
+        self.assertIsNone(e1.e1_event("fix-gate", [dispatch("fix-gate-w1", "dev"), report("fix-gate-w1", "dev", DONE, self.plain)]))
+
+    def test_d_blocked_fix_gate_dev_is_event(self):
+        mine = [dispatch("fix-gate-w1", "dev"), report("fix-gate-w1", "dev", BLOCKED, self.plain)]
+        self.assertEqual(e1.e1_event("fix-gate", mine), "d")
+        self.assertIsNone(e1.e1_event("dev", mine))
+
+    def test_d_failed_remerge_after_fix_is_event(self):
+        mine = [
+            dispatch("fix-gate-w1", "dev"),
+            report("fix-gate-w1", "dev", DONE, self.plain),
+            dispatch("merge-w1-g1", "script"),
+            report("merge-w1-g1", "script", FAIL, self.plain),
+        ]
+        self.assertEqual(e1.e1_event("fix-gate", mine), "d")
+        self.assertEqual(e1.model_for("fix-gate", None, mine), (MODEL_SONNET, e1.E1_WHY["d"]))
+
+    def test_d_green_remerge_after_fix_is_none(self):
+        mine = [
+            dispatch("fix-gate-w1", "dev"),
+            report("fix-gate-w1", "dev", DONE, self.plain),
+            dispatch("merge-w1-g1", "script"),
+            report("merge-w1-g1", "script", DONE, self.plain),
+        ]
+        self.assertEqual(e1.model_for("fix-gate", None, mine), (MODEL_HAIKU, None))
 
     def test_model_for_haiku_without_event(self):
         self.assertEqual(e1.model_for("dev", {"owner_sonnet": True}, []), (MODEL_HAIKU, None))
@@ -168,7 +196,7 @@ class ReplayTest(_SeqBase):
 
     nxt = RouteTest.nxt
 
-    def check(self, mine, task=TASK):
+    def assert_e1_why(self, mine, task=TASK):
         r = self.nxt(mine, task)
         if r and r.get("action") == "dispatch" and r["agent"] in ("dev", "reviewer") and r["model"] in (MODEL_SONNET, MODEL_OPUS):
             self.assertTrue((r.get("why") or "").startswith("E1("), mine)
@@ -198,15 +226,15 @@ class ReplayTest(_SeqBase):
             [dev("a1"), rep("BLOCKED", "dev", "a1")],
         ]
         for mine in logs:
-            self.check(mine)
-        self.check([], {**TASK, "owner_sonnet": True})
-        self.check([dev("a1"), done("a1"), rev("a2"), rep("FAIL", "reviewer", "a2")], {**TASK, "review_sonnet": True})
+            self.assert_e1_why(mine)
+        self.assert_e1_why([], {**TASK, "owner_sonnet": True})
+        self.assert_e1_why([dev("a1"), done("a1"), rev("a2"), rep("FAIL", "reviewer", "a2")], {**TASK, "review_sonnet": True})
 
     def test_e1_events_each_dispatch_sonnet_with_their_why(self):
-        self.assertEqual(self.check([dev("a1"), rep("ESCALATE", "dev", "a1")])["why"][:5], "E1(b)")
-        self.assertEqual(self.check([dev("a1"), done("a1"), rev("a2"), rep("ESCALATE", "reviewer", "a2")])["why"][:5], "E1(c)")
+        self.assertEqual(self.assert_e1_why([dev("a1"), rep("ESCALATE", "dev", "a1")])["why"][:5], "E1(b)")
+        self.assertEqual(self.assert_e1_why([dev("a1"), done("a1"), rev("a2"), rep("ESCALATE", "reviewer", "a2")])["why"][:5], "E1(c)")
         reds = [dev("a1"), done("a1"), script("a2", "test run: x"), red(self.d, "a2"), dev("a3"), done("a3"), script("a4", "test run: x"), red(self.d, "a4")]
-        self.assertEqual(self.check(reds)["why"][:5], "E1(a)")
+        self.assertEqual(self.assert_e1_why(reds)["why"][:5], "E1(a)")
 
 
 if __name__ == "__main__":

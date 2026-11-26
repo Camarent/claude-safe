@@ -1,5 +1,6 @@
 """Headless `claude -p` session: build args, run with a timeout, parse the usage into one flat dict."""
 
+import calendar
 import contextlib
 import json
 import os
@@ -13,7 +14,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from datetime import datetime, timedelta
-from typing import Any, NoReturn
+from typing import Any, NamedTuple, NoReturn
 from zoneinfo import ZoneInfo
 
 from .configuration import (
@@ -51,6 +52,7 @@ from .configuration import (
     ops_flags,
     project,
     scratch_allow,
+    tool_setting,
 )  # module-level names so tests can patch them
 from .util import write_text
 
@@ -397,33 +399,92 @@ def usage(res, guards=()) -> dict[str, Any]:
 
 
 LIMIT_RE = re.compile(r"hit your .{0,30}limit", re.I)
-RESET_RE = re.compile(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s*(?:\(([^)]+)\))?", re.I)
+# the reset forms seen in notices: `resets in 2 hours 10 minutes`, `resets 8pm (UTC)`, `resets 20:00 (UTC)`, `resets Nov 27, 8pm (UTC)`, `resets Nov 27 at 8:00pm`
+RESET_IN_RE = re.compile(r"resets\s+in\s+(?:(?P<h>\d+)\s*h(?:ours?|rs?)?\s*)?(?:(?P<m>\d+)\s*min(?:ute)?s?)?", re.I)
+RESET_AT_RE = re.compile(
+    r"resets\s+(?:(?P<mon>[a-z]{3,9})\s+(?P<day>\d{1,2})(?:,|\s+at)?\s+)?(?P<h>\d{1,2})(?::(?P<min>\d{2}))?(?:\s*(?P<ampm>[ap]m))?\s*(?:\((?P<zone>[^)]+)\))?",
+    re.I,
+)
+MONTHS = {name.lower(): i for i, name in enumerate(calendar.month_abbr) if name}
 
 
-def limit_wait_s(res, now=None) -> float | None:
-    """-> seconds to wait when RES is a usage-limit notice (`You've hit your 5-hour limit · resets 8pm (UTC)`), else None.
-    Without a parsable reset time: LIMIT_FALLBACK_S. The notice is a short result; an agent's long text never counts."""
+class LimitWait(NamedTuple):
+    seconds: float  # the wait, margin included (LIMIT_FALLBACK_S when no reset time is known)
+    known: bool  # False: no parsable reset time or zone; the wait is a fallback, re-checked in slices
+
+
+def _reset_time(m, t) -> datetime:
+    """-> the reset time of the absolute RESET_AT_RE match M, counted from the aware time T. Raises ValueError, KeyError on an impossible value."""
+    hour = int(m["h"]) % 12 + (12 if (m["ampm"] or "").lower() == "pm" else 0) if m["ampm"] else int(m["h"])
+    reset = t.replace(hour=hour, minute=int(m["min"] or 0), second=0, microsecond=0)
+    if m["mon"]:  # a month and day: a date already passed this year means next year
+        reset = reset.replace(month=MONTHS[m["mon"][:3].lower()], day=int(m["day"]))
+        return reset if reset > t else reset.replace(year=t.year + 1)
+    return reset if reset > t else reset + timedelta(days=1)  # a clock time already passed today means tomorrow
+
+
+def _relative_s(text) -> int | None:
+    """-> the seconds of a `resets in 2 hours 10 minutes` form in TEXT, else None."""
+    rel = RESET_IN_RE.search(text)
+    if not rel or not (rel["h"] or rel["m"]):
+        return None
+    return int(rel["h"] or 0) * 3600 + int(rel["m"] or 0) * 60
+
+
+def _absolute_wait(text, now_ts) -> LimitWait:
+    """-> the wait to a clock or dated reset in TEXT, counted from NOW_TS; unknown (fallback) when it cannot be read."""
+    m = RESET_AT_RE.search(text)
+    if not m or (m["ampm"] is None and m["min"] is None):
+        return LimitWait(LIMIT_FALLBACK_S, False)
+    try:
+        tz = ZoneInfo(m["zone"]) if m["zone"] else None
+        t = datetime.fromtimestamp(now_ts, tz)
+        reset = _reset_time(m, t)
+    except (KeyError, ValueError, OSError):  # unknown zone name, no such month, impossible date or hour
+        return LimitWait(LIMIT_FALLBACK_S, False)
+    return LimitWait((reset - t).total_seconds() + LIMIT_MARGIN_S, True)
+
+
+def limit_wait(res, now=None) -> LimitWait | None:
+    """-> the wait when RES is a usage-limit notice (`You've hit your 5-hour limit · resets 8pm (UTC)`), else None.
+    NOW: epoch seconds (default: the clock). The notice is a short result; an agent's long text never counts."""
     text = str(res.get("result") or "").strip()
     if not text or len(text) > LIMIT_TEXT_MAX or not LIMIT_RE.search(text):
         return None
-    m = RESET_RE.search(text)
-    if not m:
-        return LIMIT_FALLBACK_S
-    try:
-        tz = ZoneInfo(m[4]) if m[4] else None
-    except (KeyError, ValueError, OSError):  # unknown zone name
-        return LIMIT_FALLBACK_S
-    t = datetime.fromtimestamp(now, tz) if now is not None else datetime.now(tz)
-    hour = int(m[1]) % 12 + (12 if m[3].lower() == "pm" else 0)
-    reset = t.replace(hour=hour, minute=int(m[2] or 0), second=0, microsecond=0)
-    if reset <= t:
-        reset += timedelta(days=1)
-    return (reset - t).total_seconds() + LIMIT_MARGIN_S
+    secs = _relative_s(text)
+    if secs is not None:
+        return LimitWait(secs + LIMIT_MARGIN_S, True)
+    return _absolute_wait(text, time.time() if now is None else now)
 
 
-def session(args, cwd, timeout=None, done_file=None, env_extra=None, pgid_file=None) -> dict[str, Any]:
+def limit_wait_s(res, now=None) -> float | None:
+    """-> seconds to wait when RES is a usage-limit notice, else None (see limit_wait)."""
+    w = limit_wait(res, now)
+    return None if w is None else w.seconds
+
+
+def _limit_sleep(lw, sleep, now, recheck) -> float:
+    """Sleep out the limit wait LW in slices of at most RECHECK seconds; -> seconds slept.
+    Known reset: slices until NOW() reaches the reset time. Unknown: one fallback slice, then the session runs again."""
+    if not lw.known:
+        s = min(lw.seconds, recheck)
+        print(f"wave: usage limit reset unknown; re-checking in {s / 60:.0f} min", file=sys.stderr, flush=True)
+        sleep(s)
+        return s
+    reset = now() + lw.seconds
+    slept = 0.0
+    while (left := reset - now()) > 0:
+        s = min(left, recheck)
+        print(f"wave: usage limit wait, slice {s / 60:.0f} min of {left / 60:.0f} min left", file=sys.stderr, flush=True)
+        sleep(s)
+        slept += s
+    return slept
+
+
+def session(args, cwd, timeout=None, done_file=None, env_extra=None, pgid_file=None, sleep=time.sleep, now=time.time) -> dict[str, Any]:
     """Run one session (timeout default WAVE_TIMEOUT; done_file, pgid_file: see run_claude). -> usage dict.
-    A usage-limit notice as the result is not a failure of the task: wait for the printed reset time and run the session again (at most LIMIT_WAIT_MAX_S in all)."""
+    A usage-limit notice as the result is not a failure of the task: wait for the printed reset time in LIMIT_RECHECK_S slices and run the session again (at most LIMIT_WAIT_MAX_S in all).
+    SLEEP and NOW are the clock of the wait (tests inject fakes)."""
     t = default_timeout() if timeout is None else timeout
     waited = 0.0
     token = uuid.uuid4().hex  # the scratch log is shared by the stage and its sessions run in parallel: denial_log.py stamps each row with the token, so only this session's rows name its denials
@@ -434,9 +495,8 @@ def session(args, cwd, timeout=None, done_file=None, env_extra=None, pgid_file=N
         res = run_claude(args, cwd, t, **extra)
         if res.get("stopped"):
             return usage(res, guard_rows(scratch, token))
-        wait = limit_wait_s(res)
-        if wait is None or waited + wait > LIMIT_WAIT_MAX_S:
+        lw = limit_wait(res, now())
+        if lw is None or waited + lw.seconds > LIMIT_WAIT_MAX_S:
             return usage(res, guard_rows(scratch, token))
-        print(f"wave: usage limit hit ({res.get('result')!r}); waiting {wait / 60:.0f} min, then running the session again", file=sys.stderr, flush=True)
-        time.sleep(wait)
-        waited += wait
+        print(f"wave: usage limit hit ({res.get('result')!r}); waiting {lw.seconds / 60:.0f} min, then running the session again", file=sys.stderr, flush=True)
+        waited += _limit_sleep(lw, sleep, now, tool_setting("LIMIT_RECHECK_S"))

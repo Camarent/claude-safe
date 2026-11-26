@@ -3,6 +3,9 @@
 from .limits import PREREVIEW_SKIP_REVIEWER
 from .planning import GENERATED_MARKER_RE
 
+EMPTY_TEST_MARKER_DEFAULT = "# noassert:"  # a test with no assertion carries this marker and a reason on its def line or the line above
+EMPTY_TEST_FILE_RE = r"(?:^|/)(?:test_[^/]*|[^/]*_test)\.py$"  # test files: test_*.py and *_test.py, matched on the repo path
+
 # per-project settings: <workspace>/pipeline.json overrides these defaults
 # Opus sec audit runs only when the diff touches one of these (fnmatch on the repo path, or an added line matching SEC_AUDIT_CONTENT); `sec_audit_paths: ["*"]` = always.
 SEC_AUDIT_PATHS = [
@@ -79,6 +82,19 @@ PROJECT_DEFAULTS: dict = {
     "webtest_requires_tools": ["mcp__chrome-devtools"],  # tool-name prefixes the browser check needs; [] = never skip it
     "webtest_build": None,  # optional build command: the web-tester runs it first on the stage branch checkout and serves only that fresh build, naming the commit in its report; None = brief unchanged
     "docs_dir": "docs",  # folder below the repo that prepare-repo names in a `## Docs` section of CLAUDE.md (written only when the folder exists)
+    "docs_impact_gate": True,  # docs impact check (pipeline/docs_impact.py, after the cite check): a changed file or top-level def a doc cites needs that doc changed too; false = off
+    # cite check over the whole docs folder at every stage end (steps_finaltest.py --doc-cites), not only the docs the stage changed; false = no step
+    "docs_cite_final": True,
+    # docs freshness audit (freshness-auditor, Haiku): once per feature, in its finish phase, beside sec and arch; false = no audit
+    "docs_fresh_audit": True,
+    "empty_test_gate": True,  # empty-test check (pipeline/empty_tests.py, after the docs impact check): a changed test function with no assert, raises check or mock assertion is FAIL; false = off
+    "empty_test_marker": EMPTY_TEST_MARKER_DEFAULT,  # comment on the def line or the line above that skips a test with no assertion; it must give a reason after the colon
+    "empty_test_file_re": EMPTY_TEST_FILE_RE,  # regex over the repo path: the changed files the empty-test check reads as test files
+    "docs_impact_exempt": [
+        "docs/INDEX.md",
+        "docs/decisions.md",
+        "docs/retro-lessons.md",
+    ],  # globs (repo-relative) of docs the docs impact check never flags as stale
     "manual_review_docs": [],  # doc paths (repo-relative) the acceptance reviewer reads with the diff to judge each `eyes:` item; [] = none listed
     "acceptance_prep": [],  # setup commands (npm ci, a venv, a build) the acceptance step runs first in its fresh worktree, before the checklist commands; a failing one fails the step
     "worktree_setup": [],  # commands (venv, npm ci) run with sh -c in each NEW job worktree right after it is created, so a dev starts with a ready environment; a failing one removes the worktree and stops task creation; [] = none
@@ -104,11 +120,18 @@ PROJECT_DEFAULTS: dict = {
         "ffprobe",
     ],  # binaries a red-base failure names when its output has MISSING_BINARY_MARK (the red-base message adds a line listing them)
     "tool_settings": {},  # {key: value} overriding a named tool setting (configuration/literals.py `tool_setting`); env CS_<NAME> wins over it
+    "acceptance_timing_flag": None,  # flag appended to the project test command in the acceptance command lines (timing output goes to the stage reports folder); None = no flag
+    "pipeline_install_check": None,  # command the driver runs after each phase merge, before the next phase; a failure blocks the stage; None = no check
+    "ci_available": True,  # false where no CI runs for the repo: pr-ready and master-merged skip the CI waits and merge on green local gates, and say so
 }
 GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
 GATE_COLLISION_RERUNS_KEY = "gate_collision_reruns"  # the PROJECT_DEFAULTS key above
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above
+EMPTY_TEST_KEY = "empty_test_gate"  # the PROJECT_DEFAULTS key (empty_tests.py gate switch)
+EMPTY_TEST_DEFAULT = True  # the key when pipeline.json does not set it
+EMPTY_TEST_MARKER_KEY = "empty_test_marker"  # the PROJECT_DEFAULTS key
+EMPTY_TEST_FILE_KEY = "empty_test_file_re"  # the PROJECT_DEFAULTS key
 SECRET_SCAN_CONFIG_KEY = "secret_scan_config"  # nosec B105 - a JSON key name, not a secret; pipeline.json key, not a PROJECT_DEFAULTS key: a gitleaks config path (relative to the repo); unset = gitleaks' own rules
 GITLEAKS_TOOL = "gitleaks"  # the secret scanner binary (gate_secrets.scan_diff)
 GITLEAKS_CLEAN_RC = 0  # gitleaks exit code: no leak found
