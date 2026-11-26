@@ -23,7 +23,7 @@ GATE_PARALLEL_KEY = "parallel"
 GATES_KEY = "gates"
 MERGE_GATES_KEY = "gates_merge"  # gates that run only at the merge gate, the red-base preflight and the final test, never in a task's job worktree
 REGISTRY_FILES_KEY = "registry_files"  # pipeline.json: [{"path", "when"}]: a task whose text matches the regex `when` must list `path` in its Predicted paths (a registry file many tasks append to)
-FINAL_GATES_KEY = "gates_final"  # gates that run only in the final test (final_check.py): once per stage, never in a task, at a wave merge or in the preflight
+FINAL_GATES_KEY = "gates_final"  # gates that run only in the final test (.claude/tools/audit/final_check.py): once per stage, never in a task, at a wave merge or in the preflight
 
 
 def gates_of(cfg, key=GATES_KEY) -> list[dict]:
