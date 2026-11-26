@@ -13,7 +13,8 @@ AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "a
 # dev.md: 15100 (was 14600) and reviewer.md: 13700 (was 13300) because the five denial brief rules (cd_git, qrun, segments, sed, guard) sit in both main files: test_escalation_docs.py requires them word for word in each doc, so they cannot move to rare-rules.md.
 # architect.md: 27400 (was 27000) because the UI job rule bullet (glossary, sign-off, prototype) is always-read planning guidance; it sits in the main file, not rare-rules.md.
 # architect.md: 27700 (was 27400) because the three plan-check rules (qrun-op, pins, docs-count) are always-read planning guidance; they sit in the main file, not rare-rules.md.
-CAPS = {"architect.md": 27700, "dev.md": 15100, "reviewer.md": 13700}
+# architect.md: 28000 (was 27700) because task-8 replaced the .work output bullet with the output-path rule and added the research and ops-input bullets; they are always-read planning guidance, so they sit in the main file, not rare-rules.md.
+CAPS = {"architect.md": 28000, "dev.md": 15100, "reviewer.md": 13700}
 
 # Gate-rule keywords that existed in the agent files before the split.
 KEYWORDS = ("ccn", "mutation check", "PLAN GAP", "Predicted paths", "VERDICT")
@@ -57,6 +58,12 @@ class AgentRules(unittest.TestCase):
     def test_architect_uses_batch(self):
         text = read(os.path.join(AGENTS, "architect.md"))
         self.assertIn("`cs-plan batch`", text)
+
+    def test_architect_research_and_ops_input_rules(self):
+        text = read(os.path.join(AGENTS, "architect.md"))
+        self.assertNotIn("absolute main-tree paths", text)
+        self.assertIn("Research task (`Type: research`", text)
+        self.assertIn("the driver blocks once up front", text)
 
     def test_merger_auto_merges_only_init_add_add_conflicts(self):
         text = read(os.path.join(AGENTS, "merger.md"))
