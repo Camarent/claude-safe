@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 from pipeline import gitx, worktree_merge, worktrees  # noqa: E402  (sys.path set above)
-from pipeline.configuration import WORK_DIR  # noqa: E402  (sys.path set above)
+from pipeline.configuration import DONE, FAIL, WORK_DIR  # noqa: E402  (sys.path set above)
 from pipeline.plan_files import task_outputs  # noqa: E402  (sys.path set above)
 from pipeline.util import read_text, work_path  # noqa: E402  (sys.path set above)
 
@@ -93,6 +93,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--report", required=True)
     a = ap.parse_args(argv)
     code, line = apply(os.path.abspath(a.dir), a.stage, a.task, a.report)
+    print(f"{VERDICT_PREFIX} {DONE if code == 0 else FAIL}")  # the driver reads this line; "DONE: ..." alone parses as "no clear verdict"
     print(line)
     return code
 

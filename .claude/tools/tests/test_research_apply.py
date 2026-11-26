@@ -1,5 +1,7 @@
 """research_apply: a scout report body is written to the one Outputs: path of a task and committed; nothing else changes."""
 
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -160,6 +162,21 @@ class ResearchApply(unittest.TestCase):
     def test_scout_role_allows_done_or_blocked(self):
         self.assertEqual(ROLES[SCOUT], ((DONE, BLOCKED), BLOCKED))
         self.assertEqual(verdicts.verdict(SCOUT, "report written\nDONE")[0], DONE)
+
+    def _main_output(self, code, line):
+        out = io.StringIO()
+        argv = ["--stage", STAGE, "--task", TASK, "--report", self.report]
+        with mock.patch.object(research_apply, "apply", return_value=(code, line)), contextlib.redirect_stdout(out):
+            self.assertEqual(research_apply.main(argv), code)
+        return out.getvalue()
+
+    def test_main_prints_a_verdict_line_the_driver_reads(self):
+        done = self._main_output(0, "DONE: out/report.md committed abc")
+        self.assertEqual(done.splitlines()[0], "VERDICT: DONE")
+        self.assertEqual(verdicts.verdict("script", done), (DONE, "report line"))
+        fail = self._main_output(1, "FAIL: empty body")
+        self.assertEqual(fail.splitlines()[0], "VERDICT: FAIL")
+        self.assertEqual(verdicts.verdict("script", fail)[0], "FAIL")
 
 
 if __name__ == "__main__":
