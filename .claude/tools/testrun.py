@@ -17,13 +17,15 @@ from pathlib import Path
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402  (sys.path set above)
 from localmodel.prereview import job_diff  # noqa: E402  (sys.path set above)
-from pipeline import cite_check, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
+from pipeline import cite_check, docs_impact, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
 from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     ADD_REPO_CMD,
     BLOCKED,
     CITE_CHECK_DEFAULT,
     CITE_CHECK_KEY,
     CITE_DIFF_MAX_CHARS,
+    DOCS_IMPACT_DEFAULT,
+    DOCS_IMPACT_KEY,
     DONE,
     FAIL,
     GATE_TIMEOUT_S,
@@ -195,6 +197,20 @@ def _cite_findings(cwd, d, stage, task, report, diff_fn):
     return "\n".join(["FAIL cite check: a path:line cite does not hold:", *msgs, *bare]), ""
 
 
+def _docs_impact_findings(cwd, d, stage, task, diff_fn):
+    """-> the FAIL note naming each doc the job diff leaves stale (docs_impact.check), else "". Off when the `docs_impact_gate` key of pipeline.json is false; no job diff -> nothing (_cite_findings already says so)."""
+    cfg = project(d)
+    if not cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT):
+        return ""
+    diff = diff_fn(stage, task, d, CITE_DIFF_MAX_CHARS)
+    if not diff:
+        return ""
+    msgs = docs_impact.check(cwd, diff, docs_impact.doc_files(cwd, cfg["docs_dir"]), cfg)
+    if not msgs:
+        return ""
+    return "\n".join(["FAIL docs impact: a changed file or top-level def is cited by a doc the diff leaves unchanged:", *msgs])
+
+
 def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_diff, report=""):
     """-> (verdict word, note). `runner`, `scan` and `diff_fn` are injectable for tests; `report` is the dev report file. A Test line already green on the identical tree is skipped, noted with its run id. A finding of the secret or path gate is FAIL before any Test line runs. Green Test lines then run the cite check (`_cite_findings`): a wrong cite is FAIL."""
     try:
@@ -227,6 +243,9 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
     cite, cite_note = _cite_findings(cwd, d, stage, task, report, diff_fn)
     if cite:
         return FAIL, cite
+    docs = _docs_impact_findings(cwd, d, stage, task, diff_fn)
+    if docs:
+        return FAIL, docs
     return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes, *([cite_note] if cite_note else [])])
 
 

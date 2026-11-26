@@ -31,6 +31,14 @@ from .cite_check import (  # noqa: F401  (re-export: the facade keeps every name
     CITE_URL_RE,
     CITE_WINDOW_LINES,
     CITE_WORD_RE,
+    DOCS_IMPACT_DEF_RE,
+    DOCS_IMPACT_DEFAULT,
+    DOCS_IMPACT_EXEMPT_KEY,
+    DOCS_IMPACT_HEADER_RE,
+    DOCS_IMPACT_KEY,
+    DOCS_IMPACT_PATH_RE,
+    DOCS_IMPACT_SYMBOL_MIN,
+    DOCS_IMPACT_TICK_RE,
 )
 from .cleanup import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     ACCEPTANCE_TMP_PREFIX,
