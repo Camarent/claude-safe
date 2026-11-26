@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from . import claude, cli_wave, gitx, metrics, plan_check, plan_review, pr_ops, progress
+from . import claude, cli_wave, entry, gitx, metrics, plan_check, plan_review, pr_ops, progress
 from . import plan_files as pf
 from .branches import dirty_block, ensure_work_branch, red_base_block
 from .briefs import NAV
@@ -203,7 +203,7 @@ def run_done_when(a, phase) -> tuple[bool, str]:
 
 def block(a, message) -> int:
     write_text(os.path.join(pf.feature_dir(a), BLOCKED_FILE), message + "\n")
-    print(f"BLOCKED, back to lead (also in {pf.feature_dir(a)}/BLOCKED.md):\n{message}")
+    print(entry.blocked_line(pf.feature_dir(a), message))
     return EXIT_BLOCKED
 
 
@@ -222,7 +222,7 @@ def _dry_feature(a, ns):
         print(f"   then done_when: {p['done_when']}")
     phases = pf.read_phases(ns)
     if phases and not any(pf.is_finish_dir(x["dir"]) for x in phases):
-        print(f"== phase {int(phases[-1]['dir'][:2]) + 1:02d}-finish: the driver adds it: tests, audits, master merge, push, cleanup, feature retro")
+        print(entry.banner(f"phase {int(phases[-1]['dir'][:2]) + 1:02d}-finish: the driver adds it: tests, audits, master merge, push, cleanup, feature retro"))
     return 0
 
 
@@ -284,12 +284,12 @@ def _run_phase(a, phase):
             f"# {S}\n\nThe closing phase: no tasks of its own. It runs the tests, audits, master merge, push, index, cleanup and the feature retro for all phases before it.\n",
         )
     if not os.path.exists(pf.tasks_path(folder)):
-        print(f"== planning {S}")
+        print(entry.banner(f"planning {S}"))
         problems = plan_phase(a, phase)
         if problems:
             return block(a, f"phase {phase['dir']} could not be planned cleanly:\n" + "\n".join(problems[:10]))
     _record_base(a, folder, phase)
-    print(f"== running {S}")
+    print(entry.banner(f"running {S}"))
     rc = cli_wave.cmd_run(Run.of(a).at(stage=S))
     if rc:
         return rc  # 3 limit, 4 asks the lead (also the last phase's master-merge pause)
@@ -300,7 +300,7 @@ def _run_phase(a, phase):
     if not ok:
         return block(a, f"phase {phase['dir']}: done_when failed: `{phase['done_when']}`\n{out}")
     mark_phase_done(Run(dir=a.dir, feature=a.feature), phase["dir"])
-    print(f"== phase {phase['dir']} done")
+    print(entry.banner(f"phase {phase['dir']} done"))
     # the phase stays done: a relaunch after the sync continues with the next phase
     if pf.next_open_phase(pf.read_phases(Run(dir=a.dir, feature=a.feature))) is not None and (msg := install_check(a)):
         return block(a, msg)
@@ -319,7 +319,7 @@ def cmd_feature(a) -> int:
     lock = os.path.join(pf.feature_dir(a), FEATURE_LOCK)
     if not cli_wave._take_lock(lock):
         print(f"blocked: wave.py feature already runs {a.feature} ({lock})")
-        return 4
+        return EXIT_BLOCKED
     try:
         return _feature(a)
     finally:
@@ -332,20 +332,20 @@ def _feature(a):
     preflight()
     if msg := dirty_block(a):
         print(msg)
-        return 4
+        return EXIT_BLOCKED
     if msg := red_base_block(a):
         print(msg)
-        return 4
+        return EXIT_BLOCKED
     pr_ops.sweep_before_branch(a)
     if msg := ensure_work_branch(a, a.feature):
         print(msg)
-        return 4
+        return EXIT_BLOCKED
     ns = Run(dir=a.dir, feature=a.feature)
     if not a.dry_run and pf.ensure_finish(ns):
-        print(f"== added the closing phase to .work/{a.feature}/Plan.md")
+        print(entry.banner(f"added the closing phase to .work/{a.feature}/Plan.md"))
     if _single_stage(a, ns):
         stage = Run.of(a).at(stage=a.feature)
-        print(f"== single-stage plan: running {a.feature}")
+        print(entry.banner(f"single-stage plan: running {a.feature}"))
         return cli_wave.dry_walk(stage) if a.dry_run else cli_wave.cmd_run(stage)
     if a.dry_run:
         return _dry_feature(a, ns)

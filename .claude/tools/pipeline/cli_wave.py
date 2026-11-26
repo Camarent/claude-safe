@@ -19,7 +19,7 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
-from . import driver, gitx, graph, lead_context, limits, metrics, ops_preflight, pr_ops, progress
+from . import driver, entry, gitx, graph, lead_context, limits, metrics, ops_preflight, pr_ops, progress
 from . import preflight as env_preflight
 from .branches import dirty_block, ensure_work_branch, red_base_block
 from .briefs import ENV_DRY_NO_CCN
@@ -32,6 +32,8 @@ from .configuration import (
     EV_REPORT,
     EV_RETRY,
     EV_SKIP,
+    EXIT_BLOCKED,
+    EXIT_LIMIT,
     FAIL,
     NO_TASKS_HINT,
     PASS,
@@ -153,8 +155,8 @@ def _dry_loop(a, tmp, c):
         for d in r["dispatches"]:
             n += d["agent"] != "script" and is_heavy(d)
             _dry_answer(a, c, tmp, d, steps)
-    print(f"limit: {n} Sonnet/Opus dispatches, {wave} waves with one, {steps} steps")
-    return 3
+    print(entry.limit_line(f"{n} Sonnet/Opus dispatches, {wave} waves with one, {steps} steps"))
+    return EXIT_LIMIT
 
 
 def _stale_reruns(evs, task, role):
@@ -257,12 +259,12 @@ def cmd_run(a) -> int:
     lock = os.path.join(c.w, STAGE_LOCK)  # one driver per stage: an unreported dispatch at `next` means its session died
     if not _take_lock(lock):
         print(f"blocked: wave.py already runs this stage ({lock})")
-        return 4
+        return EXIT_BLOCKED
     try:
         checkout = _checkout_lock(a)  # one driver per main checkout: stages on the same repo switch its branch
         if not _take_lock(checkout):
             print(f"blocked: another stage runs in {repo_path(a.dir)}")
-            return 4
+            return EXIT_BLOCKED
         try:  # the locks are held before the guards: a second driver is refused before it runs gates, the sweep or a branch switch
             return _run_locked(a, c)
         finally:
@@ -320,21 +322,21 @@ def _run_locked(a, c):
     """The stage run under the stage lock taken by cmd_run: guards, recovery, then the loop."""
     if _plan_only(c):  # a feature plan with no tasks yet: the loop would say `done: no tasks` with exit 0
         print(f"blocked: no TASKS.md in {c.w}, only Plan.md: run `{NO_TASKS_HINT.format(stage=a.stage)}`")
-        return 4
+        return EXIT_BLOCKED
     if files := reset_squash_residue(a, c):
         print(f"reset {len(files)} file(s) left by an interrupted squash merge: {', '.join(files)}")
     if msg := dirty_block(a):
         print(msg)
-        return 4
+        return EXIT_BLOCKED
     if msg := red_base_block(a):
         print(msg)
-        return 4
+        return EXIT_BLOCKED
     pr_ops.sweep_before_branch(a)
     if msg := ensure_work_branch(a, a.stage):
         print(msg)
-        return 4
+        return EXIT_BLOCKED
     # a block from an earlier run is stale: a dev reading it would think its dependencies are blocked
-    Path(os.path.join(c.w, BLOCKED_FILE)).unlink(missing_ok=True)
+    entry.clear_blocked(c.w)
     n = recover_unreported(c)
     if n:
         print(f"recovered {n} step(s) that were running when the driver stopped: they run again once")
@@ -343,17 +345,17 @@ def _run_locked(a, c):
     preflight()  # one probe; if the model is down it sets STRATA=0: `lp find` uses keyword/symbol search, local-model steps skip
     if bad := review_recover(a):  # under the lock only: a crashed run left a reviewer's mutations in a job worktree
         print("blocked: review reset failed: " + "; ".join(bad))
-        return 4
+        return EXIT_BLOCKED
     if problems := _env_preflight(a, c):
         for msg, fix in problems:
             print(f"blocked: {msg} (fix: {fix})")
         print(f"blocked: env preflight failed, see {os.path.join(c.w, BLOCKED_FILE)}")
-        return 4
+        return EXIT_BLOCKED
     if steps := ops_preflight.open_ops(a, c):  # once, before any dispatch: every open manual step with no task dependency
         for s in steps:
             print(f"blocked: manual step {s['id']} is open: {s['text']} (dependents: {', '.join(s['dependents']) or 'none'}; skip: {s['skip']})")
-        write_text(os.path.join(c.w, BLOCKED_FILE), ops_preflight.blocked_text(steps) + "\n")
-        return 4
+        entry.write_blocked(c.w, ops_preflight.blocked_text(steps) + "\n")
+        return EXIT_BLOCKED
     for s in ops_preflight.later_ops(c):  # the run goes on: the lead does these after the task they wait for
         print(f"lead step {s['id']} (after {', '.join(s['after'])}): {s['text']}")
     return run_loop(a, c)
@@ -460,13 +462,13 @@ def _ask_text(a, msg):
 def _blocked(a, c, r):
     """The stage is blocked: -> exit code. A block goes back to the lead (main session); no model session decides it."""
     if a.max_waves and c.mwave + 1 > a.max_waves:
-        print(f"limit: max-waves {a.max_waves}")
-        return 3
+        print(entry.limit_line(f"max-waves {a.max_waves}"))
+        return EXIT_LIMIT
     msg = _ask_text(a, r.get("message", ""))
-    write_text(os.path.join(c.w, BLOCKED_FILE), msg + "\n")
+    entry.write_blocked(c.w, msg + "\n")
     metrics.total_line(c)
-    print(f"BLOCKED, back to lead (also in {c.w}/BLOCKED.md):\n{msg}")
-    return 4
+    print(entry.blocked_line(c.w, msg))
+    return EXIT_BLOCKED
 
 
 def run_loop(a, c) -> int:
@@ -475,13 +477,13 @@ def run_loop(a, c) -> int:
         act = r.get("action")
         if act == "done":
             metrics.total_line(c)
-            print(f"done: {r.get('message', '')}")
+            print(entry.done_line(r.get("message", "")))
             return 0
         if act == "dispatch":
             hit = _limit_hit(a, c, r["dispatches"])
             if hit:
                 print(hit)
-                return 3
+                return EXIT_LIMIT
             _run_wave(c, order_by_model(r["dispatches"]))
         elif act == "ask_main":
             return _blocked(a, c, r)
@@ -489,8 +491,8 @@ def run_loop(a, c) -> int:
             print(f"unknown action: {r}")
             return 1
         if a.max_budget_usd is not None and c.cost > a.max_budget_usd:
-            print(f"limit: budget {a.max_budget_usd} USD exceeded ({c.cost:.2f})")
-            return 3
+            print(entry.limit_line(f"budget {a.max_budget_usd} USD exceeded ({c.cost:.2f})"))
+            return EXIT_LIMIT
 
 
 def _verdicts_since_reset(mine):
