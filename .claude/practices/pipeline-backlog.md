@@ -27,6 +27,7 @@ Closed items live in git history, not here. Gate state: run `scripts/dev.sh chec
 - [ ] Re-score the pipeline on the next real stage with `practices/score.md` (weakest: plan-context recall, lead load, guard false denials).
 
 ## Open: fixes
+- [ ] Webtest and report tasks: the report path is an absolute untracked file in the main checkout `.work` (outside the job worktree), and it cites the commit it ran on, which goes stale with every fix commit (kata M25 task-24 failed 3 review rounds on this). Make a script write the report (command result, tip sha, date) instead of the dev, or give such a task a tracked `Outputs:` path inside the worktree; never let a model type a sha.
 - [ ] Dev must not run the full test suite: add a check (script, not a rule for the model) that fails or warns when a dev or reviewer session runs the project's full gate. Devs use the unit or scoped set; full runs belong to the driver's gate and merge steps.
 - [ ] Gate-time warnings per level: warn when one gate level runs past its limit, as is done for the full run. Defaults: unit 2 min, merge 5 min, full 9 min, all settings in `pipeline.json` (no literals in code). The warning shows in the driver status and the final report so the owner can act (split or speed up the gate). Part of the retro after M25.
 - [ ] Research tasks: `Type: research` exists (`planning.md`, `architect.md`, `plan_research.py`). Check by a trial plan that planners can use it end to end (task, Outputs path, consuming task, plan check) and fix gaps in planner tooling or docs.
