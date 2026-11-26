@@ -445,9 +445,19 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(r["message"].count("was dispatched but never reported"), 2)
         self.assertEqual(len(r["message"].split("\n")), 2)
 
+    def cite_check_passes(self):
+        """The stage-end cite check of every doc is the next dispatch (every stage, flags or not); log it DONE."""
+        (c,) = graph.decide(self.a)["dispatches"]
+        self.assertEqual((c["task"], c["agent"]), ("docs-cite-final", "script"))
+        self.log(
+            {"ev": "dispatch", "task": "docs-cite-final", "id": "cite1", "agent": "script", "role": "script", "model": None},
+            {"ev": "report", "task": "docs-cite-final", "role": "script", "verdict": "DONE", "file": "cite.md"},
+        )
+
     def test_all_passed_no_flags_is_done(self):
         self.tasks()
         self.passed()
+        self.cite_check_passes()
         self.assertEqual(graph.decide(self.a), {"action": "done", "message": "all 1 task(s) reviewed PASS"})
 
     def test_merge_ladder_and_index(self):
@@ -477,6 +487,10 @@ class DecideTest(unittest.TestCase):
             {"ev": "report", "task": "merge-w1-2", "role": "merger", "verdict": "DONE", "file": "m2.md"},
         )
         # merged -> index refresh recorded once, then done
+        self.log(  # the stage-end cite check passed (logged without a decide call, so the index refresh still runs once)
+            {"ev": "dispatch", "task": "docs-cite-final", "id": "cite1", "agent": "script", "role": "script", "model": None},
+            {"ev": "report", "task": "docs-cite-final", "role": "script", "verdict": "DONE", "file": "cite.md"},
+        )
         r = graph.decide(self.a)
         self.assertEqual(r["dispatches"][0]["task"], "index-refresh")  # the post-publish phase follows the per-wave refresh
         self.run_index.assert_called_once()
@@ -636,6 +650,7 @@ class DecideTest(unittest.TestCase):
     def test_retro_phases_then_done(self):
         self.tasks(flags="no-merge no-test no-audit no-index no-push no-clean")
         self.passed()
+        self.cite_check_passes()
         (n,) = graph.decide(self.a)["dispatches"]
         self.assertEqual((n["task"], n["agent"], n["model"]), ("retro-numbers", "script", None))
         self.assertIn("retro_numbers.py --verdict --orch .work/s/orch.jsonl --out .work/s/retro/retro-numbers.md", n["prompt"])

@@ -80,6 +80,8 @@ PROJECT_DEFAULTS: dict = {
     "webtest_build": None,  # optional build command: the web-tester runs it first on the stage branch checkout and serves only that fresh build, naming the commit in its report; None = brief unchanged
     "docs_dir": "docs",  # folder below the repo that prepare-repo names in a `## Docs` section of CLAUDE.md (written only when the folder exists)
     "docs_impact_gate": True,  # docs impact check (pipeline/docs_impact.py, after the cite check): a changed file or top-level def a doc cites needs that doc changed too; false = off
+    # cite check over the whole docs folder at every stage end (steps_finaltest.py --doc-cites), not only the docs the stage changed; false = no step
+    "docs_cite_final": True,
     "docs_impact_exempt": [
         "docs/INDEX.md",
         "docs/decisions.md",

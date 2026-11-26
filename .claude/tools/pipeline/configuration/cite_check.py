@@ -51,3 +51,8 @@ DOCS_IMPACT_DEF_RE = re.compile(r"^(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)")
 DOCS_IMPACT_HEADER_RE = re.compile(r"^@@ .* @@ ?(.*)$")  # a hunk header; group 1 = the function context git puts after it
 DOCS_IMPACT_PATH_RE = r"(?<![\w/.-]){path}(?![\w/-]|\.\w)"  # template: a changed path word-bounded in a doc
 DOCS_IMPACT_TICK_RE = r"`{sym}`"  # template: a symbol in backticks in a doc
+DOC_CITES_KEY = "docs_cite_final"  # pipeline.json key: the cite check over the whole docs folder runs at every stage end; False = no step
+DOC_CITES_DEFAULT = True  # the key when pipeline.json does not set it
+DOC_CITES_STEP = "docs-cite-final"  # id of the script step that runs the whole-docs cite check (phases.audit_phases)
+DOC_CITES_FLAG = "--doc-cites"  # steps_finaltest.py mode: check every doc under docs_dir, no --report needed
+DOCS_DIR_KEY = "docs_dir"  # pipeline.json key: folder below the repo that holds the docs

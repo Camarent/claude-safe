@@ -2,8 +2,9 @@
 red alone -> rerun them on the preflight head in a temp worktree; red there too -> PRE_EXISTING_RED (the lead decides); red only on the stage head -> the fix plan.
 
     python3 -I /root/.claude/tools/pipeline/steps_finaltest.py --dir WORKSPACE --stage S --report FILE [--base-head SHA]
+    python3 -I /root/.claude/tools/pipeline/steps_finaltest.py --dir WORKSPACE --doc-cites   (every doc under docs_dir: its cites must hold)
 
-Prints `VERDICT: DONE|FAIL|BLOCKED` and one reason line. `final_files_cmd` (pipeline.json) runs the files: `{files}` is replaced by them."""
+Prints `VERDICT: DONE|FAIL|BLOCKED` and one reason line (`--doc-cites`: one line per bad cite). `final_files_cmd` (pipeline.json) runs the files: `{files}` is replaced by them."""
 
 import argparse
 import os
@@ -16,18 +17,23 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # -I drops the script dir
 from audit import final_check
 
-from pipeline import gitx
+from pipeline import cite_check, generated, gitx
 from pipeline.configuration import (
+    DOC_CITES_FLAG,
+    DOCS_DIR_KEY,
     DONE,
     FAIL,
     FINAL_FILES_CMD_KEY,
     FLAKY_LINE,
+    GENERATED_MARKER_KEY,
+    GENERATED_MARKER_RE,
     PRE_EXISTING_RED,
     TEST_FILE_RE,
     project,
     repo_dir,
     test_env,
 )
+from pipeline.docs_impact import doc_files
 
 BLOCKED = "BLOCKED"  # the verdict word: red on the preflight head too (PRE_EXISTING_RED)
 
@@ -91,14 +97,38 @@ def triage(cfg: dict, repo: str, env: dict, report_text: str, base_head: str = "
     return FAIL, f"red on the stage head only ({', '.join(files)}): the fix plan"
 
 
+def doc_cites(cfg: dict, repo: str) -> tuple[str, list[str]]:
+    """-> (verdict, messages): every *.md under docs_dir is read whole and its cites checked, changed or not (a generated doc is skipped; fenced blocks are not prose); no docs folder -> DONE."""
+    docs_dir = str(cfg.get(DOCS_DIR_KEY) or "")
+    if not docs_dir:
+        return DONE, []
+    rx = str(cfg.get(GENERATED_MARKER_KEY) or GENERATED_MARKER_RE)
+    rows: list[tuple[str, int, str]] = []
+    for doc in doc_files(repo, docs_dir):
+        full = os.path.join(repo, doc)
+        if generated.is_generated(full, rx):
+            continue
+        with open(full, encoding="utf-8", errors="replace") as f:
+            rows.extend((doc, ln, text) for ln, text in enumerate(f.read().splitlines(), 1))
+    msgs = cite_check.check(repo, rows, "")
+    return (FAIL, msgs) if msgs else (DONE, [])
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=".")
     ap.add_argument("--stage", default="")
-    ap.add_argument("--report", required=True)
+    ap.add_argument("--report", default="")
     ap.add_argument("--base-head", default="")
+    ap.add_argument(DOC_CITES_FLAG, dest="doc_cites", action="store_true", help="check every doc under docs_dir (no --report)")
     a = ap.parse_args(argv)
     cfg = project(a.dir)
+    if a.doc_cites:
+        verdict, msgs = doc_cites(cfg, repo_dir(a.dir, cfg))
+        print("\n".join([f"VERDICT: {verdict}", *msgs]))
+        return 0
+    if not a.report:
+        ap.error("--report is required unless " + DOC_CITES_FLAG)
     with open(a.report, encoding="utf-8") as f:
         text = f.read()
     verdict, reason = triage(cfg, repo_dir(a.dir, cfg), {**os.environ, **test_env(cfg, a.dir)}, text, a.base_head)
