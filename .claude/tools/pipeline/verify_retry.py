@@ -1,6 +1,8 @@
 """retry --verify: run the task's Test lines and Done gates on its existing job commit. Green records the step DONE with a report; red records nothing. Never starts a dev."""
 
 import re
+from collections.abc import Callable
+from typing import Any
 
 from .configuration import DONE, EV_REPORT
 from .util import append_event, jprint, paths, read_jsonl, work_path, write_text
@@ -8,7 +10,7 @@ from .util import append_event, jprint, paths, read_jsonl, work_path, write_text
 WHY_MAX = 300
 
 
-def verify_step(a, log, checks):
+def verify_step(a: Any, log: str, checks: Callable[[Any], tuple[str, int] | None]) -> bool:
     """checks(a) -> (note, gate count) when the Test lines and gates are green, else None. -> True when green and DONE is recorded."""
     ok = checks(a)
     if not ok:

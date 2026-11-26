@@ -27,7 +27,7 @@ BLOCK_RE = re.compile(r"^```" + re.escape(AUDIT_TOOLS_TAG) + r"\s*\n(.*?)^```", 
 ASSIGN_RE = re.compile(r"^\w+=")
 
 
-def malformed_audit_lines(repo):
+def malformed_audit_lines(repo: str) -> list[str]:
     """-> report lines for audit-tools lines with too few fields (never rewritten). No block, no report."""
     cfg = project(repo)
     path = os.path.join(repo, str(cfg.get("audit_file")))
@@ -48,7 +48,7 @@ def malformed_audit_lines(repo):
     return out
 
 
-def worktrees_missing(repo):
+def worktrees_missing(repo: str) -> bool:
     """True when pipeline.json (or its absence) leaves the `worktrees` key unset."""
     path = os.path.join(repo, PIPELINE_JSON)
     if not os.path.exists(path):
@@ -125,7 +125,7 @@ def _probe(python, module):
     return r.returncode == 0
 
 
-def toolchain_problems(repo):
+def toolchain_problems(repo: str) -> list[str]:
     """-> one line per gate tool missing from PATH, or per python module (pytest) the gate's interpreter cannot import."""
     out, seen = [], set()
     for g in all_gates_of(project(repo)):

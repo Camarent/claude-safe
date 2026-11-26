@@ -272,7 +272,7 @@ def _parallel_wave(a_dir, stage, task):
     """True when the brief of TASK names a `Wave: <w>` that another task brief of STAGE shares (the task runs beside others). No wave line, or a wave of its own: False."""
     plan = os.path.join(os.path.abspath(a_dir), WORK_DIR, stage)
 
-    def wave_of(name):
+    def wave_of(name: str) -> str | None:
         m = re.search(r"(?m)^Wave: (\S+)$", util.read_text(os.path.join(plan, name)))
         return m[1] if m else None
 

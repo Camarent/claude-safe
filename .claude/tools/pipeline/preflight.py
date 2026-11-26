@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable, Mapping, Sequence
 
 from .configuration import GIT_TIMEOUT_S, QRUN_TMP_BASE, QRUN_TMP_MAX_PATH, QRUN_TMP_PREFIX
 
@@ -23,7 +24,7 @@ MKTEMP_SUFFIX_LEN = 8  # tempfile.mkdtemp appends 8 random characters to the pre
 TMP_FIX = "export QRUN_TMP_BASE=/tmp"
 
 
-def needs_lines(task_text):
+def needs_lines(task_text: str) -> list[tuple[str, str]]:
     """Task text -> [(kind, value)] from each `Needs: bin:<name>, file:<repo-path>, scope:<gh scope>` line, in order."""
     out = []
     for m in NEEDS_RE.finditer(task_text):
@@ -34,7 +35,7 @@ def needs_lines(task_text):
     return out
 
 
-def mode_lines(task_text):
+def mode_lines(task_text: str) -> list[tuple[str, str]]:
     """Task text -> [(repo-path, mode)] from each `Mode: <repo-path> 755` line, in order."""
     return [(m.group(1), m.group(2)) for m in MODE_RE.finditer(task_text)]
 
@@ -87,7 +88,13 @@ def _probe_need(kind, value, repo, runner, which):
     return _scope_problem(value, runner, which)
 
 
-def run(repo, stage_dir, runner=_default_runner, which=shutil.which, env=None):
+def run(
+    repo: str,
+    stage_dir: str,
+    runner: Callable[[Sequence[str]], tuple[int | None, str]] = _default_runner,
+    which: Callable[[str], str | None] = shutil.which,
+    env: Mapping[str, str] | None = None,
+) -> list[tuple[str, str]]:
     """Probe the stage's needs and the scratch TMPDIR -> [(message, fix)]; writes all of them to stage_dir/BLOCKED.md.
     Needs come from every task-*.md in stage_dir, each probed once. No problems: no file written."""
     env = os.environ if env is None else env

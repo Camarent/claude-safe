@@ -16,7 +16,7 @@ PRICES = tool_setting("PRICES_TABLE")
 DERIVED_USD_PER_UNIT = 0.88 / 1000.0
 
 
-def lookup(model):
+def lookup(model: str | None) -> dict[str, float] | None:
     """-> {input, output, cache_read, cache_write} USD per million tokens, or None for an unknown model."""
     m = (model or "").lower()
     for key, i, o, r, w in PRICES:
@@ -25,7 +25,7 @@ def lookup(model):
     return None
 
 
-def cost(model, input=0, output=0, cache_read=0, cache_write=0):
+def cost(model: str | None, input: float = 0, output: float = 0, cache_read: float = 0, cache_write: float = 0) -> float | None:
     """-> USD from the price table, or None when the model has no row (the caller falls back and must say so)."""
     p = lookup(model)
     if p is None:
