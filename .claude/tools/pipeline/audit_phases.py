@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import subprocess
+from collections.abc import Iterator
 
 from . import gitx
 from .briefs import NAV, leads_for, read_head, tail, ux_flows_note
@@ -53,14 +54,14 @@ def _wb(a, cfg):
     return work_branch(cfg, getattr(a, "feature", None) or a.stage)
 
 
-def audit_base(a, cfg):
+def audit_base(a, cfg) -> str:
     """Base ref for a stage's audit context and recall: the commit `branch_work` had when a feature phase started (`.work/<S>/base.txt`, written by cli_feature), so phase N does not count the files of phases 1..N-1; else `branch_release`."""
     f = os.path.join(a.dir, WORK_DIR, a.stage, "base.txt")
     ref = read_text(f).strip() if os.path.isfile(f) else ""
     return ref or cfg["branch_release"]
 
 
-def block_args(a, cfg, audit_dir):
+def block_args(a, cfg, audit_dir) -> str:
     """CLI args for audit_context.py: the plan-vs-changes file and the changed paths of the block (base..work branch), so only their rows are inlined; "" when git gives no paths."""
     names = gitx.try_text(audit_dir, "-c", "core.quotepath=off", "diff", "-M", "--name-only", f"{audit_base(a, cfg)}...{_wb(a, cfg)}").splitlines()
     names = [n for n in names if n and "," not in n]
@@ -79,7 +80,7 @@ def _is_code_path(f):
     return f.endswith(SEC_CODE_EXTS) and not _is_test_path(f)
 
 
-def sec_path_hit(path, pats):
+def sec_path_hit(path, pats) -> bool:
     """True when PATH (case-insensitive) matches a glob of PATS; with the default list also when a word of SEC_AUDIT_WORDS is a word of the basename."""
     low = path.lower()
     if any(fnmatch.fnmatch(low, str(p).lower()) for p in pats):
@@ -89,7 +90,7 @@ def sec_path_hit(path, pats):
     return False
 
 
-def sec_diff_hit(diff):
+def sec_diff_hit(diff) -> bool:
     """True when a unified -U0 DIFF (with -M) adds a line matching SEC_AUDIT_CONTENT in a code file, or deletes any line of a non-test code file (a removed check or guard). Pure renames have no hunks."""
     cur, in_hunk = "", False
     for ln in diff.splitlines():
@@ -108,7 +109,7 @@ def sec_diff_hit(diff):
     return False
 
 
-def sec_audit_needed(a, cfg, audit_dir):
+def sec_audit_needed(a, cfg, audit_dir) -> bool:
     """The Opus sec audit runs only when the diff base..work branch touches a security path (`sec_audit_paths`, fnmatch, case-insensitive; default configuration.SEC_AUDIT_PATHS)
     or sec_diff_hit (a risky added line, or any deleted line, in a code file). `["*"]` always runs. An unreadable or empty diff keeps the audit."""
     pats = cfg.get("sec_audit_paths")
@@ -137,12 +138,12 @@ ANGLE = {
 }
 
 
-def last_report(evs, sid):
+def last_report(evs, sid) -> str:
     """Path of the latest report of a step, "" when none."""
     return next((e["file"] for e in reversed(history(evs, sid)) if e["ev"] == EV_REPORT), "")
 
 
-def fix_step(a, tasks, sid, reports, what, key, why):
+def fix_step(a, tasks, sid, reports, what, key, why) -> dict:
     """Architect step that turns a failed check into fix tasks: appended to TASKS.md with a later `wave K:` line, then run by the normal waves (dev -> reviewer -> merger)."""
     S = a.stage
     last_wave = max(t["wave"] for t in tasks)
@@ -168,14 +169,14 @@ def fix_step(a, tasks, sid, reports, what, key, why):
     )
 
 
-def audit_report_name(task):
+def audit_report_name(task) -> str | None:
     """-> the report file name of audit step TASK (`audit-sec-2`, `audit-arch-opus` -> audit-arch.md; the Opus rerun writes the first pass file), or None for a step that is no audit."""
     if not task or not task.startswith("audit-"):
         return None
     return task.removesuffix(AUDIT_ESCALATE_SUFFIX) + ".md"
 
 
-def save_audit_reply(stage_dir, task, reply):
+def save_audit_reply(stage_dir, task, reply) -> str | None:
     """Save the auditor's reply as `audits/<report>` when the auditor left that file missing or empty, so a re-audit can read it. -> the path written, else None."""
     name = audit_report_name(task)
     if not name or not (reply or "").strip():
@@ -187,7 +188,7 @@ def save_audit_reply(stage_dir, task, reply):
     return path
 
 
-def audit_dir_of(a, cfg):
+def audit_dir_of(a, cfg) -> str:
     cands = (
         ([os.path.join(a.dir, cfg["repo"])] if cfg["repo"] else [])
         + [a.dir]
@@ -214,7 +215,7 @@ def _audit_effort_model(flags, ag, suffix, small):
     return effort, model
 
 
-def checklist_items(text):
+def checklist_items(text) -> list[str]:
     """-> the `- ` item lines of the `## Acceptance checklist` section of a Plan.md text ([] when there is no section)."""
     head = "## Acceptance checklist"
     if head not in text:
@@ -223,12 +224,12 @@ def checklist_items(text):
     return [ln.strip() for ln in body.splitlines() if ln.lstrip().startswith("- ")]
 
 
-def remit_items(items, topics):
+def remit_items(items, topics) -> list[str]:
     """-> the checklist items that touch one of the remit `topics` (case-insensitive substring)."""
     return [it for it in items if any(t.lower() in it.lower() for t in topics)]
 
 
-def plan_rel(stage):
+def plan_rel(stage) -> str:
     """-> the Plan.md path (below the run dir) of a stage; stage `F/phases/NN-x` uses `.work/F/Plan.md`."""
     parts = stage.split("/")
     return os.path.join(WORK_DIR, parts[0], PLAN_FILE) if len(parts) >= 3 and parts[1] == "phases" else os.path.join(WORK_DIR, stage, PLAN_FILE)
@@ -237,7 +238,7 @@ def plan_rel(stage):
 _SEVERE_RE = re.compile(SEVERE_PATTERN, re.I)
 
 
-def out_of_remit_split(report, items, topics):
+def out_of_remit_split(report, items, topics) -> tuple[list[str], list[str]]:
     """-> (ignored, severe). `ignored`: report lines that name a checklist item outside the remit `topics`; `severe`: the other lines that still say FAIL / blocker / should-fix."""
     outside = [it.lstrip("- ").lower()[:REMIT_MATCH_CHARS] for it in items if it not in remit_items(items, topics)]
     ignored, severe = [], []
@@ -250,7 +251,7 @@ def out_of_remit_split(report, items, topics):
     return ignored, severe
 
 
-def checklist_clause(a, cfg, ag):
+def checklist_clause(a, cfg, ag) -> str:
     """Audit-brief sentence on the plan's `## Acceptance checklist` ("" when the stage has no Plan.md with one). The auditor `ag` gets only the items in its remit (`auditor_remit`); a role with no remit gets the whole checklist. Stage `F/phases/NN-x` uses `.work/F/Plan.md`."""
     rel = plan_rel(a.stage)
     items = checklist_items(read_text(os.path.join(a.dir, rel)))
@@ -416,7 +417,7 @@ def _ux_shots_step(a, audit_dir, sid, why):
     )  # build, serve, screenshots + layout numbers; no model
 
 
-def reaudit_context_steps(a, cfg, audit_dir, has_audit_md, suffix):
+def reaudit_context_steps(a, cfg, audit_dir, has_audit_md, suffix) -> list[dict]:
     """-> script steps that rebuild audit-context.md (when AUDIT.md has audit tools) and plan-vs-changes.md after the fix commits, before the re-audit (step ids carry SUFFIX; same output files)."""
     S = a.stage
     base, head, out = audit_base(a, cfg), _wb(a, cfg), f".work/{S}/audits"
@@ -490,7 +491,7 @@ def _escalated_steps(a, cfg, flags, has_audit_md, small, evs, kinds):
     ]
 
 
-def audit_verdict(evs, k):
+def audit_verdict(evs, k) -> str | None:
     """-> the verdict that counts for audit K: the Opus rerun's when the first pass escalated, else the first pass's."""
     return last_verdict(evs, k + AUDIT_ESCALATE_SUFFIX) or last_verdict(evs, k)
 
@@ -523,18 +524,18 @@ def _audit_passes(a, cfg, flags, has_audit_md, small, evs, first, beside=()):
         yield esc
 
 
-def docs_overlap(writes, reads):
+def docs_overlap(writes, reads) -> bool:
     """True when a path the docs writer edits (a file, or a folder written `dir/`) is among the paths READS that an auditor reads."""
     return any(r == w or (w.endswith("/") and r.startswith(w)) for w in writes for r in reads)
 
 
-def docs_beside_audits(a, cfg, audit_dir, writes=DOCS_WRITES):
+def docs_beside_audits(a, cfg, audit_dir, writes=DOCS_WRITES) -> bool:
     """True when final-docs may start together with the audits: the stage diff (base..work branch) holds no file the docs writer edits. An unreadable or empty diff keeps them serial."""
     names = gitx.try_text(audit_dir, "-c", "core.quotepath=off", "diff", "-M", "--name-only", f"{audit_base(a, cfg)}...{_wb(a, cfg)}").splitlines()
     return bool(names) and not docs_overlap(writes, names)
 
 
-def audit_rounds(a, cfg, flags, tasks, evs, beside=()):
+def audit_rounds(a, cfg, flags, tasks, evs, beside=()) -> Iterator[list[dict]]:
     """Tool scripts, the audits (sec, ux and arch in one batch) and, when some said FIXES, the fix round and the re-audits."""
     audit_dir = audit_dir_of(a, cfg)
     audit_md = read_text(os.path.join(audit_dir, cfg["audit_file"]))

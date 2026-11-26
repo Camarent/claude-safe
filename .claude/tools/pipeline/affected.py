@@ -12,7 +12,7 @@ import os
 import sys
 
 
-def module_name(path, root):
+def module_name(path, root) -> str:
     """-> dotted module of a planned path under root, '' when the path is not under root."""
     rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
     if rel.startswith(os.pardir) or not rel.endswith(".py"):
@@ -23,7 +23,7 @@ def module_name(path, root):
     return ".".join(parts)
 
 
-def imported_names(source):
+def imported_names(source) -> set[str]:
     """-> every absolute module name and `module.name` a test source imports."""
     names: set[str] = set()
     for node in ast.walk(ast.parse(source)):
@@ -35,7 +35,7 @@ def imported_names(source):
     return names
 
 
-def importers(paths, tests_dir, root):
+def importers(paths, tests_dir, root) -> list[str]:
     """-> sorted test files under tests_dir (relative to it) that import a module of any planned path."""
     wanted = {m for m in (module_name(p, root) for p in paths) if m}
     if not wanted:
@@ -52,7 +52,7 @@ def importers(paths, tests_dir, root):
     return sorted(found)
 
 
-def main(argv):
+def main(argv) -> int:
     """CLI: prints the affected test files of the planned paths as one comma-separated line."""
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     print(",".join(importers(argv, os.path.join(root, "tests"), root)))

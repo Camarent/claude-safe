@@ -5,7 +5,7 @@ import os
 from .configuration import DEFAULT_AGENTS_DIR, ENV_AGENTS_DIR
 
 
-def agent_types():
+def agent_types() -> dict[str, dict[str, str]] | None:
     """-> {name: one-line description} from the agents dir, or None when it does not exist (tests)."""
     d = os.environ.get(ENV_AGENTS_DIR, DEFAULT_AGENTS_DIR)
     if not os.path.isdir(d):
