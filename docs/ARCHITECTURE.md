@@ -42,7 +42,7 @@ Five pipeline modules hold code moved out of older modules. Each old module re-e
 - `.claude/tools/pipeline/worktree_merge.py:35` (`_git_version`): git version and `merge-tree` checks, unmerged-file queries. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:78`).
 - `.claude/tools/pipeline/plan_check_task.py:38` (`_lint`): per-task plan checks (test refs, cites, commands, paths). `plan_check.py` re-exports them (`.claude/tools/pipeline/plan_check.py:58`).
 - `.claude/tools/pipeline/steps_history.py:9` (`history`): event history, retry and report queries. `steps.py` re-exports them (`.claude/tools/pipeline/steps.py:57`).
-- `.claude/tools/pipeline/pr_release.py:15` (`_release_level`): version bump, release tag and GitHub release of a stage branch. `pr_ops.py` re-exports them (`.claude/tools/pipeline/pr_ops.py:44`). Shared git and gh helpers sit in `.claude/tools/pipeline/pr_base.py`, which both import. `pr_release.py` imports only `pr_base` and `pr_mode`, never `pr_ops`, so there is no import cycle.
+- `.claude/tools/pipeline/pr_release.py:15` (`_release_level`): version bump, release tag and GitHub release of a stage branch. `pr_ops.py` re-exports them (`.claude/tools/pipeline/pr_ops.py:44`). Shared git and gh helpers sit in `.claude/tools/pipeline/pr_base.py`, which both import. `pr_ops.skipped_notes` lists the timed-out steps skipped with a note, for the PR body. `pr_release.py` imports only `pr_base` and `pr_mode`, never `pr_ops`, so there is no import cycle.
 
 ## Shared state
 - Tool caches and venv: `./.uv` in the checkout, or `DEV_UV_DIR` (`scripts/dev.sh:10`).

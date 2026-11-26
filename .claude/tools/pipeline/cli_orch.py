@@ -61,6 +61,7 @@ from .configuration import (
 from .graph import decide
 from .plan_files import is_last_phase
 from .requests import take_request
+from .slow_suite import REASON
 from .steps_verify import blocked_for_checks
 from .triggers import is_trigger, log_trigger, retro_signals, trigger_log
 from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now, paths, read_jsonl, read_text, stage_root, unreported, work_path, write_text
@@ -501,6 +502,20 @@ def _skip_guard(a):
         )
 
 
+def _timed_out_unverified(log, step) -> bool:
+    """skip: True when the step's newest report file says REASON (its acceptance run hit the time limit)."""
+    f = last_report_file(read_jsonl(log), step)
+    return bool(f) and REASON in read_text(f)
+
+
+def _skip_timeout_guard(a, log) -> bool:
+    """skip: a timed-out step is skipped only with a note saying who verified it and how. -> True when the step timed out."""
+    timed_out = _timed_out_unverified(log, a.step)
+    if timed_out and not a.note:
+        sys.exit(f'orch: skip {a.step} refused: it timed out, not verified; pass --note "who verified it, how"')
+    return timed_out
+
+
 def _apply_addendum(a):
     """retry --addendum: write the block to the task file, then fold the addendum into the note the dev reads first."""
     _write_addendum(a)
@@ -553,8 +568,10 @@ def cmd_reset(a) -> None:
         sys.exit(f"orch: {a.cmd} refused: no .work/{a.stage} in {os.path.abspath(a.dir)} or any parent folder (cwd {os.getcwd()}); pass --dir <stage root>")
     a.dir = root
     _w, log = paths(a)
+    timed_out = False
     if a.cmd == "skip":
         _skip_guard(a)
+        timed_out = _skip_timeout_guard(a, log)  # before any write: a refused skip changes nothing
     if a.cmd == "retry" and getattr(a, "addendum", ""):  # before any other write: a refused script step changes nothing
         _apply_addendum(a)
     if a.cmd == "retry" and _verify_or_green(a, log):
@@ -562,7 +579,13 @@ def cmd_reset(a) -> None:
     warn = _unmerged_prereqs(a, read_jsonl(log)) if a.cmd == "retry" else []  # before the retry writes anything
     if a.cmd == "retry":
         _refresh_job(a, log)
-    ev = {"ev": a.cmd, "task": a.step, "note": a.note, **({"from": "review", "role": "reviewer"} if getattr(a, "from_step", "") == "review" else {})}
+    ev = {
+        "ev": a.cmd,
+        "task": a.step,
+        "note": a.note,
+        **({"from": "review", "role": "reviewer"} if getattr(a, "from_step", "") == "review" else {}),
+        **({"timed_out": True} if timed_out else {}),
+    }
     if a.cmd == "retry":
         _reset_fix_chain(log, a)
     append_event(log, ev)

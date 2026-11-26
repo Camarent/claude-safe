@@ -62,7 +62,9 @@ from .pr_release import (  # noqa: F401 -- re-exported: pr_ops keeps every relea
     _version_bump,
 )
 from .run import Run
-from .util import TOOLS
+from .slow_suite import REASON
+from .stagedir import stage_root
+from .util import TOOLS, paths, read_jsonl
 
 
 def checks_timeout(cfg) -> float:
@@ -193,6 +195,15 @@ def _failing(repo, br):
 def web_note(a_dir, stage) -> str:
     """-> the UNVERIFIED-WEB line(s) of the stage's skipped browser check, joined by newlines; '' when none."""
     return "\n".join(webskip.skips(a_dir, stage))
+
+
+def skipped_notes(a_dir, stage) -> str:
+    """-> one line per timed-out step the owner skipped (cli_orch skip --note), with that note; '' when none."""
+    root = stage_root(a_dir, stage)
+    if root is None:
+        return ""
+    _w, log = paths(Run(dir=root, stage=stage))
+    return "\n".join(f"SKIPPED {e['task']} ({REASON}): {e['note']}" for e in read_jsonl(log) if e.get("ev") == "skip" and e.get("timed_out") and e.get("note"))
 
 
 def append_body(repo, br, note) -> None:
@@ -639,8 +650,8 @@ def _pr_step(what, a_dir, repo, cfg, stage, br):
         return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
     if what == "ready":
         opened = _open_pr(a_dir, repo, cfg, stage, br)
-        if note := web_note(a_dir, stage):
-            append_body(repo, br, note)  # the skipped browser check must show in the PR, never silent
+        if note := "\n".join(x for x in (web_note(a_dir, stage), skipped_notes(a_dir, stage)) if x):
+            append_body(repo, br, note)  # the skipped browser check and timed-out skips must show in the PR, never silent
         return gates + "; " + opened + "; " + _ready(repo, cfg, br)
     return _open_pr(a_dir, repo, cfg, stage, br)
 
