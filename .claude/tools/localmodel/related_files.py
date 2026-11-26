@@ -73,7 +73,7 @@ def fact(root, f, changed, diff_stat):
     try:
         with open(os.path.join(root, f), encoding="utf-8", errors="replace") as fh:
             text = fh.read(200000)
-    except OSError:
+    except OSError:  # a candidate that is gone or unreadable stays listed, it just has no fact line
         return ""
     for c in changed:
         for s in diff_stat.get(c, []):

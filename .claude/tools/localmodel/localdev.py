@@ -51,7 +51,7 @@ from pipeline.configuration import (  # noqa: E402
     WORK_DIR,
     tool_cmd,
 )
-from pipeline.util import first_json_obj, run_capture, text_arg  # noqa: E402
+from pipeline.util import first_json_obj, run_capture, swallowed, text_arg  # noqa: E402
 from search.strata import strata_key, strata_model, strata_url  # noqa: E402
 
 from localmodel.prompts import JSON_ONLY  # noqa: E402
@@ -168,7 +168,7 @@ def ctx_tokens():
     c = os.environ.get("CONTEXT", "128k").lower()
     try:
         return int(c[:-1]) * 1024 if c.endswith("k") else int(c)
-    except ValueError:
+    except ValueError:  # a CONTEXT that is not a number falls back to the documented default
         return 65536
 
 
@@ -376,7 +376,8 @@ def identifier_hits(root, goal, per_ident=6):
     for ident in goal_identifiers(goal):
         try:
             r = subprocess.run(["rg", "-nw", "--no-heading", *rg_globs(), "-m", "20", ident, root], capture_output=True, text=True, timeout=20, check=False)
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired) as e:
+            swallowed("localdev.identifier_hits rg", e)  # this identifier gets no hits; the others still run
             continue
         rows = []
         for line in r.stdout.splitlines():
@@ -387,7 +388,8 @@ def identifier_hits(root, goal, per_ident=6):
             try:
                 with open(os.path.join(root, f), encoding="utf-8", errors="replace") as fh:
                     lines = fh.read().splitlines()
-            except OSError:
+            except OSError as e:
+                swallowed("localdev.identifier_hits read", e)  # one unreadable hit file: skip that hit only
                 continue
             first, last = max(1, row_no - 2), min(len(lines), row_no + 12)
             hits.append({"file": f, "start": first, "end": last, "text": "\n".join(lines[first - 1 : last]), "exact": ident})
