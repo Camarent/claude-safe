@@ -67,7 +67,7 @@ from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now
 from .verdicts import ROLES, is_unclear, missing_note, verdict
 
 
-def cmd_triggers(a):
+def cmd_triggers(a) -> None:
     """One line per trigger: when, stage, step, agent model/effort, outcome, important?, why."""
     recs = read_jsonl(trigger_log(a))
     out = {(r["stage"], r["id"]): r["verdict"] for r in recs if r["ev"] == "outcome"}
@@ -93,7 +93,7 @@ def _incident_lines(a):
         return f"INCIDENTS: scan failed ({e})"
 
 
-def cmd_retro(a):
+def cmd_retro(a) -> None:
     sig = retro_signals(a)
     print("\n".join(f"RETRO {n}: {t}" for n, t in sig) if sig else "RETRO: no log signals tripped")
     rn = work_path(paths(a)[0], "retro-numbers.md")
@@ -106,7 +106,7 @@ def cmd_retro(a):
     print(f"Write .work/{a.stage}/retro/retro.md (<= 15 lines: tripped signals with numbers, one-line cause each, the pipeline change made in the same pass).")
 
 
-def warm_index(a):
+def warm_index(a) -> None:
     """Keep the code search index fresh without anyone waiting for it: at most once a minute, start `local.py index` for the project in the background.
     Cheap when nothing changed (about a second); after a merge or on a new worktree only the changed files are re-read, and vectors come from the shared cache.
     ORCH_NO_INDEX=1 turns it off."""
@@ -211,7 +211,7 @@ def _log_ask(log, evs, message):
     append_event(log, {"ev": "ask", "message": message})
 
 
-def cmd_next(a):
+def cmd_next(a) -> None:
     warm_index(a)
     w, log = paths(a)
     evs = read_jsonl(log)
@@ -235,7 +235,7 @@ def cmd_next(a):
     jprint(act)
 
 
-def why_from(evs, d):
+def why_from(evs, d) -> str:
     """One-line reason a step runs now: the last event of the same task that led here."""
     prev = [e for e in evs if e.get("task") == d["task"] and e["ev"] in ("report", "retry", "skip")]
     if not prev:
@@ -246,7 +246,7 @@ def why_from(evs, d):
     return f"{e['ev']} by lead" + (f": {e['note'][:80]}" if e.get("note") else "")
 
 
-def chain_text(evs):
+def chain_text(evs) -> str:
     """Log of every agent call in order: number, id, agent/model, task, reason, verdict."""
     out: list = []
     verdicts = {e["id"]: e.get("verdict") for e in evs if e["ev"] == EV_REPORT}
@@ -257,12 +257,12 @@ def chain_text(evs):
     return "\n".join(out) + "\n"
 
 
-def cmd_leads(a):
+def cmd_leads(a) -> None:
     """For the lead's briefs (planning architect, any agent): mandatory first search, paste the output into the brief."""
     print(leads_for(a, a.key, a.text).strip())
 
 
-def cmd_chain(a):
+def cmd_chain(a) -> None:
     w, log = paths(a)
     text = chain_text(read_jsonl(log))
     write_text(os.path.join(w, "chain.md"), text)
@@ -360,7 +360,7 @@ def _worktree_report(a, d):
     return f if os.path.isfile(f) else None
 
 
-def cmd_report(a):
+def cmd_report(a) -> None:
     w, log = paths(a)
     evs = read_jsonl(log)
     d = [e for e in evs if e["ev"] == EV_DISPATCH and e["id"] == a.id]
@@ -546,7 +546,7 @@ def _verify_or_green(a, log):
     return not getattr(a, "from_step", "") and _blocked_dev_is_green(a, log)
 
 
-def cmd_reset(a):
+def cmd_reset(a) -> None:
     """retry: forget a step's history so it runs again. skip: count the step as satisfied (the owner decided)."""
     root = stage_root(a.dir, a.stage)
     if root is None:  # a typo or a wrong cwd must not create a fresh .work/<stage>/orch.jsonl somewhere
@@ -580,7 +580,7 @@ def cmd_reset(a):
     )
 
 
-def main(argv=None):
+def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn in (

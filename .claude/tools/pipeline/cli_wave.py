@@ -59,11 +59,11 @@ from .worktree import _unmerged, read_manifest
 from .worktrees import review_recover
 
 
-def is_heavy(d):
+def is_heavy(d) -> bool:
     return limits.is_heavy(d["agent"], d.get("model"))
 
 
-def order_by_model(ds):
+def order_by_model(ds) -> list:
     """-> the ready dispatches grouped by model, in first-seen model order and in their own order within a model: one model's run reuses its warm cache."""
     rank: dict = {}
     for d in ds:
@@ -126,7 +126,7 @@ def _dry_env():
             os.environ[ENV_DRY_NO_CCN] = old
 
 
-def dry_walk(a):
+def dry_walk(a) -> int:
     """--dry-run: walk the whole stage in a scratch copy of .work/S (and the top-level *.md and pipeline.json), answering every dispatch with a stub verdict. Prints one line per dispatch. Nothing real runs, the real state is untouched."""
     a = Run.of(a)
     copied = _dry_copy(a)
@@ -183,7 +183,7 @@ def _kill_stale_sessions(w):
     return killed
 
 
-def recover_unreported(c):
+def recover_unreported(c) -> int:
     """A dispatch with no report and no later retry/skip/dispatch of its task means the driver died while it ran: give it an automatic re-run (per task and role, up to STALE_RERUN_MAX) instead of asking the lead. Live sessions of the dead driver are killed first. -> number re-run."""
     evs = read_jsonl(c.log)
     open_ids = set(unreported(evs))
@@ -248,7 +248,7 @@ def _release_lock(lock):
     os.close(fd)
 
 
-def cmd_run(a):
+def cmd_run(a) -> int:
     a = Run.of(a)  # built once here; the whole run path (branches, Ctx, loop, limits) reads the frozen state
     if a.dry_run:
         return dry_walk(a)
@@ -295,7 +295,7 @@ def _squash_job(repo, job, dirty):
     return bool(_unmerged(repo, branch, base))
 
 
-def reset_squash_residue(a, c):
+def reset_squash_residue(a, c) -> list:
     """An interrupted `git merge --squash` leaves staged changes and SQUASH_MSG in the checkout's git dir. When the dirty files are exactly the diff of a manifest job not yet merged, reset the checkout (git reset --hard HEAD) and log it. Any other dirty file: the checkout is left alone. -> the reset files, [] when nothing was reset."""
     repo = repo_path(a.dir)
     if not os.path.exists(os.path.join(repo, ".git")):
@@ -462,7 +462,7 @@ def _blocked(a, c, r):
     return 4
 
 
-def run_loop(a, c):
+def run_loop(a, c) -> int:
     while True:
         r = driver.orch_inproc("next", a.stage, a.dir)
         act = r.get("action")
@@ -589,7 +589,7 @@ def _feature_status(a):
     return True
 
 
-def cmd_status(a):
+def cmd_status(a) -> int:
     if _feature_status(a):
         return 0
     _print_planning(a)
@@ -606,7 +606,7 @@ def cmd_status(a):
     return 0
 
 
-def cmd_metrics(a):
+def cmd_metrics(a) -> int:
     c = Ctx(a)
     for (m, ag), g in sorted(metrics.aggregate(read_jsonl(c.metrics)).items(), key=lambda kv: tuple(str(x) for x in kv[0])):
         print(
@@ -616,7 +616,7 @@ def cmd_metrics(a):
     return 0
 
 
-def main(argv=None, extra_commands=()):
+def main(argv=None, extra_commands=()) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn in (("run", cmd_run), ("status", cmd_status), ("metrics", cmd_metrics)):

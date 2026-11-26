@@ -10,26 +10,26 @@ INDEX_NAME = "paths.json"
 DEFAULT_SIDE = "both"
 
 
-def load(home):
+def load(home) -> dict:
     with open(os.path.join(home, INDEX_NAME), encoding="utf-8") as f:
         return json.load(f)
 
 
-def side_of(entry):
+def side_of(entry) -> str:
     return entry.get("side", DEFAULT_SIDE)
 
 
-def command_name(index, key):
+def command_name(index, key) -> str:
     entry = index["commands"][key]
     return entry.get("name") or index["prefix"] + key
 
 
-def commands(index, side=None):
+def commands(index, side=None) -> dict:
     """{key: entry} for the commands that exist on `side` ('host' | 'container'); None = all."""
     return {k: e for k, e in index["commands"].items() if side is None or side_of(e) in (side, DEFAULT_SIDE)}
 
 
-def names_for(index, key):
+def names_for(index, key) -> list[str]:
     """Every string a matcher accepts for a command: its name, the script's file name and the aliases."""
     entry = index["commands"][key]
     return [command_name(index, key), os.path.basename(entry["script"]), *entry.get("aliases", [])]
