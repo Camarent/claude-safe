@@ -14,7 +14,7 @@ from .configuration import (
 )
 
 
-def allowed_commands(workspace):
+def allowed_commands(workspace) -> tuple[str, ...]:
     """-> the command prefixes servectl may start in WORKSPACE: SERVE_DEFAULT_COMMANDS plus the project's pipeline.json `serve_commands`. Raises ConfigError."""
     extra = project(workspace).get("serve_commands") or []
     return tuple(SERVE_DEFAULT_COMMANDS) + tuple(str(p) for p in extra)
@@ -29,7 +29,7 @@ def _word_ok(word, token):
     return word == token
 
 
-def matches(argv, prefix):
+def matches(argv, prefix) -> bool:
     """-> True when the words of ARGV start with the words of PREFIX. A placeholder word (port, directory) takes exactly one word; a prefix ending in a placeholder allows nothing after it."""
     words = prefix.split()
     if len(argv) < len(words) or not all(_word_ok(w, t) for w, t in zip(argv, words, strict=False)):
@@ -37,7 +37,7 @@ def matches(argv, prefix):
     return len(argv) == len(words) if words and words[-1] in (SERVE_PORT_TOKEN, SERVE_DIR_TOKEN) else True
 
 
-def command_why(argv, prefixes):
+def command_why(argv, prefixes) -> str:
     """-> deny reason when the inner command ARGV may not run under servectl (not a prefix, a shell operator, a shell run with -c), else ''."""
     if not argv:
         return "the server command after `--` is empty"
@@ -68,7 +68,7 @@ def _outside_workspace(argv, workspace):
     return f"servectl serves a folder only inside the workspace ({root}); {folder} is outside."
 
 
-def start_refusal(argv, workspace):
+def start_refusal(argv, workspace) -> str:
     """-> deny reason for `servectl start -- ARGV` run in WORKSPACE (the cwd), else ''. A pipeline.json that does not load refuses too."""
     try:
         prefixes = allowed_commands(workspace)

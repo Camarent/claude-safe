@@ -4,7 +4,7 @@ import contextlib
 import os
 
 
-def owner_pid(name, prefix):
+def owner_pid(name, prefix) -> int | None:
     """-> the pid in NAME (`<prefix><pid>-...`), or None when NAME has another shape."""
     if not name.startswith(prefix):
         return None
@@ -12,7 +12,7 @@ def owner_pid(name, prefix):
     return int(head) if head.isdigit() and int(head) > 0 else None
 
 
-def pid_alive(pid):
+def pid_alive(pid) -> bool:
     """True while PID exists (also when another user owns it: it is still not ours to remove)."""
     try:
         os.kill(pid, 0)
@@ -23,7 +23,7 @@ def pid_alive(pid):
     return True
 
 
-def dead_owner_dirs(root, prefix):
+def dead_owner_dirs(root, prefix) -> list[str]:
     """-> paths of real dirs in ROOT named `<prefix><pid>-...` whose pid is no longer alive; [] when ROOT cannot be listed."""
     out = []
     with contextlib.suppress(OSError):

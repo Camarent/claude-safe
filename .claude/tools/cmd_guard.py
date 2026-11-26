@@ -57,11 +57,11 @@ except ImportError as err:  # fail closed: the guard cannot split commands, so i
     TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
     FALLBACK_SPLIT = re.compile(r"&&|\|\||;|\||\n")
 
-    def split_commands(cmd, pipe=True, amp=True, newline=True):
+    def split_commands(cmd, pipe=True, amp=True, newline=True) -> list[str]:
         """Minimal splitter used only when pipeline.shellwords cannot be imported (verdict() denies first)."""
         return FALLBACK_SPLIT.split(cmd)
 
-    def strip_heredocs(cmd, keep_opener=True):
+    def strip_heredocs(cmd, keep_opener=True) -> str:
         """Fallback: heredoc bodies stay in the text (verdict() denies first)."""
         return cmd
 

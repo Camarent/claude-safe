@@ -13,7 +13,7 @@ from .util import append_event, read_jsonl
 MODELS = {MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS}
 
 
-def gated():
+def gated() -> set[str]:
     return {x for x in os.environ.get(ENV_GATED, DEFAULT_GATED).split(",") if x}
 
 
@@ -70,7 +70,7 @@ def _load_request(p):
         return {}
 
 
-def take_request(a, w, log):
+def take_request(a, w, log) -> dict | None:
     rd = os.path.join(w, "requests")
     if not os.path.isdir(rd):
         return None

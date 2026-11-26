@@ -15,12 +15,12 @@ SEPARATORS = {
 }
 
 
-def split_commands(cmd, pipe=True, amp=True, newline=True):
+def split_commands(cmd, pipe=True, amp=True, newline=True) -> list[str]:
     """Split a command line at `&&`, `||` and `;`, and also at a single `|` (PIPE), a single background `&` (AMP) and a newline (NEWLINE)."""
     return SEPARATORS[(pipe, amp, newline)].split(cmd)
 
 
-def short_flag(arg, letters):
+def short_flag(arg, letters) -> bool:
     """True when ARG is a short-option group (`-rnf`, one dash) holding any of LETTERS; `--long` options never match."""
     if not arg.startswith("-"):
         return False
@@ -32,7 +32,7 @@ def short_flag(arg, letters):
     return any(c in letters for c in group)
 
 
-def starts_command(cmd, names):
+def starts_command(cmd, names) -> bool:
     """True when a command segment of CMD (split at `&&`, `||`, `;`, `|`, `&`; not at a newline) begins with one of NAMES followed by a blank."""
     for seg in split_commands(cmd, newline=False):
         word = seg.lstrip().split(None, 1)
@@ -44,7 +44,7 @@ def starts_command(cmd, names):
 HEREDOC_OPEN = re.compile(r"(<<-?\s*['\"]?(\w+)['\"]?)([^\n]*)\n")
 
 
-def strip_heredocs(cmd, keep_opener=True):
+def strip_heredocs(cmd, keep_opener=True) -> str:
     """Drop heredoc bodies and the terminator line: `<<WORD` (also `<<-`, quoted WORD) up to the first line that is WORD. An unterminated one stays. KEEP_OPENER False drops the whole heredoc (opener line rest included) for a space."""
     out: list[str] = []
     pos = at = 0
@@ -62,7 +62,7 @@ def strip_heredocs(cmd, keep_opener=True):
         pos = at = end
 
 
-def heredoc_end(cmd, start, word):
+def heredoc_end(cmd, start, word) -> int:
     """-> index just after the first line from `start` that is `word` (blanks around it allowed), or -1."""
     while start <= len(cmd):
         eol = cmd.find("\n", start)

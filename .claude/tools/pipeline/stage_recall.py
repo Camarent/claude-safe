@@ -15,22 +15,22 @@ from .plan_files import paths_in
 from .util import swallowed
 
 
-def task_info(path):
+def task_info(path) -> tuple[str, list[str], str]:
     with open(path, errors="replace") as fh:
         t = fh.read()
 
-    def g(pat):
+    def g(pat) -> str:
         m = re.search(pat, t, re.M)
         return m[1].strip() if m else ""
 
     return g(r"^# (.*)$") or os.path.basename(path), paths_in(t), g(r"^Done:\s*(.*)$")
 
 
-def covered(f, paths):
+def covered(f, paths) -> bool:
     return any(fnmatch.fnmatch(f, p) or f == p.rstrip("/") or f.startswith(p.rstrip("/") + "/") for p in paths)
 
 
-def pack_paths(files, limit=8):
+def pack_paths(files, limit=8) -> list[str]:
     """['- a', '- b'] for a short list; one `dir/ (n files)` line per directory when it is long."""
     if len(files) <= limit:
         return ["- " + f for f in files]
@@ -40,7 +40,7 @@ def pack_paths(files, limit=8):
     return [f"- {d}/ ({len(v)}): " + ", ".join(v[:4]) + (f" +{len(v) - 4}" if len(v) > 4 else "") for d, v in sorted(by.items())]
 
 
-def context_paths(ctx_text):
+def context_paths(ctx_text) -> list[str]:
     """Every file path the planner context lists in its `###` groups (tests are stored as `dir/: a, b`)."""
     out, group = [], None
     for line in ctx_text.splitlines():
@@ -60,14 +60,14 @@ def context_paths(ctx_text):
     return out
 
 
-def modified_files(repo, base, head):
+def modified_files(repo, base, head) -> list[str]:
     """Files that existed at BASE and differ at HEAD (added, deleted and renamed files are not counted: no context could have named a new file)."""
     return [
         x for x in git_text(["diff", "-z", "--name-only", "--diff-filter=M", f"{base}..{head}"], repo, 30).split("\0") if x
     ]  # -z: names verbatim, NUL-separated
 
 
-def live_recall(repo, base, head, ctx_text, cfg=None):
+def live_recall(repo, base, head, ctx_text, cfg=None) -> tuple[int, int, list[str]]:
     """(hits, total, missed): of the files the work modified, how many the planner context listed. Needs no reference list.
     Files the naming step ignores by config (audio packs, caches, ...) are left out of both counts: it never could have named them."""
     ign = (cfg or CTX_DEFAULTS)["ignore"]
@@ -76,7 +76,7 @@ def live_recall(repo, base, head, ctx_text, cfg=None):
     return sum(1 for m in mod if m in have), len(mod), [m for m in mod if m not in have]
 
 
-def pack_sections(ctx_text, repo):
+def pack_sections(ctx_text, repo) -> dict[str, str]:
     """{repo dir: its part of a multi-repo pack}; a single-repo pack is all REPO's. A feature pack marks a repo `# === repo X (`, a phase pack `### repo X`."""
     parts = re.split(r"^(?:# === |### )repo (\S+)(?= \(|$)", ctx_text, flags=re.M)
     if len(parts) == 1:
@@ -88,7 +88,7 @@ def pack_sections(ctx_text, repo):
     return out
 
 
-def merge_packs(packs, repo):
+def merge_packs(packs, repo) -> dict[str, str]:
     """pack_sections over several packs (CTX_TEXT may be one text or a list): the sections of the same repo are joined."""
     out: dict = {}
     for text in [packs] if isinstance(packs, str) else packs:
@@ -101,7 +101,7 @@ def _has_branches(r, base, head):
     return all(gitx.run(r, "rev-parse", "-q", "--verify", b).returncode == 0 for b in (base, head))
 
 
-def all_recall(repo, base, head, ctx_text, cfg):
+def all_recall(repo, base, head, ctx_text, cfg) -> tuple[int, int, list[str]]:
     """live_recall summed over the root and every indexed repo that has both branches; missed paths carry the repo name when it is not the root."""
     hits = total = 0
     missed = []
@@ -115,13 +115,13 @@ def all_recall(repo, base, head, ctx_text, cfg):
     return hits, total, missed
 
 
-def named_count(repo, base, head, ctx_text, cfg):
+def named_count(repo, base, head, ctx_text, cfg) -> int:
     """How many distinct files the context lists, in the repos all_recall measures (those with both branches)."""
     secs = merge_packs(ctx_text, repo)
     return sum(len(set(context_paths(secs.get(r, "")))) for r in pick_roots(repo, "", cfg) if _has_branches(r, base, head))
 
 
-def find_context_file(stage_dir):
+def find_context_file(stage_dir) -> str:
     """plan-context.md of a stage or of the feature a phase folder (`.work/F/phases/NN-x`) belongs to; "" when there is none."""
     for rel in ("plan-context.md", os.path.join("..", "..", "plan-context.md")):
         f = os.path.normpath(os.path.join(stage_dir, rel))
@@ -130,7 +130,7 @@ def find_context_file(stage_dir):
     return ""
 
 
-def find_context_files(stage_dir):
+def find_context_files(stage_dir) -> list[str]:
     """The context files a stage's recall is measured against: its own plan-context.md, else the feature's. A phase with no pack of its own (the finish phase audits the whole feature) adds the packs of all sibling phases."""
     own = os.path.join(stage_dir, "plan-context.md")
     cf = find_context_file(stage_dir)
@@ -208,7 +208,7 @@ def _task_sections(tasks, changed):
     return lines
 
 
-def stage_context(repo, stage_dir, base, head, cfg=None):
+def stage_context(repo, stage_dir, base, head, cfg=None) -> str:
     changed = changed_files(repo, base, head)
     tasks = _stage_tasks(stage_dir)
     lines = [

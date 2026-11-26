@@ -13,17 +13,17 @@ class ScanError(Exception):
     """The tracked files could not be listed, so the scan cannot say it is clean."""
 
 
-def hits(repo, words):
+def hits(repo, words) -> list[str]:
     """-> ["file:line: word", ...] for every line of every tracked text file of `repo` that contains a word of `words` (case-insensitive). Raises ScanError as records() does."""
     return [_HIT.format(file=rel, line=n, word=w) for rel, n, w, _text in records(repo, words)]
 
 
-def hit_key(rel, word, text):
+def hit_key(rel, word, text) -> str:
     """-> the baseline key of one hit: `file TAB word TAB line text stripped`. No line number: the key stays the same when lines above the hit move."""
     return f"{rel}\t{word}\t{text.strip()}"
 
 
-def read_baseline(path):
+def read_baseline(path) -> set[str]:
     """-> set of hit keys listed in the baseline file at `path`. Blank lines and lines starting with # are ignored. A missing file is an empty baseline. Raises ScanError when the file exists but cannot be read."""
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -35,7 +35,7 @@ def read_baseline(path):
     return {s for s in (line.strip() for line in lines) if s and not s.startswith("#")}
 
 
-def diff(found, baseline):
+def diff(found, baseline) -> tuple[list[tuple[str, int, str, str]], list[str]]:
     """-> (new, stale): `new` are the records of `found` whose hit key is not in `baseline`, in scan order; `stale` are the baseline keys no record matches, sorted. A key listed once covers every identical line."""
     new = []
     seen = set()
@@ -47,7 +47,7 @@ def diff(found, baseline):
     return new, sorted(baseline - seen)
 
 
-def records(repo, words, skip=()):
+def records(repo, words, skip=()) -> list[tuple[str, int, str, str]]:
     """-> [(file, line, word, text), ...] for every line of every tracked text file of `repo` that contains a word of `words` (case-insensitive). `line` is 1-based, `text` the raw line. Empty words -> []. Blank words are ignored: an empty pattern would match every line; the rest are stripped. Binary files (NUL byte in the first PUBLIC_BINARY_SNIFF_BYTES) and the repo-relative files in `skip` are not scanned. Raises ScanError when git cannot list the tracked files."""
     needles = [w.strip() for w in words if w and w.strip()]
     if not needles:

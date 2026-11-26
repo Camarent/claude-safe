@@ -11,7 +11,7 @@ from .tasks import parse_tasks
 from .util import read_jsonl, read_text
 
 
-def position(tasks_md):
+def position(tasks_md) -> str:
     """`p2/3 02-api` for a stage folder `.work/<feature>/phases/NN-name`, else the folder name."""
     folder = os.path.dirname(os.path.abspath(tasks_md))
     parent = os.path.dirname(folder)
@@ -22,7 +22,7 @@ def position(tasks_md):
     return os.path.basename(folder)
 
 
-def phase_line(folder, text):
+def phase_line(folder, text) -> str:
     """`[p2/5 02-api] text`: a status line for a phase folder `.work/<feature>/phases/NN-name`, in the form of status_line (planning steps use it)."""
     return f"[{position(os.path.join(folder, TASKS_FILE))}] {text}"
 
@@ -35,7 +35,7 @@ def _where(of, tasks, ds):
     return ", ".join(dict.fromkeys(of.get(d["id"], d["id"]) for d in ds))
 
 
-def status_line(c, ds):
+def status_line(c, ds) -> str:
     """`[p2/3 02-api] wave 1/2 · tasks 2/5 done · dev×2 reviewer · 14 model calls · $0.42` (steps outside the task waves show their id)."""
     tm = os.path.join(c.w, TASKS_FILE)
     tasks = {t["id"]: t for t in parse_tasks(tm)}
@@ -55,7 +55,7 @@ def status_line(c, ds):
 PLAN_STEPS = ("startup", "context", "plan", "plan-opus", "check", "plan-fix", "plan-review")  # planning order; unknown step names sort last
 
 
-def planning_lines(c):
+def planning_lines(c) -> list[str]:
     """One line per planning step of a feature from its metrics.jsonl (`plan-step` events), in PLAN_STEPS order: the start time, and secs (the event's own, else done minus start); a started step with no done line shows as running."""
     last, started = {}, {}
     for e in read_jsonl(c.metrics):
