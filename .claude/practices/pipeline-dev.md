@@ -19,11 +19,10 @@ claude-safe/                      git repo (this repo only: master + dev); push 
 ```
 
 ## Rules
-- Main-dirt guard: `maincheck.py` reports a dev's writes to the main checkout. The `main_guard_ignore_globs` pipeline.json key sets the path globs it never reports; default `("qrun-*.log",)` in `pipeline.configuration/limits.py` (`MAIN_GUARD_IGNORE_GLOBS`). It replaces the default when set. Never a reason to delete or revert the paths it names.
+- Main-dirt guard: `maincheck.py` reports a dev's writes to the main checkout. The `main_guard_ignore_globs` pipeline.json key sets the path globs it never reports; default `("qrun-*.log",)` as `MAIN_GUARD_IGNORE_GLOBS` in `limits.py` under `.claude/tools/pipeline/configuration/`. It replaces the default when set. Never a reason to delete or revert the paths it names.
 - No literal `/root/.claude` in code: use `pipeline.configuration` (`TOOLS_DIR`, `tool_cmd("x.py")`, ...). It derives the home from the file location; env `PIPELINE_HOME` overrides.
 - No project names or `/workspace` in core code or shared docs. Per-project values live in the project's `pipeline.json` (`repo`, `test_env`, `each`, `gates`, branches) and its own CLAUDE.md / AUDIT.md.
 - Values (branch names, paths, timeouts, tool lists, flags) come from `pipeline.configuration` as named settings with a `pipeline.json` or env override, never as literals scattered in code. `/workspace` appears in pipeline code only as one reference constant in configuration. A literal in code is a design smell.
-- Values such as branch names, paths, timeouts and tool lists come from `pipeline.configuration` (named constants or `project()` settings), never as literals in code. No `/workspace` path in pipeline code outside one reference constant in configuration.
 - Local-model-only code goes in `tools/localmodel/`; core must work with Strata down.
 - Parked = `parked/<name>/` + a MANIFEST entry. Dead experiments are deleted (git history and tags are the archive).
 - Open work goes in `practices/pipeline-backlog.md`, nowhere else.
@@ -117,7 +116,7 @@ Moves, renames and rewrites go through a script with a dry run first (print the 
 - An event with a `task` key must carry what the retry ladder reads (`role` on a dispatch or report): a log-only event uses another key (`forced_remove` uses `job`).
 - Messages and file names for this live in `pipeline.configuration` (`LINK_*`, `BASE_WHY_*`, `CLEAR_WHY_*`).
 - Time-based or non-isolated tests are bad design (code not separated): inject the clock, isolate the test; only if impossible put it in `gates_merge`. See `agents/dev.md`, `agents/architect.md`, `ORCHESTRATOR.md`.
-- Main-checkout guard: `main_guard_ignore_globs` (pipeline.json key; default `("qrun-*.log",)` from `MAIN_GUARD_IGNORE_GLOBS` in `pipeline/configuration/limits.py`) lists path globs of the main checkout the dirt check never reports. Set it in the project `pipeline.json`; a list replaces the default (`[]` ignores nothing).
+- Main-checkout guard: `main_guard_ignore_globs` (pipeline.json key; default `("qrun-*.log",)` from `MAIN_GUARD_IGNORE_GLOBS` in `limits.py` under `.claude/tools/pipeline/configuration/`) lists path globs of the main checkout the dirt check never reports. Set it in the project `pipeline.json`; a list replaces the default (`[]` ignores nothing).
 
 ## Lesson: a missing hook binary on Edit or Write must fail open
 - What happened: a fail-closed write hook blocked every dev write in job worktrees (2026-11-24) because its binary was not on PATH.
