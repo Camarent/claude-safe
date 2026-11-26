@@ -11,7 +11,9 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from datetime import datetime, timedelta
+from typing import Any, NoReturn
 from zoneinfo import ZoneInfo
 
 from .configuration import (
@@ -58,21 +60,21 @@ NO_TOKEN_AGENTS = ("publisher", "pl-publisher")  # container name, host name; ne
 SUMS = ("turns", "input", "output", "cache_read", "cache_write", "cost_usd", "seconds")
 
 
-def flags(agent=None):
+def flags(agent=None) -> list[str]:
     args = shlex.split(os.environ.get(ENV_CLAUDE_FLAGS, DEFAULT_FLAGS))
     if agent in TUNING_EXEMPT_AGENTS:  # e.g. publisher needs Skill: no AGENT_TUNING_FLAGS for it
         args = [a for a in args if a not in AGENT_TUNING_FLAGS]
     return args
 
 
-def default_timeout():
+def default_timeout() -> float:
     try:
         return float(os.environ.get(ENV_TIMEOUT, SESSION_TIMEOUT_S))
     except ValueError:
         return SESSION_TIMEOUT_S
 
 
-def project_allow(d=None):
+def project_allow(d=None) -> list[str]:
     """Extra `--allowedTools` entries from <d>/pipeline.json `allow` (list of Bash patterns such as "Bash(target/release/app check *)"), for every headless session; [] when unset. d defaults to the cwd."""
     allow = project(d or os.getcwd()).get("allow")
     if not isinstance(allow, list) or not allow:
@@ -80,13 +82,13 @@ def project_allow(d=None):
     return ["--allowedTools", *(str(a) for a in allow)]
 
 
-def scratch_allow_args(scratch, d=None):
+def scratch_allow_args(scratch, d=None) -> list[str]:
     """`--allowedTools` entries letting the agent run python scripts from SCRATCH; [] when none."""
     allow = scratch_allow(scratch, project(d or os.getcwd()))
     return ["--allowedTools", *(f"Bash({a})" for a in allow)] if allow else []
 
 
-def claude_args(agent, model, effort, prompt, dir=None, max_turns=None, scratch=None, add_dirs=()):
+def claude_args(agent, model, effort, prompt, dir=None, max_turns=None, scratch=None, add_dirs=()) -> list[str]:
     """Args for `claude -p`. dir: the run dir whose pipeline.json and .work/ apply (default: the cwd). max_turns: `--max-turns` when > 0. scratch: the stage scratch dir whose script files the agent may run (see scratch_allow). add_dirs: extra dirs the session may read, each as ADD_DIR_FLAG."""
     return [
         "-p",
@@ -106,7 +108,7 @@ def claude_args(agent, model, effort, prompt, dir=None, max_turns=None, scratch=
     ]
 
 
-def report_done(path):
+def report_done(path) -> bool:
     """True when the agent's report file exists and its first line is a VERDICT line."""
     try:
         with open(path) as f:
@@ -119,12 +121,12 @@ LIVE: list[subprocess.Popen] = []  # Popen objects (sessions and script steps) t
 STOPPING = False  # set by kill_on_signal: no new session starts once the driver is told to stop
 
 
-def track(p):
+def track(p) -> subprocess.Popen:
     LIVE.append(p)
     return p
 
 
-def untrack(p):
+def untrack(p) -> None:
     if p in LIVE:
         LIVE.remove(p)
 
@@ -132,13 +134,13 @@ def untrack(p):
 PGID_LOCK = threading.Lock()  # sessions of one wave start and end on pool threads
 
 
-def pgid_record(path, pid):
+def pgid_record(path, pid) -> None:
     """Append PID (a session's process group id: it leads its own group) as one line of the stage's pgid file PATH."""
     with PGID_LOCK, open(path, "a") as f:
         f.write(f"{pid}\n")
 
 
-def pgid_forget(path, pid):
+def pgid_forget(path, pid) -> None:
     """Drop PID's line from the pgid file PATH; the file goes when no live session is left in it."""
     with PGID_LOCK:
         try:
@@ -152,26 +154,26 @@ def pgid_forget(path, pid):
             os.remove(path)
 
 
-def kill_group(p):
+def kill_group(p) -> None:
     with contextlib.suppress(OSError):
         os.killpg(p.pid, signal.SIGKILL)  # the session leads its own group, so background children die with it
 
 
-def kill_all():
+def kill_all() -> None:
     """Kill the process group of every live session or script step (driver stop)."""
     for p in list(LIVE):
         kill_group(p)
 
 
 @contextlib.contextmanager
-def kill_on_signal():
+def kill_on_signal() -> Iterator[None]:
     """Driver guard: SIGTERM and SIGINT kill every live session group, then exit. Without it the headless claude sessions outlive the driver and keep editing the job worktree."""
     global STOPPING
     if threading.current_thread() is not threading.main_thread():
         yield
         return
 
-    def stop(signum, frame):
+    def stop(signum, frame) -> NoReturn:
         global STOPPING
         STOPPING = True
         kill_all()
@@ -210,7 +212,7 @@ def _wait(p, timeout, done_file):
                     return out, err, True, False
 
 
-def artifact_allow(args):
+def artifact_allow(args) -> list[str]:
     """args with ARTIFACT_ALLOW_FLAGS for the publisher only, placed before the `--` that ends the flags so the prompt stays the last positional; other sessions get args unchanged."""
     if not any(a in args for a in ARTIFACT_AGENTS):
         return list(args)
@@ -218,7 +220,7 @@ def artifact_allow(args):
     return [*args[:cut], *ARTIFACT_ALLOW_FLAGS, *args[cut:]]
 
 
-def add_dirs():
+def add_dirs() -> list[str]:
     """Dirs for ADD_DIR_FLAG: pipeline.json `add_dirs` if a list, else the project root."""
     root = os.environ.get(ENV_PROJECT_ROOT) or DEFAULT_WORKSPACE
     try:
@@ -228,7 +230,7 @@ def add_dirs():
     return [str(d) for d in extra] if isinstance(extra, list) and extra else [root]
 
 
-def add_dir_allow(args):
+def add_dir_allow(args) -> list[str]:
     """args with ADD_DIR_FLAG <dir> placed before the `--` that ends the flags: the project dirs for the read-only roles in ADD_DIR_AGENTS, only SCRATCH_ADD_DIR for dev and reviewer (SCRATCH_ADD_AGENTS)."""
     if any(a in args for a in ADD_DIR_AGENTS):
         dirs = add_dirs()
@@ -240,7 +242,7 @@ def add_dir_allow(args):
     return [*args[:cut], *(x for d in dirs for x in (ADD_DIR_FLAG, d)), *args[cut:]]
 
 
-def session_env(args, env_extra):
+def session_env(args, env_extra) -> dict[str, str]:
     """Environment of one `claude` session: GIT_SAFE_ENV, the pipeline token unless the agent is in NO_TOKEN_AGENTS, the artifact flag for ARTIFACT_AGENTS, then env_extra."""
     env = {**os.environ, **GIT_SAFE_ENV}
     token = os.environ.get(ENV_PIPELINE_TOKEN)
@@ -252,7 +254,7 @@ def session_env(args, env_extra):
     return env
 
 
-def run_claude(args, cwd, timeout, done_file=None, env_extra=None, pgid_file=None):
+def run_claude(args, cwd, timeout, done_file=None, env_extra=None, pgid_file=None) -> dict[str, Any]:
     """Run `claude <args>`, -> parsed json dict (is_error set on any failure). done_file: report path; session is closed REPORT_GRACE_S after its VERDICT line appears. pgid_file: stage file that lists the live sessions' group ids. stopped=True when the driver is stopping: the session did not run to an answer, so no report is due."""
     if STOPPING:
         return {"stopped": True, "is_error": True, "result": "wave: driver stopping, session not started"}
@@ -296,7 +298,7 @@ def run_claude(args, cwd, timeout, done_file=None, env_extra=None, pgid_file=Non
                 pgid_forget(pgid_file, p.pid)
 
 
-def tool_counts(session_id):
+def tool_counts(session_id) -> dict[str, int]:
     """Per-tool call counts from the persisted session transcript (~/.claude/projects/*/<id>.jsonl); {} if absent."""
     import collections
     import glob
@@ -320,7 +322,7 @@ def tool_counts(session_id):
     return dict(c)
 
 
-def search_counts(session_id):
+def search_counts(session_id) -> dict[str, int]:
     """local.py vs grep/glob call counts of a session transcript (see lp_share.py); {} if absent."""
     import glob
 
@@ -334,7 +336,7 @@ def search_counts(session_id):
     return dict(c)
 
 
-def guard_rows(scratch, token):
+def guard_rows(scratch, token) -> list[tuple[str, str]]:
     """(command, rule) of each denials.jsonl row in the stage scratch dir that carries this session's `token`, in file order (denial_log.py); [] without a scratch dir."""
     if not scratch:
         return []
@@ -343,7 +345,7 @@ def guard_rows(scratch, token):
     return [(r.get("command", ""), r.get("rule", "")) for r in denial_log.rows(scratch) if r.get("session") == token]
 
 
-def denial_lines(denials, guards=()):
+def denial_lines(denials, guards=()) -> list[str]:
     """Raw `permission_denials` of a claude json -> lines `Tool: command-or-path` (max 5, DENIED_CMD_MAX chars each, plus ` [reason]` when the json gives one, and the guard name last when a `guards` row (command, rule) matches the command; each row is used once)."""
     out = []
     left = list(guards)
@@ -372,7 +374,7 @@ def _take_guard(left, what):
     return ""
 
 
-def usage(res, guards=()):
+def usage(res, guards=()) -> dict[str, Any]:
     """Raw claude json -> {turns, input, output, cache_read, cache_write, cost_usd, seconds, seconds_api, result, error}; guards: see denial_lines."""
     u = res.get("usage") or {}
     return {
@@ -398,7 +400,7 @@ LIMIT_RE = re.compile(r"hit your .{0,30}limit", re.I)
 RESET_RE = re.compile(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s*(?:\(([^)]+)\))?", re.I)
 
 
-def limit_wait_s(res, now=None):
+def limit_wait_s(res, now=None) -> float | None:
     """-> seconds to wait when RES is a usage-limit notice (`You've hit your 5-hour limit · resets 8pm (UTC)`), else None.
     Without a parsable reset time: LIMIT_FALLBACK_S. The notice is a short result; an agent's long text never counts."""
     text = str(res.get("result") or "").strip()
@@ -419,7 +421,7 @@ def limit_wait_s(res, now=None):
     return (reset - t).total_seconds() + LIMIT_MARGIN_S
 
 
-def session(args, cwd, timeout=None, done_file=None, env_extra=None, pgid_file=None):
+def session(args, cwd, timeout=None, done_file=None, env_extra=None, pgid_file=None) -> dict[str, Any]:
     """Run one session (timeout default WAVE_TIMEOUT; done_file, pgid_file: see run_claude). -> usage dict.
     A usage-limit notice as the result is not a failure of the task: wait for the printed reset time and run the session again (at most LIMIT_WAIT_MAX_S in all)."""
     t = default_timeout() if timeout is None else timeout

@@ -49,7 +49,7 @@ def _logical(block):
     return out
 
 
-def ci_run_lines(yml_text):
+def ci_run_lines(yml_text: str) -> list[str]:
     """-> [command] of every `run:` entry: a single-line value, or each non-empty line of a `run: |` / `run: >` block."""
     out, lines, i = [], yml_text.splitlines(), 0
     while i < len(lines):
@@ -70,7 +70,7 @@ def ci_run_lines(yml_text):
     return out
 
 
-def drift(project_dir, cfg):
+def drift(project_dir, cfg) -> list[str]:
     """-> [problem]: CI commands missing from the gates (`&&` parts count). Never raises on config; `ci_drift: false` disables. `ci_drift_ignore` lists CI-only commands (setup, CI-only jobs) by exact text or leading words."""
     if cfg.get("ci_drift") is False:
         return []
@@ -116,12 +116,12 @@ def _uncovered(files, gates, cfg):
     return out
 
 
-def ignore_hint(cmd):
+def ignore_hint(cmd) -> str:
     """-> the `ci_drift_ignore` entry for CMD: its leading CI_HINT_WORDS words (the prefix rule of _uncovered names it)."""
     return " ".join(cmd.split()[:CI_HINT_WORDS])
 
 
-def ci_commands(repo, cfg):
+def ci_commands(repo, cfg) -> list[str]:
     """-> [command] the CI workflows of REPO run that no `gates` entry covers and `ci_drift_ignore` does not name (the lines pr-ready runs beyond the gates). Same reading as drift()."""
     files = sorted(glob.glob(os.path.join(repo, ".github", "workflows", "*.yml")))
     out = []

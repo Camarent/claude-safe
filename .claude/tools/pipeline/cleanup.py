@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import time
+from typing import Any
 
 from . import gitx, scratch, worktree
 from .configuration import (
@@ -107,7 +108,7 @@ def _folder_branches(a_dir):
     return {worktree.layout(a_dir, s, t)[3] for s in _stages(a_dir) for t in worktree.list_wt(a_dir, s)}
 
 
-def prune_branches(a_dir, dry_run=False):
+def prune_branches(a_dir, dry_run=False) -> tuple[list[tuple[str, str]], list[str]]:
     """Orphan local job branches: merged into the release branch or a work branch, with no .wt folder and checked out nowhere.
     -> ([(branch, into)] deleted, [branch] kept because not merged anywhere). Deletes unless dry_run.
     A worktree removed by this run takes its branch with it (worktree.remove), so its branch is already held here."""
@@ -132,7 +133,7 @@ def prune_branches(a_dir, dry_run=False):
     return pruned, unmerged
 
 
-def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
+def cleanup(a_dir, tmp_root=None, dry_run=False, now=None) -> dict[str, Any]:
     """-> {"worktrees": [(stage, task, why)], "kept": [(stage, task)], "tmp": [paths], "branches": [(branch, into)],
     "unmerged": [branch] (orphan job branches merged nowhere, kept), "dry_run": bool}. Removes unless dry_run."""
     tmp_root = tmp_root or tempfile.gettempdir()
@@ -155,7 +156,7 @@ def cleanup(a_dir, tmp_root=None, dry_run=False, now=None):
     return {"worktrees": done, "kept": kept, "tmp": tmp, "branches": branches, "unmerged": unmerged, "dry_run": dry_run}
 
 
-def main(argv=None):
+def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Remove merged or gone job worktrees and acceptance temp dirs.")
     p.add_argument("--dir", default=None, help="project dir (default: the current one)")
     p.add_argument("--tmp-root", default=None, help="where acceptance temp dirs live (default: the system temp dir)")

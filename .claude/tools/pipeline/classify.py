@@ -17,12 +17,12 @@ INFRA_MARKERS = re.compile(r"^(qrun: cannot run|FAIL exit 126\b|FAIL exit 127\b)
 ENV_ERROR = re.compile(ENV_ERROR_PATTERN)
 
 
-def env_failure(text):
+def env_failure(text) -> bool:
     """True when the output names a missing environment piece (missing module, no config path, command not found): a repair can fix it, a dev cannot."""
     return ENV_ERROR.search(text) is not None
 
 
-def classify_test_run(output, stage_dir, tid, repo):
+def classify_test_run(output, stage_dir, tid, repo) -> tuple[str, str]:
     """-> (class, reason) for a failed task test run (qrun output text).
 
     qrun exit 3 prints `SKIPPED/EMPTY: zero tests detected` or `SKIPPED/EMPTY: N skipped`. Zero tests with a Test path that matches no file and that no Predicted path creates is a plan defect; with the file present or promised by Predicted paths it is code (the dev wrote no test or an empty one). Skips are code.
