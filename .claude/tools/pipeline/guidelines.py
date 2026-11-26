@@ -24,7 +24,7 @@ def _has(repo, patterns, subdirs):
     return False
 
 
-def detect(repo):
+def detect(repo) -> list[str]:
     """-> the sorted language slugs whose marker files are in the repo root (cpp also looks in `src/`)."""
     return sorted(lang for lang, patterns, subdirs in LANG_MARKERS if _has(repo, patterns, subdirs))
 
@@ -34,7 +34,7 @@ def _langs_for(path):
     return [lang for lang, exts in LANG_EXTENSIONS if ext in exts]
 
 
-def digest(repo, changed_paths, guidelines_dir=GUIDELINES_DIR):
+def digest(repo, changed_paths, guidelines_dir=GUIDELINES_DIR) -> list[str]:
     """-> at most GUIDELINES_DIGEST_MAX_LINES lines for the changed file types: the base guideline and the <lang>.md of each
     changed type, each preceded by its full path. No matching type -> the full path list only. `repo` is the repo the paths
     belong to; the guideline files are shared, so only the paths select them."""

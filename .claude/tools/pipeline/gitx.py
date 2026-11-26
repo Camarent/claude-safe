@@ -7,19 +7,19 @@ import subprocess
 from .configuration import GIT_SAFE_DIR_ARGS, GIT_TIMEOUT_S
 
 
-def run(repo, *args, timeout=GIT_TIMEOUT_S, input=None, env=None):
+def run(repo, *args, timeout=GIT_TIMEOUT_S, input=None, env=None) -> subprocess.CompletedProcess:
     """git -C repo args -> CompletedProcess (INPUT goes to stdin, ENV replaces the environment when given; text, never raises on a non-zero exit; a timeout raises subprocess.TimeoutExpired)."""
     return subprocess.run(
         ["git", *GIT_SAFE_DIR_ARGS, "-C", repo, *args], capture_output=True, text=True, errors="replace", timeout=timeout, check=False, input=input, env=env
     )
 
 
-def raw_out(repo, *args, timeout=GIT_TIMEOUT_S):
+def raw_out(repo, *args, timeout=GIT_TIMEOUT_S) -> bytes:
     """stdout of a git call as BYTES (a diff must keep CRLF and non-UTF-8 text as they are; `run` decodes). Raises subprocess.CalledProcessError on a non-zero exit, subprocess.TimeoutExpired on a timeout."""
     return subprocess.run(["git", *GIT_SAFE_DIR_ARGS, "-C", repo, *args], capture_output=True, timeout=timeout, check=True).stdout
 
 
-def out(repo, *args, timeout=GIT_TIMEOUT_S, check=True):
+def out(repo, *args, timeout=GIT_TIMEOUT_S, check=True) -> str:
     """stdout (trailing newline stripped) of a git call; RuntimeError with git's own message when it times out or (check) fails."""
     try:
         r = run(repo, *args, timeout=timeout)
@@ -31,13 +31,13 @@ def out(repo, *args, timeout=GIT_TIMEOUT_S, check=True):
     return r.stdout.rstrip("\n")  # keep leading spaces: ` M path` from `status --porcelain` is a column layout
 
 
-def try_out(repo, *args, timeout=GIT_TIMEOUT_S):
+def try_out(repo, *args, timeout=GIT_TIMEOUT_S) -> str | None:
     """stdout of a git call, None when it fails (callers decide what a failure means)."""
     r = run(repo, *args, timeout=timeout)
     return r.stdout if r.returncode == 0 else None
 
 
-def try_run(repo, *args, timeout=GIT_TIMEOUT_S, env=None):
+def try_run(repo, *args, timeout=GIT_TIMEOUT_S, env=None) -> subprocess.CompletedProcess | None:
     """`run`, but None when git cannot start or times out (no exception)."""
     try:
         # env only when given: tests replace `run` with fakes that take no env
@@ -46,7 +46,7 @@ def try_run(repo, *args, timeout=GIT_TIMEOUT_S, env=None):
         return None
 
 
-def try_text(repo, *args, timeout=GIT_TIMEOUT_S):
+def try_text(repo, *args, timeout=GIT_TIMEOUT_S) -> str:
     """stdout of a git call that exited 0, else "" (also on a timeout or when git cannot run)."""
     r = try_run(repo, *args, timeout=timeout)
     return r.stdout if r and r.returncode == 0 else ""
@@ -58,7 +58,7 @@ _OCTAL_BASE = 8
 _OCTAL_DIGITS = 3
 
 
-def unquote_path(quoted):
+def unquote_path(quoted) -> str:
     """git's C-quoted path (with the double quotes) -> the real path; octal escapes are UTF-8 bytes."""
     body = quoted[1:-1] if quoted.startswith('"') and quoted.endswith('"') else quoted
     raw = bytearray()
@@ -80,7 +80,7 @@ def _diff_path(raw):
     return raw[2:] if raw.startswith("b/") else ""
 
 
-def added_lines(diff_text):
+def added_lines(diff_text) -> dict[str, list[tuple[int, str]]]:
     """-> {file: [(line number, text without the "+")]} for the added lines of a `git diff -U0` text. Every file with a `+++ b/` header is a key (deletions only -> []); deleted files are left out."""
     out: dict = {}
     cur, line = "", 0
