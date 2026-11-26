@@ -8,12 +8,12 @@ import re
 from .configuration import GENERATED_HEAD_LINES, GENERATED_MARKER_KEY, GENERATED_MARKER_RE, project
 
 
-def marker(workspace):
+def marker(workspace) -> str:
     """-> the generated-file marker regex of the project at WORKSPACE (`generated_marker`, default GENERATED_MARKER_RE)."""
     return str(project(workspace).get(GENERATED_MARKER_KEY) or GENERATED_MARKER_RE)
 
 
-def is_generated(path, rx):
+def is_generated(path, rx) -> bool:
     """True when the first GENERATED_HEAD_LINES lines of file PATH match regex RX; False for a missing or unreadable file."""
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -23,6 +23,6 @@ def is_generated(path, rx):
     return bool(re.search(rx, head))
 
 
-def generated_among(root, rels, rx):
+def generated_among(root, rels, rx) -> list[str]:
     """-> the paths of RELS (relative to ROOT) that are generated files."""
     return [r for r in rels if is_generated(os.path.join(root, r), rx)]

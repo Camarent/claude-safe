@@ -57,7 +57,7 @@ def _file_findings(path, name):
     return out
 
 
-def path_dependent_tests(cwd, base):
+def path_dependent_tests(cwd, base) -> list[str]:
     """Path-dependent asserts in the test files changed vs base in the repo cwd -> `path:line: ...` lines, [] when none."""
     findings = []
     for name in _changed_tests(cwd, base):

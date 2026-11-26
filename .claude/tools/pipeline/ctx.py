@@ -24,6 +24,6 @@ class Ctx:
         )  # budget covers the whole stage, also after a restart
         self.sess = []  # session lines of the current wave
 
-    def tasks(self):
+    def tasks(self) -> dict[str, str]:
         """-> {dispatch id: task id} from orch.jsonl."""
         return {e["id"]: e.get("task", "") for e in read_jsonl(self.log) if e.get("ev") == "dispatch"}

@@ -48,18 +48,18 @@ exec {runner} "$target"{args} "$@"
 """
 
 
-def load(home=None):
+def load(home=None) -> dict:
     return cmdnames.load(home or HOME)
 
 
-def resolve(index, key, home=None):
+def resolve(index, key, home=None) -> str:
     """Absolute path of a command's script (repo-based entries sit next to the home folder)."""
     entry = index["commands"][key]
     base = os.path.dirname(home or HOME) if entry.get("base") == BASE_REPO else (home or HOME)
     return os.path.join(base, entry["script"])
 
 
-def root(index, name, side, home=None, _seen=()):
+def root(index, name, side, home=None, _seen=()) -> str | None:
     """Value of a root on one side. Host values written '@home' resolve to the real home, '@other' to that root's host value, '~' and '$VAR' are expanded. A cycle of '@' refs -> None."""
     value = index["roots"][name].get(side)
     if value is None or name in _seen:
@@ -71,7 +71,7 @@ def root(index, name, side, home=None, _seen=()):
     return os.path.expandvars(os.path.expanduser(value))
 
 
-def swap(text, side, index=None, home=None):
+def swap(text, side, index=None, home=None) -> tuple[str, int]:
     """Replace the container root values in `text` by their `side` values; returns (text, count). Longest value first."""
     index = index or load(home)
     if side == "container":
@@ -90,7 +90,7 @@ def swap(text, side, index=None, home=None):
     return text, count
 
 
-def wrapper_text(index, key):
+def wrapper_text(index, key) -> str:
     entry = index["commands"][key]
     name = command_name(index, key)
     repo = entry.get("base") == BASE_REPO
@@ -102,7 +102,7 @@ def wrapper_text(index, key):
     )  # fmt: skip
 
 
-def planned(index, home):
+def planned(index, home) -> dict[str, str]:
     """{path: text} of every wrapper that must exist: container-side commands in bin, host-only ones in bin-host."""
     out = {}
     for key, entry in commands(index).items():
@@ -111,7 +111,7 @@ def planned(index, home):
     return out
 
 
-def gen_bin(home=None, check=False):
+def gen_bin(home=None, check=False) -> list[str]:
     """Write the wrappers (or with check=True only compare). Returns the list of problems; empty = in sync."""
     home = home or HOME
     want = planned(load(home), home)
@@ -149,7 +149,7 @@ def _is_generated(path):
         return False
 
 
-def hook_commands(settings):
+def hook_commands(settings) -> list[str]:
     """Every hook command string in a settings.json dict."""
     out = []
     for groups in settings.get("hooks", {}).values():
@@ -158,11 +158,11 @@ def hook_commands(settings):
     return out
 
 
-def resolves(word, path):
+def resolves(word, path) -> bool:
     return subprocess.run(["sh", "-c", RESOLVE_SH, "sh", word], env={"PATH": path}, check=False).returncode == 0
 
 
-def unresolved(settings_file, index, path):
+def unresolved(settings_file, index, path) -> list[str]:
     """Hook commands (first word) and container-side cs-* names that do not resolve on `path`."""
     with open(settings_file, encoding="utf-8") as f:
         settings = json.load(f)
@@ -175,7 +175,7 @@ def unresolved(settings_file, index, path):
     return [f"{kind}: {w}" for kind, w in words if not resolves(w, path)]
 
 
-def check_path(settings_file, bin_dir, home=None):
+def check_path(settings_file, bin_dir, home=None) -> int:
     """Print a loud warning per unresolved name; exit code 1 only when CS_STRICT=1."""
     missing = unresolved(settings_file, load(home), bin_dir + os.pathsep + os.environ.get("PATH", ""))
     for m in missing:
@@ -185,7 +185,7 @@ def check_path(settings_file, bin_dir, home=None):
     return EXIT_UNRESOLVED if missing and os.environ.get(STRICT_ENV) == "1" else 0
 
 
-def main(argv=None):
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("action", choices=["gen-bin", "check-path"])
     ap.add_argument("--settings", help="check-path: the settings.json whose hooks are checked")

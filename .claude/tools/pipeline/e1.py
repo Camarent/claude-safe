@@ -76,7 +76,7 @@ def _reviewer_event(mine):
     return "c" if escalated else None
 
 
-def e1_event(role, mine):
+def e1_event(role, mine) -> str | None:
     """-> 'a', 'b', 'c' or None: the E1 event that holds for ROLE ('dev' or 'reviewer') in the task's events MINE."""
     if role == "dev":
         return _dev_event(mine)
@@ -85,7 +85,7 @@ def e1_event(role, mine):
     return None
 
 
-def model_for(role, task, mine):
+def model_for(role, task, mine) -> tuple[str, str | None]:
     """-> (model, why): Sonnet with an `E1(...)` why when an E1 event holds for ROLE, else (Haiku, None).
 
     TASK is not read: the owner_sonnet and review_sonnet flags no longer pick a model.
