@@ -498,6 +498,7 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     NEG_GREP_RE,
     NEG_WARN_PREFIX,
     NO_TASKS_HINT,
+    OUTPUT_PATH_PREFIX,
     OUTPUTS_FIELD,
     PER_FILE_CHECK_PHRASES,
     PER_FILE_PHRASES,

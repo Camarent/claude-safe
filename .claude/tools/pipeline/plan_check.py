@@ -211,6 +211,7 @@ from .plan_files import (
 from .plan_files import (
     paths_in as paths_in,  # re-exported: pre-split name of pipeline.plan_check
 )
+from .plan_kinds import check_kinds
 from .plan_lint import (
     classify_shared,
     shared_file_errors,
@@ -291,7 +292,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced):
         + check_bare_test_runner(d, e["id"], _workspace(d))
         + check_test_ban(d, e["id"], _workspace(d))
         + check_qrun_operator(d, e["id"])
-        + check_work_paths(d, e["id"])
+        + check_kinds(d, e, ents, repo)
         + check_task_size(d, e["id"])
         + check_type_inputs(d, e["id"], repo, _workspace(d))
         + check_report_validator(d, e["id"])
