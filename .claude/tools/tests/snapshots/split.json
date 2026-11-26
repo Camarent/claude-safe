@@ -49,22 +49,28 @@
     "a7",
     "script",
     "-",
-    "python3 -I <tools>/localmodel/plan_conte"
+    "python3 -I <tools>/pipeline/steps_finalt"
    ],
    [
     "a8",
     "script",
     "-",
-    "python3 -I <tools>/xtools.py check --ins"
+    "python3 -I <tools>/localmodel/plan_conte"
    ],
    [
     "a9",
+    "script",
+    "-",
+    "python3 -I <tools>/xtools.py check --ins"
+   ],
+   [
+    "a10",
     "sec-auditor",
     "sonnet",
     ""
    ],
    [
-    "a10",
+    "a11",
     "arch-auditor",
     "sonnet",
     ""
@@ -115,22 +121,28 @@
     "a7",
     "script",
     "-",
-    "python3 -I <tools>/localmodel/plan_conte"
+    "python3 -I <tools>/pipeline/steps_finalt"
    ],
    [
     "a8",
     "script",
     "-",
-    "python3 -I <tools>/xtools.py check --ins"
+    "python3 -I <tools>/localmodel/plan_conte"
    ],
    [
     "a9",
+    "script",
+    "-",
+    "python3 -I <tools>/xtools.py check --ins"
+   ],
+   [
+    "a10",
     "sec-auditor",
     "sonnet",
     ""
    ],
    [
-    "a10",
+    "a11",
     "arch-auditor",
     "sonnet",
     ""
@@ -181,6 +193,12 @@
     "a7",
     "script",
     "-",
+    "python3 -I <tools>/pipeline/steps_finalt"
+   ],
+   [
+    "a8",
+    "script",
+    "-",
     "python3 -I <tools>/localmodel/plan_conte"
    ]
   ],
@@ -229,34 +247,40 @@
     "a7",
     "script",
     "-",
-    "python3 -I <tools>/localmodel/plan_conte"
+    "python3 -I <tools>/pipeline/steps_finalt"
    ],
    [
     "a8",
     "script",
     "-",
-    "python3 -I <tools>/xtools.py check --ins"
+    "python3 -I <tools>/localmodel/plan_conte"
    ],
    [
     "a9",
+    "script",
+    "-",
+    "python3 -I <tools>/xtools.py check --ins"
+   ],
+   [
+    "a10",
     "sec-auditor",
     "sonnet",
     ""
    ],
    [
-    "a10",
+    "a11",
     "arch-auditor",
     "sonnet",
     ""
    ],
    [
-    "a11",
+    "a12",
     "script",
     "-",
     "python3 -I <tools>/index_step.py --dir <"
    ],
    [
-    "a12",
+    "a13",
     "script",
     "-",
     "python3 -I <tools>/ops_steps.py cleanup "
@@ -307,22 +331,28 @@
     "a7",
     "script",
     "-",
-    "python3 -I <tools>/localmodel/plan_conte"
+    "python3 -I <tools>/pipeline/steps_finalt"
    ],
    [
     "a8",
     "script",
     "-",
-    "python3 -I <tools>/xtools.py check --ins"
+    "python3 -I <tools>/localmodel/plan_conte"
    ],
    [
     "a9",
+    "script",
+    "-",
+    "python3 -I <tools>/xtools.py check --ins"
+   ],
+   [
+    "a10",
     "sec-auditor",
     "sonnet",
     ""
    ],
    [
-    "a10",
+    "a11",
     "arch-auditor",
     "sonnet",
     ""
@@ -385,34 +415,40 @@
     "a9",
     "script",
     "-",
-    "python3 -I <tools>/localmodel/plan_conte"
+    "python3 -I <tools>/pipeline/steps_finalt"
    ],
    [
     "a10",
     "script",
     "-",
-    "python3 -I <tools>/xtools.py check --ins"
+    "python3 -I <tools>/localmodel/plan_conte"
    ],
    [
     "a11",
     "script",
     "-",
-    "python3 -I <tools>/ux_run.py --stage s -"
+    "python3 -I <tools>/xtools.py check --ins"
    ],
    [
     "a12",
+    "script",
+    "-",
+    "python3 -I <tools>/ux_run.py --stage s -"
+   ],
+   [
+    "a13",
     "sec-auditor",
     "sonnet",
     ""
    ],
    [
-    "a13",
+    "a14",
     "ux-reviewer",
     "sonnet",
     ""
    ],
    [
-    "a14",
+    "a15",
     "arch-auditor",
     "sonnet",
     ""
