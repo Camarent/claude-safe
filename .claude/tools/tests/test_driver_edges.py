@@ -21,7 +21,10 @@ class TestDriver(unittest.TestCase):
         cmd = f"{driver.SCRIPT_PREFIX}x.py"
         out = "VERDICT: DONE\n" + "z" * (SCRIPT_OUTPUT_MAX * 2)
         done = SimpleNamespace(returncode=0, args=[], communicate=lambda timeout=None: (out, ""))
-        with mock.patch.object(driver.subprocess, "Popen", return_value=done):
+        with (
+            mock.patch.object(driver, "script_timeout", return_value=600),
+            mock.patch.object(driver.subprocess, "Popen", return_value=done),
+        ):
             r = driver.run_script(cmd, ".")
         self.assertFalse(r["error"])
         self.assertTrue(r["result"].startswith("VERDICT: DONE\n...\n"))

@@ -203,24 +203,30 @@ class LimitWaitTest(unittest.TestCase):
         clock = FakeClock()
         with (
             mock.patch.object(claude, "run_claude", side_effect=results) as run,
-            mock.patch.object(claude, "limit_wait", side_effect=[claude.LimitWait(5.0, True), None]),
+            mock.patch.object(claude, "limit_wait", side_effect=[claude.LimitWait(50.0, True), None]),
+            mock.patch.object(claude, "tool_setting", return_value=20) as tool,
+            mock.patch.object(claude.subprocess, "run", side_effect=AssertionError("real git")),
             mock.patch.object(claude.time, "sleep", side_effect=AssertionError("real sleep")),
         ):
             u = claude.session(["-p", "x"], ".", 5, sleep=clock.sleep, now=clock.now)
         self.assertEqual((u["result"], u["turns"]), ("ok", 2))
         self.assertEqual(run.call_count, 2)
-        self.assertEqual(clock.slices, [5.0])
+        self.assertEqual(clock.slices, [20.0, 20.0, 10.0])  # the mocked recheck slice, not the 900 s default
+        tool.assert_called_with("LIMIT_RECHECK_S")
 
     def test_waiting_stops_at_the_cap_and_returns_the_notice(self):
         clock = FakeClock()
         with (
             mock.patch.object(claude, "run_claude", return_value={"result": self.NOTICE, "is_error": True}),
             mock.patch.object(claude, "limit_wait", return_value=claude.LimitWait(float(claude.LIMIT_WAIT_MAX_S) + 1, True)),
+            mock.patch.object(claude, "tool_setting", return_value=900) as tool,
+            mock.patch.object(claude.subprocess, "run", side_effect=AssertionError("real git")),
             mock.patch.object(claude.time, "sleep", side_effect=AssertionError("real sleep")),
         ):
             u = claude.session(["-p", "x"], ".", 5, sleep=clock.sleep, now=clock.now)
         self.assertEqual(u["result"], self.NOTICE)
         self.assertEqual(clock.slices, [])
+        tool.assert_not_called()  # the cap stops before any recheck slice is read
 
     def test_known_reset_waits_in_recheck_slices_until_the_reset_time(self):
         results = [{"result": self.NOTICE, "is_error": True}, {"result": "ok", "num_turns": 1}]
