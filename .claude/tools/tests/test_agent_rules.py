@@ -57,6 +57,15 @@ class AgentRules(unittest.TestCase):
         text = read(os.path.join(AGENTS, "architect.md"))
         self.assertIn("`cs-plan batch`", text)
 
+    def test_merger_auto_merges_only_init_add_add_conflicts(self):
+        text = read(os.path.join(AGENTS, "merger.md"))
+        self.assertIn("an add/add conflict on an `__init__.py` (both branches added the file) keeps both sides' lines", text)
+        self.assertIn("any other add/add conflict stays a CONFLICT for the lead", text)
+        self.assertIn("keeps both sides' lines, each line once, base side first", text)
+        self.assertNotIn("any file", text)
+        self.assertIn("reports CONFLICT except add/add on `__init__.py`, merged per step 4", text)
+        self.assertIn("Edit and resolve nothing except step 4's `__init__.py` case", text)
+
 
 if __name__ == "__main__":
     unittest.main()

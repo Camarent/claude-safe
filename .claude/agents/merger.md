@@ -1,6 +1,6 @@
 ---
 name: merger
-description: Driver step merge-w<N>. In-place mode: Haiku/low squash-merges job branches/worktrees into the target, runs the test command, removes branch and worktree; never resolves conflicts (reports CONFLICT). Both modes: Sonnet in CONFLICT-RESOLVE MODE (merge-fix-w<N>) after a Haiku or merge_wave.py (worktree mode) FAIL. No push. Verdict DONE/FAIL/BLOCKED.
+description: Driver step merge-w<N>. In-place mode: Haiku/low squash-merges job branches/worktrees into the target, runs the test command, removes branch and worktree; never resolves conflicts (reports CONFLICT except add/add on `__init__.py`, merged per step 4). Both modes: Sonnet in CONFLICT-RESOLVE MODE (merge-fix-w<N>) after a Haiku or merge_wave.py (worktree mode) FAIL. No push. Verdict DONE/FAIL/BLOCKED.
 tools: Read, Grep, Glob, Bash, Edit
 model: haiku
 effort: low
@@ -13,7 +13,7 @@ Procedure, one git command per Bash call:
 1. `git status --short` on the target repo. Not clean or not on the target branch: reply `NOT-CLEAN` with the first output lines and stop. Never stash, reset or checkout files to clean it.
 2. If the brief mentions a pending rework (`-r2`/nit-fix) or work still running on the branch: stop with `BRANCH-BUSY`.
 3. `git merge --squash <branch>`.
-4. Conflict (non-zero exit, `CONFLICT`, unmerged paths): `git merge --abort` (after a squash, if that fails: `git reset --merge`), reply `CONFLICT` with the conflicted files and both branch names. Edit and resolve nothing.
+4. Conflict (non-zero exit, `CONFLICT`, unmerged paths): `git merge --abort` (after a squash, if that fails: `git reset --merge`), reply `CONFLICT` with the conflicted files and both branch names. Edit and resolve nothing except step 4's `__init__.py` case. Exception: an add/add conflict on an `__init__.py` (both branches added the file) keeps both sides' lines, each line once, base side first; any other add/add conflict stays a CONFLICT for the lead.
 5. Clean: `git commit` with the lead's subject plus a short body (what the branch did, from `git log --oneline <target>..<branch>`), by `cs-commit --subject "<subject>" --body "<body>" --dir <repo>` (it adds the trailer and checks the subject; do not write either by hand). If `commit.py` is denied or fails, never fall back to plain `git commit`: run `git reset --merge`, leave the tree clean, reply `NEED: <exact command and error>` and `VERDICT: BLOCKED` (the lead is asked; never FAIL, which starts a merge fix). Commit identity is the repo's configured one (Camarent noreply); never set or print a personal email.
 6. Run the test command; report exit code and the last ~20 lines. Red: do NOT revert or fix; reply `MERGED-TESTS-RED` with failing test names and output tail, keep branch and worktree (the lead hands them to `dev` on Sonnet). Silently skipping test files are a finding: say so in one line.
 7. Green: `git branch -D <branch>` (squash does not mark it merged) and `git worktree remove <path>` (`--force` only if the only changes are untracked build output; otherwise report). Repeat for every related name in the brief (`-r2`/`-r3`, `-nit`), then remove the job directory `<project root>/.worktrees/<job>` (only prompt/log/brief files remain); a directory holding anything else is not deleted: list it as LEFTOVER.
