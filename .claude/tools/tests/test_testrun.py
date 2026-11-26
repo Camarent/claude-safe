@@ -259,5 +259,51 @@ class TestLeadVerified(unittest.TestCase):
         self.assertNotIn("FAIL", note)
 
 
+class TestEmptyTestGate(unittest.TestCase):
+    TEST_FILE = "tests/test_new.py"
+    EMPTY = "def test_new():\n    print('no check')\n"
+    CHECKED = "def test_new():\n    assert 1 == 1\n"
+
+    def box_with_test(self, body):
+        d = box("Test: true\n")
+        os.makedirs(os.path.join(d, "tests"))
+        with open(os.path.join(d, self.TEST_FILE), "w") as f:
+            f.write(body)
+        return d
+
+    def run_with_diff(self, d, diff):
+        return testrun.run("s", "t1", d, runner=lambda a, **k: subprocess.CompletedProcess(a, 0, "", ""), scan=lambda *_a: [], diff_fn=lambda *_a: diff)
+
+    def test_changed_test_without_assert_is_fail_with_note(self):
+        d = self.box_with_test(self.EMPTY)
+        v, note = self.run_with_diff(d, diff_adding(self.TEST_FILE))
+        self.assertEqual(v, "FAIL")
+        self.assertIn(f"FAIL empty test: {self.TEST_FILE}:1 test_new has no assert, raises check or mock assertion", note)
+
+    def test_changed_test_with_assert_is_done(self):
+        d = self.box_with_test(self.CHECKED)
+        v, note = self.run_with_diff(d, diff_adding(self.TEST_FILE))
+        self.assertEqual(v, "DONE")
+        self.assertNotIn("empty test", note)
+
+    def test_no_test_file_changed_is_done(self):
+        d = self.box_with_test(self.EMPTY)
+        v, note = self.run_with_diff(d, diff_adding("docs/note.md"))
+        self.assertEqual(v, "DONE")
+        self.assertNotIn("empty test", note)
+
+    def test_switch_false_is_done(self):
+        d = self.box_with_test(self.EMPTY)
+        with open(os.path.join(d, "pipeline.json"), "w") as f:
+            json.dump({"empty_test_gate": False}, f)
+        v, _note = self.run_with_diff(d, diff_adding(self.TEST_FILE))
+        self.assertEqual(v, "DONE")
+
+
+def diff_adding(path):
+    """A committed diff that adds one line to PATH."""
+    return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1 @@\n+x = 1\n"
+
+
 if __name__ == "__main__":
     unittest.main()

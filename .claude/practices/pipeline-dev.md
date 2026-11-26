@@ -27,6 +27,7 @@ claude-safe/                      git repo (this repo only: master + dev); push 
 - Parked = `parked/<name>/` + a MANIFEST entry. Dead experiments are deleted (git history and tags are the archive).
 - Open work goes in `practices/pipeline-backlog.md`, nowhere else.
 - Tests that start real processes or wait on clocks and sockets carry `@timing_sensitive` (`tests/support/timing.py`): off by default, run with `TIMING_TESTS=1`. They flake while a code-index build or the local model loads the host; the gate must not depend on them.
+- A test with no assertion needs the `# noassert:` marker and a reason on its def line or the line above; `empty_tests.py` (testrun gate) reports the others.
 - Tests clean up after themselves (temp dirs, files, sockets, processes, worktrees, env): see `.claude/CLAUDE.md`. `ptest.py` and `tests/conftest.py` set a scratch `TMPDIR` per run as a safety net only.
 
 ## How to add a step / an agent
