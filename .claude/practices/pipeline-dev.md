@@ -100,6 +100,9 @@ Out of scope: <what not to touch>
 
 ## Rework path note
 - A rework or retry note names the file, the line and the replacement text (task-12 rule; `cli_orch.py`, `ORCHESTRATOR.md`).
+- Cite check skips split files: a report cite into a file the job diff deletes, renames or shrinks by 40+ lines (`CITE_SPLIT_MIN_REMOVED`) is checked for existence only, not line or symbol (`cite_check.split_files`).
+- Added doc and code lines are always checked in full; only report cites into split files are relaxed.
+- The FAIL note of a cite check ends with "cite the full repo-relative path, not a bare file name" when a failing cite has no directory.
 
 ## Mechanical changes
 Moves, renames and rewrites go through a script with a dry run first (print the plan, `--apply` to execute), then the tests decide.

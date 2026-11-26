@@ -188,8 +188,11 @@ def _cite_findings(cwd, d, stage, task, report, diff_fn):
     if not diff:
         return "", ""
     added = cite_check.added_lines(diff)
-    msgs = cite_check.check(cwd, added, read_text(report) if report and os.path.isfile(report) else "")
-    return ("\n".join(["FAIL cite check: a path:line cite does not hold:", *msgs]) if msgs else ""), ""
+    msgs = cite_check.check(cwd, added, read_text(report) if report and os.path.isfile(report) else "", split=cite_check.split_files(diff))
+    if not msgs:
+        return "", ""
+    bare = ["cite the full repo-relative path, not a bare file name"] if cite_check.bare_names(msgs) else []
+    return "\n".join(["FAIL cite check: a path:line cite does not hold:", *msgs, *bare]), ""
 
 
 def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_diff, report=""):

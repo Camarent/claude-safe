@@ -41,3 +41,5 @@ CITE_FIXED_WORDS = (
 CITE_CHECK_KEY = "cite_check"  # pipeline.json key: the cite check runs after the Test lines are green (testrun.py)
 CITE_CHECK_DEFAULT = True  # the key when pipeline.json does not set it
 CITE_DIFF_MAX_CHARS = 10**7  # the cite check reads the whole committed diff: a cut would hide the cites past it
+CITE_SPLIT_MIN_REMOVED = 40  # a file whose diff removes at least this many lines is split: its report cites by line are not checked (cite_check.split_files)
+CITE_MSG_PATH_RE = re.compile(r" cites ([^\s:]+):")  # the path of a cite in a cite check message

@@ -129,6 +129,32 @@ class TestRunCite(unittest.TestCase):
         self.assertEqual(seen["report"], report)
         self.assertTrue(Path(report).is_file())
 
+    def test_report_cite_into_split_file_is_done(self):
+        # code.py loses 40 lines in the job diff: it is split, so the report's line cite into it is not read
+        split_diff = (
+            "diff --git a/pipeline/code.py b/pipeline/code.py\n--- a/pipeline/code.py\n+++ b/pipeline/code.py\n@@ -1,40 +1,2 @@\n"
+            + "-x\n" * 40
+            + "+a = 1\n+b = 2\n"
+        )
+        d = box("Test: true\n", report=f"done, {BAD_CITE}\n")
+        verdict, note = testrun.run(
+            "s", "task-1", d, runner=green, scan=scan_clean, diff_fn=lambda *_a: split_diff, report=os.path.join(d, ".work", "s", "report-x.md")
+        )
+        self.assertEqual(verdict, testrun.DONE)
+        self.assertNotIn("cite check", note)
+
+    def test_bare_file_name_cite_fail_names_full_path(self):
+        d = box("Test: true\n", report="done, see code.py:99\n")
+        verdict, note = self.run_task(d, GOOD_CITE, report=os.path.join(d, ".work", "s", "report-x.md"))
+        self.assertEqual(verdict, testrun.FAIL)
+        self.assertIn("cite the full repo-relative path, not a bare file name", note.splitlines())
+
+    def test_full_path_cite_fail_has_no_bare_name_line(self):
+        d = box("Test: true\n")
+        verdict, note = self.run_task(d, BAD_CITE)
+        self.assertEqual(verdict, testrun.FAIL)
+        self.assertNotIn("cite the full repo-relative path, not a bare file name", note)
+
 
 if __name__ == "__main__":
     unittest.main()

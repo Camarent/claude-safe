@@ -12,10 +12,12 @@ from .configuration import (
     CITE_FENCE_RE,
     CITE_FIXED_WORDS,
     CITE_MD_EXTENSIONS,
+    CITE_MSG_PATH_RE,
     CITE_QUOTED_RE,
     CITE_RE,
     CITE_REPORT_NAME,
     CITE_SKIP_DIRS,
+    CITE_SPLIT_MIN_REMOVED,
     CITE_SYMBOL_BEFORE_RE,
     CITE_URL_RE,
     CITE_WINDOW_LINES,
@@ -48,6 +50,46 @@ def added_lines(diff_text) -> list[tuple[str, int, str]]:
                 if m := tail.search(text):
                     out.append((file, ln, m[1]))
     return out
+
+
+def _header_file(ln, cur, out):
+    """-> the file a diff header line names (cur when it names none); a deleted or renamed file is added to out."""
+    if ln.startswith("rename from "):
+        out.add(gitx.unquote_path(ln[len("rename from ") :]))
+    elif ln.startswith("rename to "):
+        cur = gitx.unquote_path(ln[len("rename to ") :])
+        out.add(cur)
+    elif ln.startswith("+++ /dev/null") and cur:
+        out.add(cur)  # a deleted file: its `--- a/` side named it
+    elif ln.startswith(("--- ", "+++ ")):
+        raw = gitx.unquote_path(ln[4:].rstrip("\t"))
+        if raw.startswith(("a/", "b/")):
+            cur = raw[2:]
+    return cur
+
+
+def split_files(diff_text) -> set[str]:
+    """-> the files a `git diff` text splits: deleted or renamed files, and files whose diff removes at least CITE_SPLIT_MIN_REMOVED lines (their lines moved, so a cite by line into them is not read)."""
+    out: set = set()
+    removed: dict = {}
+    cur, hunk = "", False
+    for ln in diff_text.splitlines():
+        if ln.startswith("diff --git "):
+            cur, hunk = "", False
+        elif ln.startswith("@@"):
+            hunk = True
+        elif hunk:
+            if ln.startswith("-"):
+                removed[cur] = removed.get(cur, 0) + 1
+        else:
+            cur = _header_file(ln, cur, out)
+    return out | {f for f, n in removed.items() if n >= CITE_SPLIT_MIN_REMOVED}
+
+
+def bare_names(msgs) -> bool:
+    """-> True when a cite message names its file by a bare file name (a path with no directory)."""
+    paths = (CITE_MSG_PATH_RE.search(msg) for msg in msgs)
+    return any("/" not in m[1] for m in paths if m)
 
 
 def cites(text) -> list[tuple[str, int | None, int | None, str]]:
@@ -128,8 +170,8 @@ def _symbol_msg(where, path, lines, line, before):
     return f"{where} but {name} is at {real}"
 
 
-def _cite_msg(worktree, where, path, line, end, before):
-    """-> the message for one cite that does not hold, None when it holds."""
+def _cite_msg(worktree, where, path, line, end, before, relaxed=False):
+    """-> the message for one cite that does not hold, None when it holds. relaxed: the file is split, so only its existence and the outside-worktree test count."""
     full = _inside(worktree, path)
     if full is None:
         return f"{where} but {path} is outside the worktree"
@@ -140,13 +182,15 @@ def _cite_msg(worktree, where, path, line, end, before):
         lines = _lines(full) if full else None
     if lines is None:
         return f"{where} but {path} is missing"
+    if relaxed:
+        return None
     if (end or line) > len(lines):
         return f"{where} but {path} has {len(lines)} lines"
     return _symbol_msg(where, path, lines, line, before)
 
 
-def check(worktree, added, report_text) -> list[str]:
-    """-> [message] for the cites in the added lines and in the dev report text that do not hold: path outside the worktree, missing file, line past the end, or a symbol named before the cite that is not within CITE_WINDOW_LINES of it."""
+def check(worktree, added, report_text, split=()) -> list[str]:
+    """-> [message] for the cites in the added lines and in the dev report text that do not hold: path outside the worktree, missing file, line past the end, or a symbol named before the cite that is not within CITE_WINDOW_LINES of it. A report cite into a split file (split_files) skips the line-past-end and symbol tests only."""
     rows = [(CITE_REPORT_NAME, ln, text) for ln, text in _prose(enumerate(report_text.splitlines(), 1))]
     prose = {}
     for src in {s for s, _, _ in added if os.path.splitext(s)[1] in CITE_MD_EXTENSIONS}:
@@ -159,7 +203,8 @@ def check(worktree, added, report_text) -> list[str]:
             if (path, line, end) in skip:
                 continue
             where = f"{src}:{ln} cites {path}:{line}" + (f"-{end}" if end else "")
-            msg = _cite_msg(worktree, where, path, line, end, before)
+            relaxed = src == CITE_REPORT_NAME and path in split
+            msg = _cite_msg(worktree, where, path, line, end, before, relaxed)
             if msg:
                 msgs.append(msg)
     return msgs
