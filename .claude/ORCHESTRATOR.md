@@ -91,6 +91,7 @@ Every failure, stall or repeated round yields a lesson. Name the cause in one li
 - `orch.py retry --step <task> --from review` reruns only the reviewer on an existing DONE dev result.
 
 ## Lead session rules
+- Changing the pipeline from a project session (source repo only, PR, sync, plan fixes, wrapper, Docker portability, docs and tests kept fresh): read `.claude/practices/lead-rules.md`.
 - Waiting (lead only): follow the "Watch rules" bullet: one fallback wakeup at the longest delay, no polling between; a driver exit or BLOCKED is the wake signal. The "never Monitor" rule in Briefs is for briefs to agents.
 - Start each feature from a cleared or compacted context: a long lead context re-reads itself on every turn.
 - Notify on finish and on BLOCKED: the owner learns of a stop without polling the session.
