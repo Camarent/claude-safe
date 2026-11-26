@@ -56,8 +56,8 @@ RUN apt-get update \
 
 # Google's own CDP-backed MCP server: navigate, click, read the DOM after
 # hydration, screenshot, tail the console.
-# Pinned 2026-11-05; bump the ARG to update.
-ARG CHROME_DEVTOOLS_MCP_VERSION=1.14.0
+# Not pinned (owner decision 2026-11-26): each image build installs the latest. Set the ARG to a version to pin.
+ARG CHROME_DEVTOOLS_MCP_VERSION=latest
 RUN npm install -g "chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}"
 
 COPY mcp-servers.json /etc/claude/mcp-servers.json
