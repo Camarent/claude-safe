@@ -33,10 +33,14 @@ def _load_pipeline():
 
 
 class T(unittest.TestCase):
-    def test_c1_pipeline_json_lists_every_expected_word(self):
+    def test_c1_pipeline_json_lists_only_the_generic_word(self):
+        # The private words were removed from the tracked list on purpose (they would sit in the public history);
+        # the tracked list keeps the machine-path word, and the private words belong to the owner's local list.
         words = _load_pipeline()[configuration.PUBLIC_FORBIDDEN_WORDS_KEY]
+        self.assertIn(os.sep + "home" + os.sep, words)
         for word in EXPECTED_WORDS:
-            self.assertIn(word, words)
+            if word != os.sep + "home" + os.sep:
+                self.assertNotIn(word, words)
 
     def test_c2_baseline_has_no_hit_line(self):
         self.assertEqual(public_words.read_baseline(os.path.join(REPO, configuration.PUBLIC_WORDS_BASELINE_DEFAULT)), set())
