@@ -47,8 +47,13 @@ class ClearBlockedTest(unittest.TestCase):
 
     def test_clear_missing_is_fine(self):
         root = tracked_mkdtemp()
-        entry.clear_blocked(os.path.join(root, "feat", "phases", "03-none"))
-        entry.clear_blocked(os.path.join(root, "solo"))
+        phase = os.path.join(root, "feat", "phases", "03-none")
+        solo = os.path.join(root, "solo")
+        entry.clear_blocked(phase)
+        entry.clear_blocked(solo)
+        self.assertFalse(os.path.exists(os.path.join(phase, BLOCKED_FILE)))
+        self.assertFalse(os.path.exists(os.path.join(root, "feat", BLOCKED_FILE)))
+        self.assertFalse(os.path.exists(os.path.join(solo, BLOCKED_FILE)))
 
 
 class PreflightWritesThroughHelperTest(unittest.TestCase):
