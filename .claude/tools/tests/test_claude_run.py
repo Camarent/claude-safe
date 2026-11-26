@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from datetime import UTC
+from datetime import UTC, datetime
 
 from pipeline import claude
 from tests.support.tmpdirs import tracked_mkdtemp
@@ -200,22 +200,97 @@ class LimitWaitTest(unittest.TestCase):
 
     def test_session_waits_then_runs_again_without_a_retry(self):
         results = [{"result": self.NOTICE, "is_error": True}, {"result": "ok", "num_turns": 2}]
+        clock = FakeClock()
         with (
             mock.patch.object(claude, "run_claude", side_effect=results) as run,
-            mock.patch.object(claude, "limit_wait_s", side_effect=[5.0, None]),
-            mock.patch.object(claude.time, "sleep") as sleep,
+            mock.patch.object(claude, "limit_wait", side_effect=[claude.LimitWait(5.0, True), None]),
+            mock.patch.object(claude.time, "sleep", side_effect=AssertionError("real sleep")),
         ):
-            u = claude.session(["-p", "x"], ".", 5)
+            u = claude.session(["-p", "x"], ".", 5, sleep=clock.sleep, now=clock.now)
         self.assertEqual((u["result"], u["turns"]), ("ok", 2))
         self.assertEqual(run.call_count, 2)
-        sleep.assert_called_once_with(5.0)
+        self.assertEqual(clock.slices, [5.0])
 
     def test_waiting_stops_at_the_cap_and_returns_the_notice(self):
+        clock = FakeClock()
         with (
             mock.patch.object(claude, "run_claude", return_value={"result": self.NOTICE, "is_error": True}),
-            mock.patch.object(claude, "limit_wait_s", return_value=float(claude.LIMIT_WAIT_MAX_S) + 1),
-            mock.patch.object(claude.time, "sleep") as sleep,
+            mock.patch.object(claude, "limit_wait", return_value=claude.LimitWait(float(claude.LIMIT_WAIT_MAX_S) + 1, True)),
+            mock.patch.object(claude.time, "sleep", side_effect=AssertionError("real sleep")),
         ):
-            u = claude.session(["-p", "x"], ".", 5)
+            u = claude.session(["-p", "x"], ".", 5, sleep=clock.sleep, now=clock.now)
         self.assertEqual(u["result"], self.NOTICE)
-        sleep.assert_not_called()
+        self.assertEqual(clock.slices, [])
+
+    def test_known_reset_waits_in_recheck_slices_until_the_reset_time(self):
+        results = [{"result": self.NOTICE, "is_error": True}, {"result": "ok", "num_turns": 1}]
+        clock = FakeClock()
+        recheck = 900
+        with (
+            mock.patch.object(claude, "run_claude", side_effect=results),
+            mock.patch.object(claude, "limit_wait", side_effect=[claude.LimitWait(2000.0, True), None]),
+            mock.patch.object(claude, "tool_setting", return_value=recheck),
+            mock.patch.object(claude.time, "sleep", side_effect=AssertionError("real sleep")),
+        ):
+            u = claude.session(["-p", "x"], ".", 5, sleep=clock.sleep, now=clock.now)
+        self.assertEqual(u["result"], "ok")
+        self.assertEqual(clock.slices, [900.0, 900.0, 200.0])  # the whole wait is never one sleep
+        self.assertEqual(clock.t, 2000.0)
+
+    def test_unknown_reset_sleeps_one_fallback_slice_then_runs_again(self):
+        results = [{"result": self.NOTICE, "is_error": True}, {"result": "ok", "num_turns": 1}]
+        clock = FakeClock()
+        with (
+            mock.patch.object(claude, "run_claude", side_effect=results) as run,
+            mock.patch.object(claude, "limit_wait", side_effect=[claude.LimitWait(claude.LIMIT_FALLBACK_S, False), None]),
+            mock.patch.object(claude, "tool_setting", return_value=300),
+            mock.patch.object(claude.time, "sleep", side_effect=AssertionError("real sleep")),
+        ):
+            u = claude.session(["-p", "x"], ".", 5, sleep=clock.sleep, now=clock.now)
+        self.assertEqual(u["result"], "ok")
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(clock.slices, [300.0])
+
+
+class FakeClock:
+    """Fake wall clock: sleep advances it, so the wait loop sees time pass without a real sleep."""
+
+    def __init__(self):
+        self.t = 0.0
+        self.slices = []
+
+    def now(self):
+        return self.t
+
+    def sleep(self, s):
+        self.slices.append(s)
+        self.t += s
+
+
+class LimitWaitFormsTest(unittest.TestCase):
+    NOW = datetime(2026, 11, 26, 19, 0, tzinfo=UTC).timestamp()
+
+    def wait(self, text):
+        return claude.limit_wait({"result": f"You've hit your 5-hour limit · {text}"}, now=self.NOW)
+
+    def test_each_reset_form_gives_the_wait_until_it(self):
+        cases = {
+            "resets in 45 minutes": 45 * 60,
+            "resets in 2 hours 10 minutes": 2 * 3600 + 600,
+            "resets 20:00 (UTC)": 3600,
+            "resets 8pm (UTC)": 3600,
+            "resets Nov 27, 8pm (UTC)": 25 * 3600,
+            "resets Nov 27 at 8:00pm (UTC)": 25 * 3600,
+        }
+        for text, secs in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(self.wait(text), claude.LimitWait(secs + claude.LIMIT_MARGIN_S, True))
+
+    def test_a_month_day_already_passed_this_year_means_next_year(self):
+        w = self.wait("resets Nov 6, 8pm (UTC)")
+        want = datetime(2027, 11, 6, 20, tzinfo=UTC).timestamp() - self.NOW
+        self.assertEqual(w, claude.LimitWait(want + claude.LIMIT_MARGIN_S, True))
+
+    def test_impossible_date_or_hour_is_an_unknown_wait(self):
+        self.assertEqual(self.wait("resets Feb 31, 8pm (UTC)"), claude.LimitWait(claude.LIMIT_FALLBACK_S, False))
+        self.assertEqual(self.wait("resets 25:00 (UTC)"), claude.LimitWait(claude.LIMIT_FALLBACK_S, False))

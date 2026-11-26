@@ -119,7 +119,7 @@ Moves, renames and rewrites go through a script with a dry run first (print the 
 - A dev that sees a red gate on the base must not stop with BLOCKED or fix it; the brief and `agents/dev.md` say so. A rule that sends a base-red test to BLOCKED contradicts the driver's base clearing: check both when changing either.
 - An event with a `task` key must carry what the retry ladder reads (`role` on a dispatch or report): a log-only event uses another key (`forced_remove` uses `job`).
 - Messages and file names for this live in `pipeline.configuration` (`LINK_*`, `BASE_WHY_*`, `CLEAR_WHY_*`).
-- Time-based or non-isolated tests are bad design (code not separated): inject the clock, isolate the test; only if impossible put it in `gates_merge`. See `agents/dev.md`, `agents/architect.md`, `ORCHESTRATOR.md`.
+- Wait and sleep functions take an injected clock and sleep (keyword arguments, defaults to the real ones), so a test drives them with fakes; a test never sleeps for real. Time-based or non-isolated tests are bad design (code not separated): inject the clock, isolate the test; only if impossible put it in `gates_merge`. See `agents/dev.md`, `agents/architect.md`, `ORCHESTRATOR.md`.
 - Main-checkout guard: `main_guard_ignore_globs` (pipeline.json key; default `("qrun-*.log",)` from `MAIN_GUARD_IGNORE_GLOBS` in `limits.py` under `.claude/tools/pipeline/configuration/`) lists path globs of the main checkout the dirt check never reports. Set it in the project `pipeline.json`; a list replaces the default (`[]` ignores nothing).
 
 ## Lesson: a missing hook binary on Edit or Write must fail open
