@@ -20,7 +20,6 @@ from audit import final_check
 from pipeline import cite_check, generated, gitx
 from pipeline.configuration import (
     DOC_CITES_FLAG,
-    DOCS_DIR_KEY,
     DONE,
     FAIL,
     FINAL_FILES_CMD_KEY,
@@ -29,6 +28,7 @@ from pipeline.configuration import (
     GENERATED_MARKER_RE,
     PRE_EXISTING_RED,
     TEST_FILE_RE,
+    docs_dir_of,
     project,
     repo_dir,
     test_env,
@@ -99,7 +99,7 @@ def triage(cfg: dict, repo: str, env: dict, report_text: str, base_head: str = "
 
 def doc_cites(cfg: dict, repo: str) -> tuple[str, list[str]]:
     """-> (verdict, messages): every *.md under docs_dir is read whole and its cites checked, changed or not (a generated doc is skipped; fenced blocks are not prose); no docs folder -> DONE."""
-    docs_dir = str(cfg.get(DOCS_DIR_KEY) or "")
+    docs_dir = docs_dir_of(cfg)
     if not docs_dir:
         return DONE, []
     rx = str(cfg.get(GENERATED_MARKER_KEY) or GENERATED_MARKER_RE)

@@ -37,6 +37,7 @@ from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     GATE_TIMEOUT_S,
     GIT_TIMEOUT_S,
     WORK_DIR,
+    docs_dir_of,
     project,
     repo_dir,
     tool_cmd,
@@ -50,7 +51,7 @@ TIMEOUT_S = GATE_TIMEOUT_S
 TAIL_LINES = 40
 BLOCKED_EXIT = (126, 127)  # not executable / command not found
 SCAN_NOTE_PREFIXES = ("secret scan error:", "gitleaks exit ")  # gate_secrets.scan_diff reports its own failures as lines of these forms: notes, never findings
-NO_DIFF_NOTE = "cite check skipped: the job diff is unavailable"  # the skip note of every job-diff check when the diff cannot be read
+NO_DIFF_NOTE = "job-diff checks skipped: the job diff is unavailable"  # the skip note of every job-diff check when the diff cannot be read
 
 
 def _test_cmds(text, lead):
@@ -187,11 +188,10 @@ def _run_line(cwd, c, runner):
     return _red_verdict(cwd, c, p) if p.returncode != 0 else None
 
 
-def _cite_findings(cwd, d, stage, task, report, diff_fn):
-    """-> (FAIL note, skip note). The FAIL note names each `path:line` cite the task adds (committed diff) or the dev report makes that does not hold, else "". The skip note says the check did not run because the job diff was unavailable, else "". Off when the `cite_check` key of pipeline.json is false; no job diff -> nothing to check."""
+def _cite_findings(cwd, d, report, diff):
+    """-> (FAIL note, skip note). The FAIL note names each `path:line` cite the task adds (committed diff) or the dev report makes that does not hold, else "". The skip note says the check did not run because the job diff was unavailable, else "". Off when the `cite_check` key of pipeline.json is false; no job diff -> nothing to check. `diff` is the job diff text, or None when unavailable."""
     if not project(d).get(CITE_CHECK_KEY, CITE_CHECK_DEFAULT):
         return "", ""
-    diff = diff_fn(stage, task, d, CITE_DIFF_MAX_CHARS)
     if diff is None:  # job_diff: no manifest entry or the diff failed; never silently off
         return "", NO_DIFF_NOTE
     if not diff:
@@ -204,26 +204,27 @@ def _cite_findings(cwd, d, stage, task, report, diff_fn):
     return "\n".join(["FAIL cite check: a path:line cite does not hold:", *msgs, *bare]), ""
 
 
-def _docs_impact_findings(cwd, d, stage, task, diff_fn):
-    """-> the FAIL note naming each doc the job diff leaves stale (docs_impact.check), else "". Off when the `docs_impact_gate` key of pipeline.json is false; no job diff -> nothing (_cite_findings already says so)."""
+def _docs_impact_findings(cwd, d, diff):
+    """-> (FAIL note naming each doc the job diff leaves stale (docs_impact.check), skip note). Off when the `docs_impact_gate` key of pipeline.json is false or `docs_dir` is empty (no docs folder, no root walk). No job diff -> no finding, the skip note NO_DIFF_NOTE."""
     cfg = project(d)
-    if not cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT):
-        return ""
-    diff = diff_fn(stage, task, d, CITE_DIFF_MAX_CHARS)
+    docs = docs_dir_of(cfg)
+    if not cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT) or not docs:
+        return "", ""
+    if diff is None:
+        return "", NO_DIFF_NOTE
     if not diff:
-        return ""
-    msgs = docs_impact.check(cwd, diff, docs_impact.doc_files(cwd, cfg["docs_dir"]), cfg)
+        return "", ""
+    msgs = docs_impact.check(cwd, diff, docs_impact.doc_files(cwd, docs), cfg)
     if not msgs:
-        return ""
-    return "\n".join(["FAIL docs impact: a changed file or top-level def is cited by a doc the diff leaves unchanged:", *msgs])
+        return "", ""
+    return "\n".join(["FAIL docs impact: a changed file or top-level def is cited by a doc the diff leaves unchanged:", *msgs]), ""
 
 
-def _empty_test_findings(cwd, d, stage, task, diff_fn):
+def _empty_test_findings(cwd, d, diff):
     """-> (FAIL note naming each test function the job diff's test files hold with no assertion, skip note). The test files are the changed files matching `empty_test_file_re` that exist in cwd. Off when the `empty_test_gate` key of pipeline.json is false; no job diff -> no finding, the skip note NO_DIFF_NOTE."""
     cfg = project(d)
     if not cfg.get(EMPTY_TEST_KEY, EMPTY_TEST_DEFAULT):
         return "", ""
-    diff = diff_fn(stage, task, d, CITE_DIFF_MAX_CHARS)
     if diff is None:
         return "", NO_DIFF_NOTE
     if not diff:
@@ -275,17 +276,18 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
 
 
 def _diff_findings(cwd, d, stage, task, report, diff_fn):
-    """-> (FAIL note, skip notes). Runs the cite check, the docs impact check and the empty-test check in that order; the first one that finds a problem is the FAIL note (the rest do not run). The skip notes are deduplicated: one note when both the cite and empty-test checks lack the job diff."""
-    cite, cite_note = _cite_findings(cwd, d, stage, task, report, diff_fn)
+    """-> (FAIL note, skip notes). The job diff is fetched once here and read by the cite check, the docs impact check and the empty-test check in that order; the first one that finds a problem is the FAIL note (the rest do not run). The skip notes are deduplicated: one note when the job diff is unavailable to several checks."""
+    diff = diff_fn(stage, task, d, CITE_DIFF_MAX_CHARS)
+    cite, cite_note = _cite_findings(cwd, d, report, diff)
     if cite:
         return cite, []
-    docs = _docs_impact_findings(cwd, d, stage, task, diff_fn)
+    docs, docs_note = _docs_impact_findings(cwd, d, diff)
     if docs:
         return docs, []
-    empty, empty_note = _empty_test_findings(cwd, d, stage, task, diff_fn)
+    empty, empty_note = _empty_test_findings(cwd, d, diff)
     if empty:
         return empty, []
-    return "", list(dict.fromkeys(x for x in (cite_note, empty_note) if x))
+    return "", list(dict.fromkeys(x for x in (cite_note, docs_note, empty_note) if x))
 
 
 def main(argv=None):

@@ -56,3 +56,8 @@ DOC_CITES_DEFAULT = True  # the key when pipeline.json does not set it
 DOC_CITES_STEP = "docs-cite-final"  # id of the script step that runs the whole-docs cite check (phases.audit_phases)
 DOC_CITES_FLAG = "--doc-cites"  # steps_finaltest.py mode: check every doc under docs_dir, no --report needed
 DOCS_DIR_KEY = "docs_dir"  # pipeline.json key: folder below the repo that holds the docs
+
+
+def docs_dir_of(cfg: dict) -> str:
+    """-> the docs folder of pipeline.json `cfg` (DOCS_DIR_KEY), "" when unset: the docs checks are off."""
+    return str(cfg.get(DOCS_DIR_KEY) or "")
