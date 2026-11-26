@@ -358,14 +358,18 @@ def _feature(a):
             return rc
 
 
+def cmd_feature_alias(a):
+    """The old form `feature --feature F`: one note line, then the entry form `run F`."""
+    print(entry.alias_line(f"feature --feature {a.feature}", f"run {a.feature}"))
+    return cmd_feature(a)
+
+
 def add_feature_command(sub) -> None:
     p = sub.add_parser("feature")
     p.add_argument("--feature", required=True)
     p.add_argument("--dir", default=default_dir())
-    p.add_argument("--max-waves", type=int, default=None)
-    p.add_argument("--max-dispatches", type=int, default=None)
-    p.add_argument("--max-sessions", type=int, default=None)
-    p.add_argument("--max-budget-usd", type=float, default=None)
-    p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--allow-dirty", action="store_true")
-    p.set_defaults(fn=cmd_feature)
+    entry.add_run_flags(p)
+    p.set_defaults(fn=cmd_feature_alias)
+    run = sub.choices.get("run")  # the NAME form of run goes to the feature entry (cli_wave cannot import this module)
+    if run is not None:
+        run.set_defaults(on_name=cmd_feature)

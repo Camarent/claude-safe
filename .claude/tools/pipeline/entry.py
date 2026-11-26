@@ -59,6 +59,11 @@ def done_line(msg) -> str:
     return f"done: {msg}"
 
 
+def alias_line(old, new) -> str:
+    """The note an old form prints before it runs the new form: `note: OLD is an alias of NEW`."""
+    return f"note: `{old}` is an alias of `{new}`"
+
+
 def name_of_stage(stage) -> str:
     """The feature name of a stage: `F` for `F/phases/NN`, the name unchanged otherwise."""
     return stage.split(PHASES_SEP, 1)[0]

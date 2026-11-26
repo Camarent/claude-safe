@@ -625,27 +625,37 @@ def cmd_metrics(a) -> int:
     return 0
 
 
+def _run_entry(a, ap: argparse.ArgumentParser) -> int:
+    """The one run form: `run NAME` goes to a.on_name (the feature hook wired by cli_feature.add_feature_command); `run --stage S` without /phases/ is an alias of `run S` when the hook is wired; `run --stage F/phases/NN` stays cmd_run (the driver's phase path). Without the hook only the stage form runs, as cmd_run."""
+    if bool(a.name) == bool(a.stage):
+        ap.error("run takes NAME or --stage STAGE, not both and not neither")
+    if a.name is not None and entry.PHASES_SEP in a.name:
+        ap.error("run NAME takes a feature; for a phase use --stage F/phases/NN")
+    if a.name is None and entry.PHASES_SEP not in a.stage and a.on_name is not None:
+        print(entry.alias_line(f"run --stage {a.stage}", f"run {a.stage}"))
+        a.name, a.stage = a.stage, None
+    if a.name is None:
+        return cmd_run(a)
+    on_name = a.on_name
+    if on_name is None:
+        ap.error("run NAME needs the feature entry: wire it with extra_commands")
+    a.feature = a.name
+    return on_name(a)
+
+
 def main(argv=None, extra_commands=()) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("run", cmd_run), ("status", cmd_status), ("metrics", cmd_metrics)):
-        p = add_subcommand(sub, name, fn)
-        if name == "run":
-            p.add_argument("--max-waves", type=int, default=None)
-            p.add_argument("--max-dispatches", type=int, default=None)
-            p.add_argument("--max-sessions", type=int, default=None)
-            p.add_argument("--max-budget-usd", type=float, default=None)
-            p.add_argument("--dry-run", action="store_true")
-            p.add_argument(
-                "--stub",
-                action="append",
-                default=[],
-                metavar="TASK:ROLE=V1[,V2]",
-                help="dry-run only: force the verdicts of one task's role, e.g. task-1:dev=BLOCKED or task-1:dev=ESCALATE,DONE",
-            )
-            p.add_argument("--allow-dirty", action="store_true")
+    for name, fn in (("status", cmd_status), ("metrics", cmd_metrics)):
+        add_subcommand(sub, name, fn)
+    p = add_subcommand(sub, "run", cmd_run, stage_required=False)
+    p.add_argument("name", nargs="?", metavar="NAME", help="the feature to run (the entry form); or use --stage STAGE")
+    entry.add_run_flags(p)
+    p.set_defaults(on_name=None)
     for add in extra_commands:
         add(sub)
     a = ap.parse_args(argv)
     lead_context.check()
+    if a.cmd == "run":
+        return _run_entry(a, ap)
     return a.fn(a)
