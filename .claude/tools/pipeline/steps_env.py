@@ -10,7 +10,7 @@ def _repair_events(events, tid):
     return [e for e in events if e.get("task") == tid and e["ev"] == EV_DISPATCH and (e.get("why") or "").startswith(ENV_REPAIR_WHY)]
 
 
-def env_repair(a, tid, rid, kind, events):
+def env_repair(a, tid: str, rid: str, kind: str, events: list[dict]) -> dict | None:
     """-> the repair dispatch (a script step) while the task has repairs left, else None. EVENTS: the whole orch log, so the count survives a replay."""
     if len(_repair_events(events, tid)) >= ENV_REPAIR_MAX:
         return None
@@ -26,7 +26,7 @@ def env_repair(a, tid, rid, kind, events):
     }
 
 
-def env_repair_kind(mine, rid):
+def env_repair_kind(mine: list[dict], rid: str) -> str:
     """The red step (TEST_KIND or GATES_KIND) that the repair dispatch `rid` was made for."""
     why = next((e.get("why") or "" for e in mine if e["ev"] == EV_DISPATCH and e.get("id") == rid), "")
     return TEST_KIND if why.endswith(TEST_KIND) else GATES_KIND

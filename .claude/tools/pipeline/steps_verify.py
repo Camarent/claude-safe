@@ -21,18 +21,18 @@ _OWNER_WORDS = re.compile(r"owner|decision|decide|scope|unsafe|security|permissi
 _CHECK_WORDS = re.compile(r"\btests?\b|environment|\benv\b|sandbox|network|install|timeout|timed out|toolchain|missing (?:tool|binary)|flaky", re.I)
 
 
-def blocked_for_checks(rep):
+def blocked_for_checks(rep: dict) -> bool:
     """True when the BLOCKED reason is about tests or the environment, not an owner decision, scope or safety question."""
     text = " ".join(str(rep.get(k) or "") for k in ("reason", "why")) + " " + read_text(rep.get("file") or "")
     return bool(_CHECK_WORDS.search(text)) and not _OWNER_WORDS.search(text)
 
 
-def command(a, task_id):
+def command(a, task_id: str) -> str:
     """The shell command of the verify step for task TASK_ID of stage A."""
     return f"{tool_cmd('pipeline/steps_verify.py')} --stage {a.stage} --task {task_id} --dir {getattr(a, 'dir', '.')}"
 
 
-def run(stage, task, d):
+def run(stage: str, task: str, d: str) -> tuple[str, str]:
     """-> (verdict, text): the Test lines first, then the gates; a red step stops the run. No gates configured: the green Test lines decide."""
     import testrun  # lazy: testrun imports wt, which imports this package
     from audit import taskgates
@@ -48,7 +48,7 @@ def run(stage, task, d):
     return gv, gnote
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", required=True)
     ap.add_argument("--task", required=True)

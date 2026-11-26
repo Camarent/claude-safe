@@ -25,12 +25,12 @@ DOCFIX_LINE = re.compile(r"^\s*[-*]?\s*`([^`\n]+)`:\s*`([^`\n]+)`\s*->\s*`([^`\n
 DOCFIX_SUBJECT = "docs({file}): one-line fix from a repeated review finding"
 
 
-def finding_lines(text):
+def finding_lines(text: str) -> list[tuple[str, str, str, str]]:
     """-> (line, path, old, new) for every docfix finding line of a review report, in order."""
     return [(m.group(0).strip(), m.group(1), m.group(2), m.group(3)) for m in DOCFIX_LINE.finditer(text)]  # group(0) is never None on a match
 
 
-def repeated_pair(prev_text, cur_text):
+def repeated_pair(prev_text: str, cur_text: str) -> tuple[str, str, str] | None:
     """-> (path, old, new) when both review reports carry exactly one docfix line and it is the same line; else None."""
     prev, cur = finding_lines(prev_text), finding_lines(cur_text)
     if len(cur) != 1 or prev != cur:
@@ -38,7 +38,7 @@ def repeated_pair(prev_text, cur_text):
     return cur[0][1:]
 
 
-def apply_pair(path, old, new, root="."):
+def apply_pair(path: str, old: str, new: str, root: str = ".") -> tuple[bool, str]:
     """-> (applied, reason). Replaces the one occurrence of `old` in the file under ROOT; any other count changes nothing."""
     if not old or os.path.isabs(path) or ".." in path.split("/"):
         return False, f"not applied: path or pair not usable ({path})"
@@ -55,7 +55,7 @@ def apply_pair(path, old, new, root="."):
     return True, f"applied: 1 occurrence in {path}"
 
 
-def commit(root, path):
+def commit(root: str, path: str) -> str:
     """-> error text, or '' when the one file is committed on the job branch."""
     r = gitx.run(root, "add", "--", path)
     if r.returncode:
@@ -64,7 +64,7 @@ def commit(root, path):
     return "" if r.returncode == 0 else f"commit failed: rc {r.returncode}"
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Docs fix by script: apply one repeated one-line finding (old -> new) in the job worktree.")
     p.add_argument("--file", required=True)
     p.add_argument("--old", required=True)

@@ -189,6 +189,7 @@ class ReviewResetTest(unittest.TestCase):
                 unittest.mock.patch.object(steps, "qualityrun_on", return_value=False),
             ):
                 r = steps.next_step(self.a, task, mine, "a9")
+            assert r is not None
             self.assertEqual(r["action"], "ask_main", r)
 
 

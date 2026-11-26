@@ -32,12 +32,12 @@ from pipeline.configuration import (
 BLOCKED = "BLOCKED"  # the verdict word: red on the preflight head too (PRE_EXISTING_RED)
 
 
-def test_files(text):
+def test_files(text: str) -> list[str]:
     """-> the test file paths a failed final-test report names, in order, unique."""
     return list(dict.fromkeys(re.findall(TEST_FILE_RE, text)))
 
 
-def rerun_cmd(cfg, files):
+def rerun_cmd(cfg: dict, files: list[str]) -> str:
     """-> the `final_files_cmd` line with the FILES quoted in, '' when the project sets none or no file is named."""
     tmpl = cfg.get(FINAL_FILES_CMD_KEY) or ""
     if not tmpl or not files:
@@ -72,7 +72,7 @@ class _BaseTree:
         return False
 
 
-def triage(cfg, repo, env, report_text, base_head="", runner=final_check.run_group):
+def triage(cfg: dict, repo: str, env: dict, report_text: str, base_head: str = "", runner=final_check.run_group) -> tuple[str, str]:
     """-> (verdict, reason line). DONE flaky; FAIL the fix plan (red on the stage head only, or nothing to rerun); BLOCKED PRE_EXISTING_RED."""
     files = test_files(report_text)
     cmd = rerun_cmd(cfg, files)
@@ -91,7 +91,7 @@ def triage(cfg, repo, env, report_text, base_head="", runner=final_check.run_gro
     return FAIL, f"red on the stage head only ({', '.join(files)}): the fix plan"
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=".")
     ap.add_argument("--stage", default="")

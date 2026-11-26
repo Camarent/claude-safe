@@ -323,6 +323,7 @@ class RunPhaseTest(unittest.TestCase):
 
     def test_dispatch_numbers_follow_n(self):
         r = steps.run_phase(self.a, [], [self.st("x"), self.st("y")], 4)
+        assert r is not None
         self.assertEqual(r["action"], "dispatch")
         self.assertEqual([d["id"] for d in r["dispatches"]], ["a5", "a6"])
         self.assertEqual(
@@ -344,6 +345,7 @@ class RunPhaseTest(unittest.TestCase):
             {"ev": "report", "task": "tools-check", "verdict": "FAIL", "file": "t.md"},
         ]
         r = steps.run_phase(self.a, evs, [self.st("x"), self.st("y"), self.st("tools-check")], 1)
+        assert r is not None
         lines = r["message"].split("\n")
         self.assertEqual(r["action"], "ask_main")
         self.assertEqual(lines[0], "x (ops) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step x` (or `skip`)")
@@ -357,6 +359,7 @@ class RunPhaseTest(unittest.TestCase):
     def test_dispatch_wins_over_asks(self):
         evs = [{"ev": "dispatch", "task": "x", "id": "a1"}]
         r = steps.run_phase(self.a, evs, [self.st("x"), self.st("y")], 1)
+        assert r is not None
         self.assertEqual(r["action"], "dispatch")
         self.assertEqual([d["task"] for d in r["dispatches"]], ["y"])
 

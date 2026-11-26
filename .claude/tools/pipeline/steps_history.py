@@ -6,7 +6,7 @@ from .configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, EV_RETRY, EXT
 from .util import read_text
 
 
-def history(evs, tid):
+def history(evs: list[dict], tid: str) -> list[dict]:
     """Events of one task/step since its last `retry` (the owner's reset)."""
     mine = [e for e in evs if e.get("task") == tid]
     for i in range(len(mine) - 1, -1, -1):
@@ -28,16 +28,16 @@ def _after_retry(mine, i):
     return mine[i + 1 :]
 
 
-def hint(a, tid):
+def hint(a, tid: str) -> str:
     return f"; fix the cause, then `orch.py retry --stage {a.stage} --step {tid}` (or `skip`)"
 
 
-def script_ids(mine, word):
+def script_ids(mine: list[dict], word: str) -> set[str]:
     """Ids of this task's script dispatches whose `why` starts with `word` (pre-review, test run)."""
     return {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith(word)}
 
 
-def failing_reports(mine):
+def failing_reports(mine: list[dict]) -> list[dict]:
     """Every dev ESCALATE, reviewer FAIL/ESCALATE and red test-run FAIL report of the task, oldest first."""
     test_ids = script_ids(mine, "test run")
     return [
@@ -52,7 +52,7 @@ def failing_reports(mine):
     ]
 
 
-def failed_event(mine):
+def failed_event(mine: list[dict]) -> dict | None:
     """The latest of them: what the escalation gate judges."""
     return next(iter(reversed(failing_reports(mine))), None)
 
@@ -116,5 +116,5 @@ class _TaskState:
         self.sonnet_dev = sonnet_dev_dispatched(mine)
 
 
-def sonnet_dev_dispatched(mine):
+def sonnet_dev_dispatched(mine: list[dict]) -> bool:
     return any(e["ev"] == EV_DISPATCH and e["role"] == "dev" and e["model"] == MODEL_SONNET for e in mine)

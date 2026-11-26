@@ -91,7 +91,7 @@ from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
 
-def is_report(a, task):
+def is_report(a, task) -> bool:
     """True when the task file says `Type: report`: its deliverable is a file, not a repo diff (no quality run; the local pre-review judges the file, Sonnet reviewer)."""
     repo = getattr(a, "dir", ".")
     return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "report"
@@ -297,7 +297,7 @@ def _no_edit_first_run(a, task, mine, last):
     return bool(job_heads(a, task["id"])) and not job_diff(a, task["id"]) and not job_dirty(a, task["id"])
 
 
-def straight_to_sonnet(a, task, mine):
+def straight_to_sonnet(a, task, mine) -> dict | None:
     """The dev ESCALATE report that ends `mine` when it goes straight to the Sonnet dev (a PLAN GAP, or a first run with no edit), else None: no more Haiku tries, no judge gate."""
     last = mine[-1] if mine else None
     if last and last["ev"] == EV_REPORT and last.get("role") == "dev" and (_plan_gap(last) or _no_edit_first_run(a, task, mine, last)):
@@ -589,7 +589,7 @@ def _tries(mine, role, model=None):
     return sum(1 for e in mine if e["ev"] == EV_DISPATCH and e["role"] == role and not e.get("free") and (model is None or e["model"] == model))
 
 
-def next_step(a, task, mine, rid):
+def next_step(a, task, mine, rid) -> dict | None:
     """-> dispatch dict, ask_main dict, or None (task passed) for one task, from its events. Cap: at most MAX_TRIES runs of the dev and of the reviewer
     per task (any model); a fifth one goes to the lead."""
     r = _gate(a, task, mine, rid, _next_step(a, task, mine, rid))
@@ -687,7 +687,7 @@ def _lead_retry_prefix(a, task):
     return raw[:i] if rep is not None and rep["role"] == "dev" and rep["verdict"] == ESCALATE else None
 
 
-def is_webtest(a, task):
+def is_webtest(a, task) -> bool:
     """True when the task file says `Type: webtest`: a browser check. The web-tester agent runs it (a dev cannot drive a browser); there is no job worktree, no review and no merge."""
     repo = getattr(a, "dir", ".")
     return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "webtest"
@@ -743,32 +743,32 @@ def _next_step(a, task, mine, rid):
     return _after_reviewer(a, task, mine, rid, s, last)  # last was a reviewer report
 
 
-def gate_on(a):
+def gate_on(a) -> bool:
     return bool(project(getattr(a, "dir", ".")).get("gate", True))
 
 
-def prereview_skip(a):
+def prereview_skip(a) -> str:
     """What a skipped local pre-review leads to: env ENV_PREREVIEW_SKIP, else the `prereview_skip` setting; an unknown value means the paid reviewer."""
     v = os.environ.get(ENV_PREREVIEW_SKIP) or project(getattr(a, "dir", ".")).get("prereview_skip")
     return v if v == PREREVIEW_SKIP_ASK else PREREVIEW_SKIP_REVIEWER
 
 
-def task_gates_on(a):
+def task_gates_on(a) -> bool:
     return driver_gates_on(project(getattr(a, "dir", ".")))
 
 
-def prereview_on(a):
+def prereview_on(a) -> bool:
     return bool(project(getattr(a, "dir", ".")).get("prereview", False))
 
 
-def step(sid, agent, model, prompt, ok, effort=None, why=""):
+def step(sid, agent, model, prompt, ok, effort=None, why="") -> dict:
     return {"id": sid, "agent": agent, "model": model, "prompt": prompt, "ok": ok, "effort": effort, "why": why}
 
 
 ALWAYS_SCRIPT = ("cleanup",)  # needs no ENV.md and no model: the ops session failed twice on a missing .work/<feature>/ENV.md
 
 
-def ops_as_script(a, cfg, st, sub):
+def ops_as_script(a, cfg, st, sub) -> dict:
     """The ops step ST as a no-model script step when pipeline.json `ops_scripts` lists its id or the step is in ALWAYS_SCRIPT (ops_steps.py SUB); otherwise ST unchanged (the old ops session)."""
     if st["id"] not in ALWAYS_SCRIPT and st["id"] not in (cfg.get("ops_scripts") or []):
         return st
@@ -798,7 +798,7 @@ def _phase_failed_ask(a, st, rep):
     )
 
 
-def run_phase(a, evs, steps, n):
+def run_phase(a, evs, steps, n) -> dict | None:
     """Parallel steps. -> dispatch dict (steps not yet satisfied and not failed), ask_main dict, or None when every step is satisfied."""
     ds: list = []
     asks: list = []
@@ -824,6 +824,6 @@ def run_phase(a, evs, steps, n):
     return None
 
 
-def last_verdict(evs, sid):
+def last_verdict(evs, sid) -> str | None:
     reps = [e for e in history(evs, sid) if e["ev"] == EV_REPORT]
     return reps[-1]["verdict"] if reps else None

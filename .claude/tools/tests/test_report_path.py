@@ -98,6 +98,7 @@ class ReportPathTest(unittest.TestCase):
         task = {"id": TASK, "owner_sonnet": False, "review_sonnet": False}
         a = SimpleNamespace(dir=self.d, stage=STAGE, id=ID, text=None)
         d = steps.next_step(a, task, steps.history(evs, TASK), "a3")
+        assert d is not None
         self.assertEqual(d["action"], "dispatch")
 
     def test_next_step_with_role_less_last_event_does_not_raise(self):
