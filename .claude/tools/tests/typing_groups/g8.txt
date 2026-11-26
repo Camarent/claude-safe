@@ -1,0 +1,13 @@
+.claude/tools/pipeline/phases.py
+.claude/tools/pipeline/plan_amend.py
+.claude/tools/pipeline/plan_commands.py
+.claude/tools/pipeline/plan_depends.py
+.claude/tools/pipeline/plan_dryrun.py
+.claude/tools/pipeline/plan_insert.py
+.claude/tools/pipeline/plan_parallel.py
+.claude/tools/pipeline/plan_ptest.py
+.claude/tools/pipeline/plan_report.py
+.claude/tools/pipeline/plan_testcmd.py
+.claude/tools/pipeline/plan_testrun.py
+.claude/tools/pipeline/pr_ops.py
+.claude/tools/pipeline/pr_release.py

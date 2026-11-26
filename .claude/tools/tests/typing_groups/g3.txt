@@ -1,0 +1,4 @@
+.claude/tools/pipeline/cli_feature.py
+.claude/tools/pipeline/cli_orch.py
+.claude/tools/pipeline/cli_wave.py
+.claude/tools/pipeline/cmdnames.py
