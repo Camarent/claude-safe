@@ -60,6 +60,10 @@ GUIDELINES_HEADING = "## Guidelines"  # heading of the CLAUDE.md section that po
 GUIDELINES_SECTION_TEMPLATE = "{heading}\n\n{lines}\n"  # prepare_repo.py: the section written for the detected languages
 GUIDELINES_LANG_LINE = "{lang}: read {dir}/{lang}.md before editing {lang} files"  # one line per detected language
 GUIDELINES_BASE_LINE = "all: {dir}/base.md"  # always listed
+GUIDELINES_RUNBOOK_LINES = (
+    "driver: read {dir}/driver-runbook.md when you watch a running pipeline driver, when it blocks, or when you wake up to check a stage",
+    "lead: read {dir}/lead-rules.md when you change the pipeline, plan a pipeline fix, or sync installed pipeline config",
+)  # prepare_repo.py: practices links appended to the guidelines section ({dir} = PRACTICES_DIR); one line per file
 LANG_MARKERS = (
     ("cpp", ("CMakeLists.txt", "meson.build", "*.cpp", "*.cc", "*.hpp"), ("", "src")),
     ("rust", ("Cargo.toml",), ("",)),

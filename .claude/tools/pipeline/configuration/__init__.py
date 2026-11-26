@@ -347,6 +347,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     GUIDELINES_EXT,
     GUIDELINES_HEADING,
     GUIDELINES_LANG_LINE,
+    GUIDELINES_RUNBOOK_LINES,
     GUIDELINES_SECTION_TEMPLATE,
     HAIKU_DEV_TRIES,
     INDEX_TIMEOUT_S,
