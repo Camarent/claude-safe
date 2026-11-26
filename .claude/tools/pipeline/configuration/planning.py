@@ -158,6 +158,7 @@ QRUN_OP_PREFIX = "qrun-op:"  # error prefix of plan_testcmd.check_qrun_operator
 QRUN_OPS = ("!", "&&", "||", "|", ";")  # a word right after `cs-qrun --` that is a shell operator: cs-qrun runs a program, not a shell (exit 127)
 QRUN_OP_RE = r"\bcs-qrun\s+--\s+(\S+)"  # the first word after `cs-qrun --` in a Test: line (plan_testcmd.check_qrun_operator)
 OUTPUT_PATH_PREFIX = "outputs:"  # error prefix of plan_outputs.check_output_paths: a code task's Predicted path is scratch output under the work folder or git-ignored (never committed)
+RESEARCH_PREFIX = "research:"  # error prefix of plan_research.check_research: a research task has one tracked Outputs: path and a later task that depends on it names that path
 PINS_PREFIX = "pins:"  # error prefix of plan_pins.check_pinned_tests: a task edits a data or setting file that a test pins, and does not list that test
 PIN_DATA_EXTS = (".json", ".txt", ".csv", ".toml", ".yaml", ".yml")  # a Predicted path with one of these ends is a data file a test may pin
 PIN_DATA_DIR = "configuration"  # a Predicted path under a folder of this name is a setting file (plan_pins)
