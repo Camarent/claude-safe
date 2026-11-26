@@ -5,14 +5,14 @@ The local model does token-heavy work for free; Claude reads a 1-3 line result. 
 
 **The local model can be down, and then its steps are skipped.** `cs-plan run`, `cs-wave feature` and `cs-wave run` call `search.strata.preflight()` once before planning. If Strata does not answer, it sets `STRATA=0` for the run: `lp find` uses keyword/symbol search, planner/audit context steps skip with one line, and `localdev.py code|pack|bulk` print `skipped` and exit 0. Nothing is handed to cloud models instead. Set `STRATA=0` yourself to force this (`STRATA=1` or unset = probe the server). A run with `STRATA=0` logs `local_model: false` on its `context` and `context-recall` events: the explorer is not called, and the retro raises no context signals for it (no context is expected, so it is not a fault).
 
-## Tools (`cs-localdev ...`, `cs-context-eval ...`; scripts live in `tools/localmodel/`, with its `data/policy.json` and `data/profiles/`)
+## Tools (`cs-localdev ...`, `cs-context-eval ...`; scripts live in `.claude/tools/localmodel/`, with its `.claude/tools/localmodel/data/policy.json` and `data/profiles/`)
 | tool | what it does | status |
 |---|---|---|
 | `ask_code.query` | keyword search over the `.code-index` (shared with `lp find`); the pack builder uses it. | tested in `test_ask_code_query.py` |
 | `localdev.py pack` | context pack for a planner/auditor: model proposes queries and judges hits, code copies excerpts verbatim (every cite valid) | rebuilt on search, unit-tested; first live run pending |
 | `localdev.py bulk` | extraction/summary of files into ONE output file | live-tested OK (3 docs, 6 turns, exact quotes) |
 | `localdev.py code` | a narrow task in its own git branch `localdev/<id>` (worktree under `.work/localdev/<id>/wt`); model edits the predicted paths, runs only the test command, may `git add/commit` there; the tool reruns the test, restores anything out of scope (even committed), commits leftovers on PASS | live-tested PASS (t4 fix, 21 turns, 82 s) |
-| `localdev.py log` | recent local runs (mode, verdict, turns, secs, profiles) from `.work/localdev/runs.jsonl` | built |
+| `localdev.py log` | recent local runs (mode, verdict, turns, secs, profiles) from the local run log (git-ignored, kept in the localdev work folder) | built |
 
 ## Writing a local brief (short on purpose)
 A task file in the usual pipeline format is enough; these header lines are read: `Predicted paths:` , `Test (loop): \`...\``, `turns: N`, and optional
@@ -20,7 +20,7 @@ A task file in the usual pipeline format is enough; these header lines are read:
 The system prompt is assembled for you: `tools/localmodel/data/profiles/base.md` + profiles (rust, js, python, docs, pack, bulk) + the project's short
 architecture (`.localdev/architecture.md`, else the first 400 words of `docs/ARCHITECTURE.md`). Add rules by editing/adding a profile file, not by growing briefs.
 
-## What a brief may allow (ceiling in `tools/localmodel/data/policy.json`, owner-controlled)
+## What a brief may allow (ceiling in `.claude/tools/localmodel/data/policy.json`, owner-controlled)
 Commands must start with an approved prefix (unittest, cargo test/clippy/build/check/fmt, wasm-pack build, node, npm test/run, scripts/, make, jq, rg, grep, git
 status/diff/log) and contain no forbidden word (rm, curl, wget, sudo, git push/reset/rebase/clean, installs, `| sh`). `qrun.py --` wrappers are checked on the INNER
 command. The model gets Read/Grep/Glob everywhere, Edit/Write only on the predicted paths, Bash only for the test command + approved extras + git add/commit.

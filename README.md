@@ -127,7 +127,7 @@ mapped to your host uid/gid (`HOME` stays `/root`, owned by that user). Files cr
 mounted folders belong to you on the host. Chrome runs with `--no-sandbox` because the
 container does not allow user namespaces.
 
-Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<stage>/reports/report-<id>.md`) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
+Dev reports: `cmd_report` takes a dev's report from the dev's job worktree (its `reports/report-<id>.md` file) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
 
 ### Risks
 
