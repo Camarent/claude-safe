@@ -1,21 +1,17 @@
-Research answer for task-1 (no file edited; the lead saves this reply as `docs/headless-session-logs.md` content).
+Headless session logs and the ledger.
 
-**Where headless logs go (from tree):**
-- Config dir: `~/.claude/projects` is hard-coded in `.claude/tools/retro/ledger.py:145` and `.claude/tools/pipeline/claude.py:311,336`. Only `.claude/tools/retro/denials.py:26-30` honors `CLAUDE_CONFIG_DIR`. The tree sets no `CLAUDE_CONFIG_DIR` for headless sessions (only `.claude/tools/localmodel/localdev.py:190`).
-- Project folder name: the cwd with `/` and `.` replaced by `-` (`.claude/tools/pipeline/lead_context.py:13-15`). `ledger.find_transcript` globs `projects/*/`, so the folder name does not matter for lookup (`ledger.py:141-146`).
-- File name: `<projects>/<folder>/<session_id>.jsonl` (`ledger.py:145`, `claude.py:311`). Subagent logs sit under `<sid>/subagents/`.
+**Where headless logs go:**
+- Config dirs: `config_roots` in `.claude/tools/retro/ledger.py` returns `~/.claude/projects`, then `<CLAUDE_CONFIG_DIR>/projects` when that env var is set. `.claude/tools/retro/denials.py` reads the same variable. `find_transcript` searches every root in that order.
+- Project folder name: the cwd with `/` and `.` replaced by `-` (`.claude/tools/pipeline/lead_context.py`). `find_transcript` globs `<root>/*/<sid>.jsonl`, so the folder name does not matter for lookup.
+- File name: `<projects>/<folder>/<session_id>.jsonl`. Subagent logs sit under `<sid>/subagents/`.
 
-**The three candidate causes:**
-1. Another config dir: not supported by the tree. Ledger and pipeline use fixed `~/.claude/projects`; no code sets a different config dir for headless runs.
-2. Another project folder name for job worktrees: does not explain a miss. The glob is `projects/*/`, so any folder name matches.
-3. No `sid` in metrics rows: does not hold. `.claude/tools/pipeline/metrics.py:27` writes `"sid": u.get("sid", "")` into every `ev: session` row, from `claude.py:395` (`session_id`).
+**Session ids:** `.claude/tools/pipeline/metrics.py` writes `"sid"` into every `ev: session` row of `metrics.jsonl`. `metrics_sids` in `.claude/tools/retro/ledger.py` reads those ids back.
 
-**Actual gap (what does hold):**
-- `ledger.metrics_sids` (`ledger.py:126-138`) is never called: 0 matches for `metrics_sids` and `sids=` under `.claude/`.
-- Both callers pass no sids: `ledger.py:214` and `.claude/tools/retro/feature_retro.py:87` call `find_sessions(paths)`. So headless `<sid>.jsonl` logs are never added as sessions (`ledger.py:161-162` is dead for them).
+**How the ledger counts them:**
+- `main` in `.claude/tools/retro/ledger.py` calls `metrics_sids` when `--metrics` is given and passes the ids to `build`, which passes them to `find_sessions`.
+- `find_sessions` adds each top-level `<sid>.jsonl` whose id is in `sids` as a session of its own, because the driver's headless sessions have no `subagents/` dir.
+- `.claude/tools/retro/feature_retro.py` calls `find_sessions(paths)` without sids, so the feature retro counts only sessions with a `subagents/` dir.
 
-**Counts:** 3 candidate causes checked; 2 do not hold, 1 holds in a different form (sids written but never read back). 0 machine counts.
+**Test fixtures:** `.claude/tools/tests/fixtures/headless_logs/` holds a `metrics.jsonl`, one listed headless log (`headless-sid-0001.jsonl`) and one log whose id is not listed (`unlisted-sid-0002.jsonl`). `test_ledger.py` checks that only the listed one is counted.
 
 Caveat: where the external `claude` CLI writes the file is not in the tree; the layout above is what the code assumes.
-
-Could not find: any tree test or fixture that proves the real headless log path.

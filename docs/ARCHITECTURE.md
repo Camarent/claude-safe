@@ -21,7 +21,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - `scripts/dev.sh` - subcommands listed in `modules/scripts.md`; dispatch at `scripts/dev.sh:18`.
 - `scripts/release.sh` - pre-PR gate; never merges or pushes (`scripts/release.sh:2-3`).
 - `scripts/host_agents.py` - agent rendering; `main` at `scripts/host_agents.py:115`.
-- `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode (opt-in); `main` at `scripts/pipeline_auto.py:44`.
+- `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode (opt-in); `main` at `scripts/pipeline_auto.py:45`.
 - Stage gates: `docs_impact.py` (stale doc check) and `empty_tests.py` (assert-free test check) under `.claude/tools/pipeline/`; see `modules/scripts.md`.
 - Shared entry helpers: `.claude/tools/pipeline/entry.py` holds the status-line formatter, the shared run flags, the open-phase resolver and the feature-level BLOCKED copy used by the pipeline entry points. For `run NAME`, `orch.py NAME` resolves its open phase through `entry.resolve_open_phase`; `cs-wave run NAME` picks the open phase through `plan_files.next_open_phase`.
 

@@ -2,7 +2,7 @@
 """Per-task cost ledger over Claude Code transcripts: lead vs subagents, per agent type,
 per task (with retry rounds), and cost per completed task.
 
-    python3 -I /root/.claude/tools/retro/ledger.py <dir-or-jsonl>... [--tasks TASKS.md] [--top N]
+    python3 -I /root/.claude/tools/retro/ledger.py <dir-or-jsonl>... [--tasks TASKS.md] [--top N] [--metrics metrics.jsonl]
 
 A <dir> is searched recursively for `<session>/subagents/agent-*.jsonl` (+ `.meta.json`
 with agentType/description) and the lead log `<session>.jsonl` next to the session dir.
@@ -138,12 +138,25 @@ def metrics_sids(path):
     return out
 
 
+def config_roots():
+    """-> the `projects` dirs that hold session logs: ~/.claude/projects, then <CLAUDE_CONFIG_DIR>/projects when that env var is set (as retro/denials.py reads it)."""
+    roots = [os.path.expanduser("~/.claude/projects")]
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+    if cfg:
+        roots.append(os.path.join(cfg, "projects"))
+    return roots
+
+
 def find_transcript(sid, root=None):
-    """-> path of <root>/*/<sid>.jsonl (root defaults to ~/.claude/projects), or None (also for ids that are not plain tokens)."""
+    """-> path of <root>/*/<sid>.jsonl for the first root that holds it, or None (also for ids that are not plain tokens).
+    `root`: search only this projects dir; default: every root of config_roots() (headless driver logs can sit in a config dir of their own)."""
     if not sid or not sid.replace("-", "").isalnum():
         return None
-    hits = glob.glob(os.path.join(root or os.path.expanduser("~/.claude/projects"), "*", f"{sid}.jsonl"))
-    return hits[0] if hits else None
+    for r in [root] if root else config_roots():
+        hits = glob.glob(os.path.join(r, "*", f"{sid}.jsonl"))
+        if hits:
+            return hits[0]
+    return None
 
 
 def find_sessions(paths, sids=None):
@@ -205,13 +218,14 @@ def safe_read(path, weights):
         return {"turns": 0, "units": 0.0, "tokens": {}, "models": {}, "secs": 0.0, "usd": 0.0, "estimated": set()}
 
 
-def build(paths, weights, tasks_md=None):
+def build(paths, weights, tasks_md=None, sids=None):
+    """`sids`: headless session ids of the stage (metrics_sids); same meaning as in find_sessions, so the figures match retro_numbers.analyse."""
     lead_units = lead_turns = 0
     by_type: defaultdict[str, dict[str, Any]] = defaultdict(lambda: {"runs": 0, "turns": 0, "units": 0.0})
     by_task: defaultdict[str, dict[str, Any]] = defaultdict(lambda: {"runs": 0, "units": 0.0, "types": [], "models": set()})
     sub_units = 0.0
     usd, estimated = 0.0, set()
-    for _sid, lead, agents in find_sessions(paths):
+    for _sid, lead, agents in find_sessions(paths, sids):
         if lead:
             r = safe_read(lead, weights)
             lead_units += r["units"]
@@ -301,11 +315,13 @@ def main(argv=None):
     ap.add_argument("--tasks", help="TASKS.md; `- [x] task-N` = completed")
     ap.add_argument("--top", type=int, default=12)
     ap.add_argument("--weights", help="JSON file: {haiku, sonnet, opus} weights")
+    ap.add_argument("--metrics", help="metrics.jsonl of the stage: its headless session ids are counted as sessions too")
     a = ap.parse_args(argv)
     weights = dict(WEIGHTS)
     if a.weights:
         weights.update(json.loads(Path(a.weights).read_text(encoding="utf-8")))
-    print(render(build(a.paths, weights, a.tasks), a.top))
+    sids = metrics_sids(a.metrics) if a.metrics else None
+    print(render(build(a.paths, weights, a.tasks, sids), a.top))
     return 0
 
 
