@@ -60,7 +60,7 @@ NAV = (
 )
 
 
-def tail(a, rid, allowed, what="your full report"):
+def tail(a, rid, allowed, what="your full report") -> str:
     return (
         f" Scratchpad for temp files and logs: {WORK_DIR}/{a.stage}/{SCRATCH_DIR}/ (write nothing temporary elsewhere; delete what you no longer need when you finish)."
         f" Write {what} to .work/{a.stage}/reports/report-{rid}.md, its FIRST line `VERDICT: {allowed}`, then reply with exactly: REPORT {rid}"
@@ -70,12 +70,12 @@ def tail(a, rid, allowed, what="your full report"):
 UNVERIFIED_RULE = " If the app cannot be served or an item cannot be verified, add a line `UNVERIFIED: <items>` (the verdict then becomes BLOCKED, never PASS)."
 
 
-def serve_dir(a):
+def serve_dir(a) -> str:
     """The stage's servectl state dir (pid files, logs) under its scratchpad: the web-tester passes it to servectl, the driver stops from it."""
     return os.path.join(os.path.abspath(a.dir), WORK_DIR, a.stage, SCRATCH_DIR, SERVE_DIR_NAME)
 
 
-def webtest_build_note(cfg):
+def webtest_build_note(cfg) -> str:
     """Brief text for pipeline.json `webtest_build` (empty when unset): build fresh first so a stale build is never tested."""
     cmd = cfg.get("webtest_build")
     if not cmd:
@@ -83,7 +83,7 @@ def webtest_build_note(cfg):
     return f" First run `{cmd}` on this branch checkout and serve only that fresh build, never an older build output; put the checked-out commit (`git rev-parse --short HEAD`) in your report."
 
 
-def ux_flows_note(a, cfg):
+def ux_flows_note(a, cfg) -> str:
     """Brief text for pipeline.json `ux_flows` (empty when unset): the project's named flows (path filled from the stage's UX-VARS), with the rule to run those that cover the changed files and to report the changed UI files no flow covers."""
     path = flows_rel(cfg, variables(read_text(os.path.join(a.dir, WORK_DIR, a.stage, TASKS_FILE))))
     if not path:
@@ -94,7 +94,7 @@ def ux_flows_note(a, cfg):
     )
 
 
-def webtest_prompt(a, task, rid):
+def webtest_prompt(a, task, rid) -> str:
     """The brief of a `Type: webtest` task for the web-tester agent: the task file is the checklist, the report file it names is the deliverable."""
     t = os.path.join(os.path.abspath(a.dir), WORK_DIR, a.stage, f"{task['id']}.md")
     return (
@@ -106,7 +106,7 @@ def webtest_prompt(a, task, rid):
     )
 
 
-def extra_leads(d, text):
+def extra_leads(d, text) -> str:
     """Exact, no-model parts for a brief: where the names marked with backticks are defined, and the outline of each file under Predicted paths. "" when lp has nothing."""
     try:
         sys.path.insert(0, TOOLS)
@@ -138,12 +138,12 @@ def _lead_lines(root, path, start, end, cap):
 PREDICTED_RE = re.compile(r"(?m)^Predicted paths:[ \t]*\S")
 
 
-def slice_chars(text):
+def slice_chars(text) -> int:
     """Char cap of the code slices under the leads: the smaller one when the task names a Pattern file and its Predicted paths, else the larger one."""
     return LEAD_SLICE_CHARS_WITH_PATTERN if PATTERN_RE.search(text) and PREDICTED_RE.search(text) else LEAD_SLICE_CHARS
 
 
-def lead_slices(d, leads_text, max_slices=4, cap=40, max_chars=LEAD_SLICE_CHARS):
+def lead_slices(d, leads_text, max_slices=4, cap=40, max_chars=LEAD_SLICE_CHARS) -> str:
     """Real code lines under the `path:START-END` leads. Read fresh on every call (no cache). "" when nothing. Never raises."""
     try:
         root = os.path.realpath(d)
@@ -184,7 +184,7 @@ def lead_slices(d, leads_text, max_slices=4, cap=40, max_chars=LEAD_SLICE_CHARS)
         return ""
 
 
-def related_files(d, leads_text, text):
+def related_files(d, leads_text, text) -> str:
     """One line naming the docs and tests of the led files (names only, no model). "" when none. Never raises."""
     try:
         sys.path.insert(0, TOOLS)
@@ -232,7 +232,7 @@ def _search_leads(d, text):
     return (out + extra_leads(d, text)).strip()
 
 
-def leads_for(a, key, text):
+def leads_for(a, key, text) -> str:
     """Mandatory first code search: local.py find on `text`, cached in .work/<stage>/leads/leads-<key>.md and put in the brief. Never blocks."""
     if os.environ.get(ENV_NO_LEADS):  # tests
         return ""
@@ -266,14 +266,14 @@ def leads_for(a, key, text):
     return text_out
 
 
-def read_head(a, name, n=600):
+def read_head(a, name, n=600) -> str:
     try:
         return Path(os.path.join(getattr(a, "dir", "."), WORK_DIR, a.stage, name)).read_text(encoding="utf-8")[:n]
     except OSError:
         return ""
 
 
-def leads(a, task):
+def leads(a, task) -> str:
     return leads_for(a, task["id"], read_head(a, f"{task['id']}.md", 3000))
 
 
@@ -323,13 +323,13 @@ def _lint_left(a, task):
     )
 
 
-def docs_only(diff):
+def docs_only(diff) -> bool:
     """True when every file in the diff matches a GATE_SKIP_PATHS glob (docs only). False for an empty or unparsed diff."""
     names = re.findall(r"(?m)^diff --git a/(\S+) b/", diff or "")
     return bool(names) and all(any(fnmatch.fnmatch(n, g) for g in GATE_SKIP_PATHS) for n in names)
 
 
-def gate_output(a, task):
+def gate_output(a, task) -> str:
     """Tail of the report of the task's last driver test run ("" when none ran or the file is gone): the reviewer reads it in the brief instead of rerunning the gate."""
     evs = [e for e in (getattr(a, "orch_events", None) or []) if e.get("task") == task["id"]]
     ids = {e["id"] for e in evs if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith("test run")}
@@ -379,7 +379,7 @@ WORKTREE_NOTE = " Your job worktree root is your current directory: edit files o
 PATTERN_RE = re.compile(r"(?m)^Pattern:[ \t]*([^\s,:]+)")
 
 
-def pattern_header_note(root, task_file):
+def pattern_header_note(root, task_file) -> str:
     """Dev brief lines with the import and sys.path header of the task's Pattern file when that file is a test file, else ''."""
     m = PATTERN_RE.search(read_text(task_file))
     rel = m[1] if m else ""
@@ -420,7 +420,7 @@ TASK_GATES_NOTE = (
 BUILD_FIRST_NOTE = " For reference, the gates the driver runs: {names}. When your change touches source that a build gate compiles into an artifact, run only the build part of that gate before any test that loads the artifact: a test run on a stale build fails for no reason of yours. Do not run the other gates."
 
 
-def gates_note(a):
+def gates_note(a) -> str:
     """Dev brief text naming the project's gates from pipeline.json (empty when none): run each before DONE, report a `Gates:` line."""
     cfg = project(getattr(a, "dir", "."))
     gates = gates_of(cfg)
@@ -436,19 +436,19 @@ AFFECTED_DEV = " Affected tests (hint, may be incomplete): {named}. Check them f
 AFFECTED_REVIEW = " Check that test changes match the task's Done and do not weaken a check."
 
 
-def lead_note(task_file):
+def lead_note(task_file) -> str:
     """Brief sentence for a task file with lead-verified Done or Test lines, else ''. The lines are not named: the dev skips them, the driver runs them."""
     n = len(lead_verified_lines(read_text(task_file)))
     return f" {n} line(s) of the task file are marked lead-verified: not yours to run or to count as criteria; the driver runs them after you." if n else ""
 
 
-def affected_note(task_file, text):
+def affected_note(task_file, text) -> str:
     """Brief sentence for a task file with an `Affected tests:` line, else ''. TEXT is the sentence template."""
     named = task_affected_tests(Path(task_file).read_text(encoding="utf-8", errors="replace")) if os.path.isfile(task_file) else ""
     return text.format(named=named) if named else ""
 
 
-def last_report_file(evs, tid):
+def last_report_file(evs, tid) -> str:
     """Path of the task's newest report file that still exists, "" when none."""
     for e in reversed([e for e in evs if e.get("task") == tid and e["ev"] == EV_REPORT]):
         if e.get("file") and os.path.isfile(e["file"]):
@@ -456,14 +456,14 @@ def last_report_file(evs, tid):
     return ""
 
 
-def lead_note_line(note, report_file):
+def lead_note_line(note, report_file) -> str:
     """The line in front of a lead-retry brief. With an existing report the agent gets its path (the findings stay there, not pasted) and the first line of the note."""
     if not report_file:
         return f"Lead note (read first): {note}"
     return f"Lead note (read first): the findings of the last try are in {report_file}; read that file, they are not pasted here. {note.splitlines()[0][:LEAD_NOTE_CHARS]}"
 
 
-def rework_note(rework_file, main_dirt=False):
+def rework_note(rework_file, main_dirt=False) -> str:
     """Dev brief lines for a rework: the findings of the rework file verbatim, with the rule to fix all of them in one pass. "" without a rework file.
     MAIN_DIRT (main_dirt True) adds the worktree-relative path rule."""
     if not rework_file:
@@ -479,7 +479,7 @@ def _main_dirt_report(rework_file):
     return bool(rework_file) and os.path.isfile(rework_file) and any(maincheck.dirt(line) for line in read_text(rework_file).splitlines())
 
 
-def db_start_note(a):
+def db_start_note(a) -> str:
     """Dev brief line `DB start: <cmd>` from the `db-start:` line of the workspace CLAUDE.md, "" when there is none."""
     for line in read_text(os.path.join(getattr(a, "dir", "."), CLAUDE_FILE)).splitlines():
         if line.startswith(DB_START_PREFIX):
@@ -492,13 +492,13 @@ CCN_RE = re.compile(r"\bCCN\b")
 CCN_NOTE = " Your task's Goal or Done mentions CCN: never run `cs-audit`; the gates run it."
 
 
-def ccn_note(task_file):
+def ccn_note(task_file) -> str:
     """Dev brief line forbidding `cs-audit` when the task's Goal: or Done: line mentions CCN, else ''."""
     lines = read_text(task_file).splitlines()
     return CCN_NOTE if any(CCN_RE.search(line) for line in lines if line.startswith(("Goal:", "Done:"))) else ""
 
 
-def prompt_for(a, task, role, rework_file, rid):
+def prompt_for(a, task, role, rework_file, rid) -> str:
     t = os.path.join(os.path.abspath(getattr(a, "dir", ".")), WORK_DIR, a.stage, f"{task['id']}.md")
     out = (
         NAV
@@ -525,7 +525,7 @@ def prompt_for(a, task, role, rework_file, rid):
     return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{SCOPE_HINT_NOTE}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"
 
 
-def plan_fix_prompt(a, task, rid, why, report):
+def plan_fix_prompt(a, task, rid, why, report) -> str:
     """Architect brief for a reviewer PLAN-ERROR: correct the task file, never the code."""
     t = os.path.join(os.path.abspath(getattr(a, "dir", ".")), WORK_DIR, a.stage, f"{task['id']}.md")
     return (
@@ -536,9 +536,9 @@ def plan_fix_prompt(a, task, rid, why, report):
     )
 
 
-def testrun_on(a):
+def testrun_on(a) -> bool:
     return bool(project(getattr(a, "dir", ".")).get("testrun", True))
 
 
-def qualityrun_on(a):
+def qualityrun_on(a) -> bool:
     return bool(project(getattr(a, "dir", ".")).get("qualityrun", True))

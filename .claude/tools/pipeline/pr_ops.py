@@ -36,7 +36,7 @@ from .run import Run
 from .util import TOOLS
 
 
-def checks_timeout(cfg):
+def checks_timeout(cfg) -> float:
     """Seconds a PR step waits for pending checks: pipeline.json `pr_checks_timeout`, else CHECKS_TIMEOUT_S."""
     return float(cfg.get("pr_checks_timeout") or CHECKS_TIMEOUT_S)
 
@@ -216,12 +216,12 @@ def _failing(repo, br):
     return _ci_failed(_ci_runs(repo, _view(repo, br, "headRefOid")))
 
 
-def web_note(a_dir, stage):
+def web_note(a_dir, stage) -> str:
     """-> the UNVERIFIED-WEB line(s) of the stage's skipped browser check, joined by newlines; '' when none."""
     return "\n".join(webskip.skips(a_dir, stage))
 
 
-def append_body(repo, br, note):
+def append_body(repo, br, note) -> None:
     """Append NOTE to the body of the PR of branch BR (best effort: a failed edit changes nothing)."""
     cur = _run(["gh", "pr", "view", br, "--json", "body", "--jq", ".body"], repo)
     if cur.returncode:
@@ -686,7 +686,7 @@ def _pr_step(what, a_dir, repo, cfg, stage, br):
     return _open_pr(a_dir, repo, cfg, stage, br)
 
 
-def run(what, a_dir, stage, name):
+def run(what, a_dir, stage, name) -> tuple[str, str]:
     """-> (verdict, text)."""
     a = Run(dir=a_dir, stage=stage)
     cfg = project(a_dir)
@@ -715,7 +715,7 @@ def run(what, a_dir, stage, name):
         return BLOCKED, str(e)
 
 
-def sweep_before_branch(a):
+def sweep_before_branch(a) -> str:
     """Run the sweep on the release branch before the work branch is created. -> '' (always; red or pending PRs are no failure, a failed sweep only warns)."""
     if not pr_mode.sweep_active(a):
         return ""
