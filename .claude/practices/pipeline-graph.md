@@ -79,5 +79,7 @@ dev (haiku)  --DONE-->  [prereview (script, Strata, config `prereview`): FAIL go
 ```
 The plan never picks models (a `sonnet` word in an old TASKS.md is ignored). Agents talk through report files under `.work/` with `VERDICT:` as the first line.
 
+The reviewer diff view (`worktrees.job_diff`) drops the generated docs INDEX.md diff: its stat line and its `diff --git` section (`<docs_dir>/INDEX.md`, `docs_dir` from the project settings) are cut from the text. Other INDEX.md files stay. The reviewer does not see that index change.
+
 ## Where Strata is optional
 Everything marked "Strata, optional" is skipped with a visible note when the local model is down; no step needs it to finish. It is used in: planner context (levels 1 and 3), audit-context "Related, unchanged", prereview.
