@@ -160,6 +160,9 @@ ACCEPTANCE_CMD_TIMEOUT_S = 900  # one acceptance command (qrun kills its process
 ACCEPTANCE_TAIL_LINES = 3  # last output lines kept per command in acceptance.md
 ACCEPTANCE_TIMING_FLAG_KEY = "acceptance_timing_flag"  # pipeline.json: flag appended to the project test command in the acceptance command lines
 ACCEPTANCE_TIMINGS_LOG = "acceptance-timings-{n}.log"  # full output of each flagged acceptance command, in the stage reports folder
+RETRO_DIR = "retro"  # under .work/<stage>/: the retro inputs the pipeline writes (pipeline/slow_suite.py)
+SLOW_SUITE_FILE = "slow-suite.jsonl"  # .work/<stage>/retro/: one row per acceptance command that hit ACCEPTANCE_CMD_TIMEOUT_S
+SLOW_SUITE_KIND = "slow-suite"  # `kind` of a row of SLOW_SUITE_FILE
 ACCEPTANCE_CMD_TAG, ACCEPTANCE_EYES_TAG = "cmd:", "eyes:"  # tags of a Plan.md checklist line
 ACCEPTANCE_PROSE_WORDS = frozenset(
     {
