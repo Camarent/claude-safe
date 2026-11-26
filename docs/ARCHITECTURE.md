@@ -20,7 +20,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - `run.sh` - start a session. `--here` mounts `$PWD`; `--rebuild` rebuilds base and profiles (`README.md:27-29`).
 - `scripts/dev.sh` - subcommands listed in `modules/scripts.md`; dispatch at `scripts/dev.sh:18`.
 - `scripts/release.sh` - pre-PR gate; never merges or pushes (`scripts/release.sh:2-3`).
-- `scripts/host_agents.py` - agent rendering; `main` at `scripts/host_agents.py:114`.
+- `scripts/host_agents.py` - agent rendering; `main` at `scripts/host_agents.py:115`.
 - `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode (opt-in); `main` at `scripts/pipeline_auto.py:44`.
 
 ## Build and test commands

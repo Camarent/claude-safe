@@ -13,7 +13,7 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `scripts/release.sh` (no args; any arg prints usage, exit 2 at `:10`). Pre-PR gate: host checks, then container suite and gitleaks.
 - `scripts/image_test.sh [IMAGE]` (`scripts/image_test.sh:5`, default `claude-safe:rust`). Runs the test suite in the image, repo mounted read-only.
 - `scripts/sync-claude-config.sh [--apply] [REF]`: sync `~/.claude` from a git ref; dry run by default (lists the files that would be overwritten, writes nothing), `--apply` writes; refuses while a driver holds `.work/*/wave.lock` (`scripts/sync-claude-config.sh:36`).
-- `scripts/host_agents.py [--home DIR] [--out DIR] [--prefix pl-] [--apply]`: `main` at `scripts/host_agents.py:114`, `render` at `:103`.
+- `scripts/host_agents.py [--home DIR] [--out DIR] [--prefix pl-] [--apply]`: `main` at `scripts/host_agents.py:115`, `render` at `:104`.
 - `scripts/pipeline_auto.py feature|run ...`: execs `cs-wave` with the full default flags and permission mode `auto` (opt-in). `auto_flags` at `scripts/pipeline_auto.py:27`, `plan` at `:35`, `main` at `:44`. First argument other than `feature` or `run` exits 2 (`:50`).
 
 ## Key files
