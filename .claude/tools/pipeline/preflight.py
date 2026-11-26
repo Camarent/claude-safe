@@ -12,6 +12,7 @@ import subprocess
 from collections.abc import Callable, Mapping, Sequence
 
 from .configuration import GIT_TIMEOUT_S, QRUN_TMP_BASE, QRUN_TMP_MAX_PATH, QRUN_TMP_PREFIX
+from .entry import write_blocked
 
 NEEDS_RE = re.compile(r"^Needs:[ \t]*(.+?)[ \t]*$", re.M)
 MODE_RE = re.compile(r"^Mode:[ \t]*(\S+)[ \t]+([0-7]{3,4})[ \t]*$", re.M)
@@ -109,7 +110,5 @@ def run(
         problems.append(tmp)
     if problems:
         body = "".join(f"- {msg}\n  fix: {fix}\n" for msg, fix in problems)
-        os.makedirs(stage_dir, exist_ok=True)
-        with open(os.path.join(stage_dir, BLOCKED_FILE), "w", encoding="utf-8") as fh:
-            fh.write("# Env preflight: blocked\n\n" + body)
+        write_blocked(stage_dir, "# Env preflight: blocked\n\n" + body)
     return problems
