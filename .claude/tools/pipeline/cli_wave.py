@@ -19,7 +19,7 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
-from . import driver, gitx, graph, lead_context, limits, metrics, pr_ops, progress
+from . import driver, gitx, graph, lead_context, limits, metrics, ops_preflight, pr_ops, progress
 from . import preflight as env_preflight
 from .branches import dirty_block, ensure_work_branch, red_base_block
 from .briefs import ENV_DRY_NO_CCN
@@ -349,6 +349,13 @@ def _run_locked(a, c):
             print(f"blocked: {msg} (fix: {fix})")
         print(f"blocked: env preflight failed, see {os.path.join(c.w, BLOCKED_FILE)}")
         return 4
+    if steps := ops_preflight.open_ops(a, c):  # once, before any dispatch: every open manual step with no task dependency
+        for s in steps:
+            print(f"blocked: manual step {s['id']} is open: {s['text']} (dependents: {', '.join(s['dependents']) or 'none'}; skip: {s['skip']})")
+        write_text(os.path.join(c.w, BLOCKED_FILE), ops_preflight.blocked_text(steps) + "\n")
+        return 4
+    for s in ops_preflight.later_ops(c):  # the run goes on: the lead does these after the task they wait for
+        print(f"lead step {s['id']} (after {', '.join(s['after'])}): {s['text']}")
     return run_loop(a, c)
 
 
