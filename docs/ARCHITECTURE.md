@@ -31,6 +31,14 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - Setup: `scripts/dev.sh sync` needs `uv` and a system Python 3.11+ (`README.md:201`).
 - Tests of the pipeline live in `.claude/tools/tests/`.
 
+## Pipeline module splits
+Five pipeline modules hold code moved out of older modules. Each old module re-exports the moved names, so old import paths keep working.
+- `.claude/tools/pipeline/worktree_base.py:25` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`worktree.py:21`).
+- `.claude/tools/pipeline/worktree_merge.py:35` (`_git_version`): git version and `merge-tree` checks, unmerged-file queries. `worktree.py` re-exports these names (`worktree.py:78`).
+- `.claude/tools/pipeline/plan_check_task.py:38` (`_lint`): per-task plan checks (test refs, cites, commands, paths). `plan_check.py` re-exports them (`plan_check.py:58`).
+- `.claude/tools/pipeline/steps_history.py:9` (`history`): event history, retry and report queries. `steps.py` re-exports them (`steps.py:57`).
+- `.claude/tools/pipeline/pr_release.py:15` (`_release_level`): version bump, release tag and GitHub release of a stage branch. `pr_ops.py` re-exports them (`pr_ops.py:727`). Cycle: `pr_release.py` calls `pr_ops.*` at run time through `from . import pr_ops` at its bottom (`pr_release.py:228`), after its own defs; `pr_ops.py` imports `pr_release` at its bottom (`pr_ops.py:727`). The cycle resolves because both imports come after the definitions.
+
 ## Shared state
 - Tool caches and venv: `./.uv` in the checkout, or `DEV_UV_DIR` (`scripts/dev.sh:10`).
 - Pipeline stage state: `.work/` (not documented here).
