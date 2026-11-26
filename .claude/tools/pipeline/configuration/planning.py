@@ -157,7 +157,10 @@ TEST_BAN_PREFIX = "testban:"  # error prefix of plan_testcmd.check_test_ban
 QRUN_OP_PREFIX = "qrun-op:"  # error prefix of plan_testcmd.check_qrun_operator
 QRUN_OPS = ("!", "&&", "||", "|", ";")  # a word right after `cs-qrun --` that is a shell operator: cs-qrun runs a program, not a shell (exit 127)
 QRUN_OP_RE = r"\bcs-qrun\s+--\s+(\S+)"  # the first word after `cs-qrun --` in a Test: line (plan_testcmd.check_qrun_operator)
-PINS_PREFIX = "pins:"  # warning prefix of a task's pinned-line check (the pins rule)
+PINS_PREFIX = "pins:"  # error prefix of plan_pins.check_pinned_tests: a task edits a data or setting file that a test pins, and does not list that test
+PIN_DATA_EXTS = (".json", ".txt", ".csv", ".toml", ".yaml", ".yml")  # a Predicted path with one of these ends is a data file a test may pin
+PIN_DATA_DIR = "configuration"  # a Predicted path under a folder of this name is a setting file (plan_pins)
+PIN_PY_WORDS = ("word list", "default")  # a .py Predicted path is data when its name and one of these words are in the task text (plan_pins)
 DOCS_COUNT_PREFIX = "docs-count:"  # warning prefix of the docs-count rule (a task that writes a count or line number into docs)
 DOCS_COUNT_RE = (
     r"(?i)line numbers?|path:line|count of|number of (files|lines|tests|functions|symbols)|\bN lines"  # a docs line that pins a count or a line number

@@ -166,22 +166,24 @@ def _referencing_tests(repo, rels, stem):
 
 
 def check_affected_tests(d, tid, repo=None) -> list[str]:
-    """`tests-use:` warning (never fails a check): a non-test Predicted path whose file name is used by test files that neither the task's `Affected tests:` line, its Predicted paths nor its Test lines name; the dev would find them only when the gate goes red. Skipped for `Type: report` and for a task whose Predicted paths are all test files. Code files only; a name more than AFFECTED_MAX_TESTS tests mention is too common and gives nothing. A name matches as a whole word (a string search, not a call graph): a warning, not proof."""
+    """`tests-use:` warning (never fails a check; the `pins:` errors of plan_pins come with it): a non-test Predicted path whose file name is used by test files that neither the task's `Affected tests:` line, its Predicted paths nor its Test lines name; the dev would find them only when the gate goes red. Skipped for `Type: report` and for a task whose Predicted paths are all test files. Code files only; a name more than AFFECTED_MAX_TESTS tests mention is too common and gives nothing. A name matches as a whole word (a string search, not a call graph): a warning, not proof."""
     text = read_text(os.path.join(d, tid + ".md"))
     if not repo or task_type(text) == "report":
         return []
+    from .plan_pins import check_pinned_tests  # lazy: plan_pins imports this module
+
+    out = check_pinned_tests(d, tid, repo)  # `pins:` errors ride with this check
     paths = [p for p in paths_in(text) if not p.endswith("/") and not glob.has_magic(p)]
     src = [p for p in paths if p.endswith(AFFECTED_CODE_EXTS) and not _is_test_path(p)]
     if not src:
-        return []
+        return out
     rels = ["", *nested_repos(repo)]
-    out = []
     for p in src:
         stem = os.path.splitext(os.path.basename(p))[0]
         users = _unlisted_users(repo, rels, p, stem, text)
         if users:
             out.append(_affected_line(tid, p, stem, users))
-    return out
+    return out  # the `tests-use:` warnings, plus the `pins:` errors from plan_pins
 
 
 def _unlisted_users(repo, rels, p, stem, text):
