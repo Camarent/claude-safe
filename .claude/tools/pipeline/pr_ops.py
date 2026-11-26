@@ -298,11 +298,11 @@ class SystemClock:
     """The real clock of the merge wait; a test passes a fake with the same two methods, monotonic() and sleep(seconds)."""
 
     @staticmethod
-    def monotonic():
+    def monotonic() -> float:
         return time.monotonic()
 
     @staticmethod
-    def sleep(seconds):
+    def sleep(seconds) -> None:
         time.sleep(seconds)
 
 

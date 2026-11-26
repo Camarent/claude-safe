@@ -12,13 +12,13 @@ from .plan_rules import _field, parse_dryrun
 from .util import read_text
 
 
-def effect_count(output):
+def effect_count(output) -> int:
     """The first `<n> changes|updated|records|...` count in OUTPUT, 0 when none."""
     m = re.search(DRYRUN_COUNT_RE, output)
     return int(m[1]) if m else 0
 
 
-def run_in(wt, cmd):
+def run_in(wt, cmd) -> tuple[int, str]:
     """-> (exit code, stdout+stderr) of CMD run by the shell in WT."""
     try:
         r = subprocess.run([*DRYRUN_SHELL, cmd], cwd=wt, capture_output=True, text=True, errors="replace", timeout=DRYRUN_TIMEOUT_S, check=False)
@@ -27,7 +27,7 @@ def run_in(wt, cmd):
     return r.returncode, r.stdout + r.stderr
 
 
-def judge(tid, cmd, want, code, output):
+def judge(tid, cmd, want, code, output) -> str:
     """-> problem string or '' for one dry run."""
     if code:
         return f"{tid}: dry run `{cmd}` exited {code}: {output.strip()[-200:]}"
@@ -37,7 +37,7 @@ def judge(tid, cmd, want, code, output):
     return ""
 
 
-def dryrun_stage(d, repo):
+def dryrun_stage(d, repo) -> tuple[int, list[str]]:
     """-> (count of runs, problems) over the tasks of stage D with a `Dry run:` line, run in a throwaway detached worktree of REPO HEAD (removed afterwards)."""
     jobs = []
     for e in read_entries(d):

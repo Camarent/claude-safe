@@ -18,7 +18,7 @@ BAD_COMMAND_EXITS = (126, 127)  # shell: found but not executable, not found
 BAD_COMMAND_MARKERS = ("command not found", "No such file")
 
 
-def judge(tid, cmd, code, output):
+def judge(tid, cmd, code, output) -> str:
     """-> problem string or '' for one Test line run once in a fresh worktree."""
     if code == NO_MATCH_EXIT or "no test files match" in output:
         return f"{tid}: Test `{cmd}` matched no test (exit {code}): fix the path or the test name"
@@ -28,7 +28,7 @@ def judge(tid, cmd, code, output):
     return ""
 
 
-def testrun_stage(d, repo, runner=run_in):
+def testrun_stage(d, repo, runner=run_in) -> tuple[int, list[str]]:
     """-> (count of Test lines run, problems) over the tasks of stage D; each line runs once by RUNNER(wt, cmd) in a throwaway detached worktree of REPO HEAD (removed afterwards)."""
     jobs = []
     for e in read_entries(d):

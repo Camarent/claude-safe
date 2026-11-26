@@ -23,7 +23,7 @@ def _fmt(ids):
     return ", ".join(sorted(ids)) if ids else "nothing"
 
 
-def depends_line_problems(d, ents):
+def depends_line_problems(d, ents) -> list[str]:
     """-> messages for entries whose task file `Depends:` ids differ from their TASKS.md depends (both sides compared as sets)."""
     probs = []
     for e in ents:

@@ -68,7 +68,7 @@ def _rewrite_pins(repo, cfg, new):
         path = os.path.join(repo, rel)
         base = os.path.dirname(path)
 
-        def sub(m, base=base):
+        def sub(m, base=base) -> str:
             tgt = m[2] or m[5]
             if not _uses_workspace_version(os.path.join(base, tgt, name)):
                 return m[0]

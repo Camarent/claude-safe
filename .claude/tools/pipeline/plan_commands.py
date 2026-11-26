@@ -57,7 +57,7 @@ def _exists(path, dirs, produced):
     return any(os.path.exists(os.path.join(d, path)) for d in dirs)
 
 
-def repo_dirs(repo):
+def repo_dirs(repo) -> set[str]:
     """-> the directories (CMD_SUGGEST_DEPTH parts deep at most) of the git-tracked files of REPO; set() when REPO is no git work tree."""
     try:
         r = gitx.run(repo, "ls-files", "-z")
@@ -140,7 +140,7 @@ def _segment_findings(label, words, repo, dirs, produced):
     return out + _arg_findings(label, words[1:], repo, dirs, produced, local="/" in exe, script=script)
 
 
-def command_findings(label, cmd, repo, produced=(), nested=()):
+def command_findings(label, cmd, repo, produced=(), nested=()) -> list[str]:
     """-> problems (and `cmd:` warnings) for one shell command CMD of LABEL, run in REPO. PRODUCED: paths the plan makes; NESTED: nested repo dirs the task edits (their files count as found). A leading `cd x` moves the base to x."""
     dirs = [repo, *nested]
     out = []

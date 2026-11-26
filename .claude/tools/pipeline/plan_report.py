@@ -16,7 +16,7 @@ def _tool_found(name, repo):
     return bool(shutil.which(name)) or any(os.path.exists(os.path.join(b, name)) for b in (repo, os.path.join(repo, "scripts"), TOOLS_DIR))
 
 
-def check_type_inputs(d, tid, repo, workspace):
+def check_type_inputs(d, tid, repo, workspace) -> list[str]:
     """Problems for one task file: an unknown `Type:` value, and each `Inputs:` entry that does not exist (path relative to the workspace or absolute; `tool:<name>` on PATH or a repo script)."""
     text = read_text(os.path.join(d, tid + ".md"))
     probs = []
@@ -34,7 +34,7 @@ def check_type_inputs(d, tid, repo, workspace):
     return probs
 
 
-def check_report_validator(d, tid):
+def check_report_validator(d, tid) -> list[str]:
     """Problems for one `Type: report` task file: every `Test:` command is a bare existence check."""
     text = read_text(os.path.join(d, tid + ".md"))
     if task_type(text) != "report":
