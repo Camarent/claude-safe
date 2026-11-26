@@ -40,16 +40,6 @@
   ],
   "worktrees": true,
   "public_forbidden_words": [
-    "kata",
-    "dojo",
-    "model-host",
-    "model-net",
-    "strata.key",
-    "proxmox",
-    "tailscale",
-    "wireguard",
-    "/home/",
-    "titov",
-    "kirill"
+    "/home/"
   ]
 }
