@@ -35,7 +35,7 @@ def _script_top(t):
 def _json_top(path):
     try:
         d = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # unreadable or malformed config file: no summary line, which is a normal state
         return ""
     if isinstance(d, dict):
         return "keys: " + ", ".join(list(d)[:8]) if len(d) <= 12 else f"object, {len(d)} entries"
@@ -47,7 +47,7 @@ def top_line(root, f):
     try:
         with open(os.path.join(root, f), encoding="utf-8", errors="ignore") as fh:
             t = fh.read(4000)
-    except OSError:
+    except OSError:  # a lead file that cannot be read gives no top line: normal, not a bug
         return ""
     if f.endswith(".py"):
         return _py_top(t)
