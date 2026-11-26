@@ -151,7 +151,7 @@ def _dev_job(c, d):
     """-> the job worktree info of dev dispatch D (WORKTREE_CWD_AGENTS only), or None when there is none."""
     if d["agent"] not in WORKTREE_CWD_AGENTS or not project(c.dir).get("worktrees"):
         return None
-    return job_info(c, dispatch_task(c, d), create=False)
+    return job_info(c, dispatch_task(c, d) or "", create=False)
 
 
 def session_cwd(c, d) -> str:
@@ -209,7 +209,7 @@ def run_one(c, d) -> tuple[dict, dict, dict]:
                 pgid_file=os.path.join(c.w, PGID_FILE_NAME),
             )
         else:  # mutation checks run in the job worktree; the script puts it back whatever the session does
-            task = dispatch_task(c, d)
+            task = dispatch_task(c, d) or ""
             why = review_begin(c, task)
             if why:
                 u = dict(claude.usage({}), error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview not started: {why}")
