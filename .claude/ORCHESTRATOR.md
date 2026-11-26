@@ -148,3 +148,5 @@ Before any merge to `master` every project check (`each` in `pipeline.json`) exi
 **Rework notes:** name the file, the line and the replacement text.
 
 **main-dirt:** when the main checkout holds uncommitted dirt, the step ends BLOCKED and goes to the lead. Run `git -C <main> status`, clean or commit the files yourself, then `orch.py retry --step <task>`. The block clears on its own once the dirt is gone. The driver never deletes the files.
+
+**Acceptance timings:** with `acceptance_timing_flag` set in `pipeline.json`, each acceptance command that starts with `test_command_hint` runs with that flag appended; `acceptance.md` still shows the command as written. The full output of each such command, pass or fail, goes to the stage reports folder as `acceptance-timings-<n>.log`.

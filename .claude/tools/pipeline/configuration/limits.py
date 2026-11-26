@@ -158,6 +158,8 @@ ACCEPTANCE_REVIEW_AGENT = "reviewer"  # agent that checks the MANUAL items
 ACCEPTANCE_FILE = "acceptance.md"  # written to .work/<stage>/: one line per checklist item
 ACCEPTANCE_CMD_TIMEOUT_S = 900  # one acceptance command (qrun kills its process group at this limit)
 ACCEPTANCE_TAIL_LINES = 3  # last output lines kept per command in acceptance.md
+ACCEPTANCE_TIMING_FLAG_KEY = "acceptance_timing_flag"  # pipeline.json: flag appended to the project test command in the acceptance command lines
+ACCEPTANCE_TIMINGS_LOG = "acceptance-timings-{n}.log"  # full output of each flagged acceptance command, in the stage reports folder
 ACCEPTANCE_CMD_TAG, ACCEPTANCE_EYES_TAG = "cmd:", "eyes:"  # tags of a Plan.md checklist line
 ACCEPTANCE_PROSE_WORDS = frozenset(
     {

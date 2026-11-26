@@ -267,6 +267,8 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     ACCEPTANCE_REVIEW_FILE,
     ACCEPTANCE_STEP,
     ACCEPTANCE_TAIL_LINES,
+    ACCEPTANCE_TIMING_FLAG_KEY,
+    ACCEPTANCE_TIMINGS_LOG,
     ADD_REPO_CMD,
     AGENT_TOOL_TIMEOUT_S,
     AUDIT_TOOLS_MIN_FIELDS,
