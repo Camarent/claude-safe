@@ -55,7 +55,7 @@ Agent (a file in `agents/`):
 | `scripts/dev.sh cov` | tests with branch coverage; fails below `fail_under` (90) |
 | `scripts/dev.sh dead` / `sec` | vulture / bandit (reviewed skips and `# nosec Bxxx  # reason` markers) |
 | `scripts/dev.sh clean` | delete `./.uv` and all caches: the host is clean again |
-In the container the full suite also runs as `cs-ptest`. After a stage-sequence change read `cs-wave run --stage S --dir D --dry-run` and add a case to `tests/test_stage_sequence.py`.
+In the container the full suite also runs as `cs-ptest`. After a stage-sequence change read `cs-wave run S --dir D --dry-run` and add a case to `tests/test_stage_sequence.py`.
 
 ## Commands and paths
 - `.claude/paths.json` is the single place to remap on a move: roots (`/root/.claude`, `/workspace`, host dirs) and the `cs-*` command names.

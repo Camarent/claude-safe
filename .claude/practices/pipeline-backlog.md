@@ -27,7 +27,7 @@ Closed items live in git history, not here. Gate state: run `scripts/dev.sh chec
 - [ ] Re-score the pipeline on the next real stage with `practices/score.md` (weakest: plan-context recall, lead load, guard false denials).
 
 ## Open: fixes
-- [ ] Driver: a step added or retried in a phase already marked done is not run by `cs-wave feature` (only `cs-wave run --stage <phase>` runs it); `cs-orch next` by hand logs a dispatch the driver never runs. Document or guard it.
+- [ ] Driver: a step added or retried in a phase already marked done is not run by `cs-wave run F` (only `cs-wave run F/phases/<dir>` runs it); `cs-orch next` by hand logs a dispatch the driver never runs. Document or guard it.
 - [ ] Lead-side facts go stale across steps (a merge listed as pending after the driver did it). Add a post-exit check script to `run-feature` (PR state, stage branches, artifact date vs merge) so the lead reports from output.
 - [ ] Orphaned sessions after a hard kill of the driver (SIGKILL, OOM): the dev keeps editing while `recover_unreported` starts a second one. Record process groups per dispatch and kill or refuse. Missing tests for SIGKILL recovery and concurrent merge.
 - [ ] `wt.merge` and `merge_wave.py` run without the checkout lock (the driver holds it while the merge script runs, so a plain re-take deadlocks: needs a re-entrant or owner-aware lock); a nested repo can merge while the main repo conflicts (partial merge).

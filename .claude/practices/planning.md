@@ -1,6 +1,6 @@
 # Planning: read when ordering a plan
 
-Plan rules the architect acts on (owner load, phase size, criteria first, task-file format, no model marks) live in `agents/architect.md`; entry route (`cs-plan run`, `cs-wave feature`) in ORCHESTRATOR.md. This file holds what the lead needs.
+Plan rules the architect acts on (owner load, phase size, criteria first, task-file format, no model marks) live in `agents/architect.md`; entry route (`cs-plan run`, `cs-wave run <name>` for a feature) in ORCHESTRATOR.md. This file holds what the lead needs.
 
 - Who plans: big block of several stages = ONE `architect` call for the whole block (plan + task files). Small stage, bug pack, screenshot fixes = `architect` too. Model ladder and ESCALATE: `practices/orch-pipeline.md`; the lead does not escalate to Opus on its own.
 - Planner split: big plans go in 2 passes (outline + TASKS.md graph, then task files), first file written by turn 25 (planner 20); check with `retro/agent_cost.py` after the run.

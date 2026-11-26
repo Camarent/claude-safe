@@ -27,7 +27,7 @@ Landed before the 2026-11-20 history squash: `--allow-red-base`, `preflight-red.
 ## Task 4. Override ledger and waivers
 - (planned, not implemented: no `override` event exists in `orch.jsonl` today.) Every `orch.py skip` or `retry` of a gate step (preflight, task gates, merge gate, final test), every re-stamp and every waiver appends an `override` event to `orch.jsonl` with the actor, step, reason and HEAD. The final report prints them under "gates weakened in this stage".
 - Waiver: `orch.py waive --gate <name> --reason "<why>"` (planned, not implemented: `cli_orch.py` registers no `waive` today), owner-confirmed. It records gate, reason and HEAD, applies to this stage only (expires with the stage branch), clears that gate's red at the merge gate and final test, and nothing else. A `NO FIX` owner decision can offer it.
-- (planned, not implemented: `CLEAN-WITH-WAIVERS` appears nowhere in `.claude/tools` today.) A stage with any override or waiver ends `CLEAN-WITH-WAIVERS`, never `CLEAN`; the retro and the score job count them. No flag on `cs-plan run`, `cs-wave run` or `cs-wave feature` can pass a red gate (tests assert the parsers reject any `--allow-*` red/base flag).
+- (planned, not implemented: `CLEAN-WITH-WAIVERS` appears nowhere in `.claude/tools` today.) A stage with any override or waiver ends `CLEAN-WITH-WAIVERS`, never `CLEAN`; the retro and the score job count them. No flag on `cs-plan run`, `cs-wave run` or the alias `cs-wave feature` can pass a red gate (tests assert the parsers reject any `--allow-*` red/base flag).
 - Done: tests for the ledger, waiver scope (one gate, one stage), `CLEAN-WITH-WAIVERS`, and a skip of the merge gate that is logged and listed.
 
 ## Task 5. Docs and backlog
