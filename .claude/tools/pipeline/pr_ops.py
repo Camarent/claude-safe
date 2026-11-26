@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import ci_clean, cleanup, gitx, pr_mode, webskip, worktree
+from . import ci_clean, cleanup, gitx, pr_base, pr_mode, webskip, worktree  # noqa: F401 -- tests patch pr_ops.gitx.run
 from .ci_drift import ci_commands, ignore_hint
 from .configuration import (
     BLOCKED,
@@ -21,7 +21,7 @@ from .configuration import (
     GH_CHECKS_PENDING_RC,
     GIT_LONG_TIMEOUT_S,
     GIT_NETWORK_TIMEOUT_S,
-    GIT_SAFE_ENV,
+    GIT_SAFE_ENV,  # noqa: F401 -- re-exported: test_pr_ops_names checks the name is importable from pr_ops
     PUSH_ERR_HEAD,
     PUSH_ERR_TAIL,
     TASKS_FILE,
@@ -32,6 +32,35 @@ from .configuration import (
     repo_path,
 )
 from .configuration.pr_gates import ENV_OUTPUT_RE, PR_GATE_TIMEOUT_S, PR_GATES_STEP
+from .pr_base import (  # noqa: F401 -- re-exported: pr_ops keeps the shared git/gh helpers under their old names
+    TITLE_RE,
+    Blocked,
+    _git,
+    _landed,
+    _merge_title,
+    _run,
+    _view,
+)
+from .pr_release import (  # noqa: F401 -- re-exported: pr_ops keeps every release name
+    _PIN,
+    _SEMVER,
+    LEVELS,
+    _already_released,
+    _bump,
+    _ensure_tag,
+    _github_release,
+    _goal_version,
+    _hook,
+    _merged_sha,
+    _plan_bump,
+    _release,
+    _release_level,
+    _release_ref,
+    _rewrite_pins,
+    _uses_workspace_version,
+    _ver,
+    _version_bump,
+)
 from .run import Run
 from .util import TOOLS
 
@@ -41,33 +70,9 @@ def checks_timeout(cfg) -> float:
     return float(cfg.get("pr_checks_timeout") or CHECKS_TIMEOUT_S)
 
 
-class Blocked(Exception):
-    pass
-
-
-def _run(args, cwd, timeout=GIT_LONG_TIMEOUT_S):
-    if args[:2] == ["gh", "pr"] and (slug := pr_mode.origin_parts(cwd)[1]):  # a fork's origin: name the repo, never let gh pick the upstream
-        args = [*args[:3], "--repo", slug, *args[3:]]
-    try:
-        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, env={**os.environ, **GIT_SAFE_ENV}, timeout=timeout, check=False)
-    except subprocess.TimeoutExpired as e:
-        raise Blocked(f"{' '.join(args[:4])} timed out after {timeout}s") from e
-    except OSError as e:
-        raise Blocked(f"{args[0]}: {e}") from e
-
-
-def _git(repo, *args, timeout=GIT_LONG_TIMEOUT_S):
-    try:
-        return gitx.run(repo, *args, timeout=timeout)
-    except subprocess.TimeoutExpired as e:
-        raise Blocked(f"{' '.join(['git', *args][:4])} timed out after {timeout}s") from e
-    except OSError as e:
-        raise Blocked(f"git: {e}") from e
-
-
 def _has_origin(repo):
     """A repo without `origin` has no PR: never ask gh."""
-    return _git(repo, "remote", "get-url", "origin").returncode == 0
+    return pr_base._git(repo, "remote", "get-url", "origin").returncode == 0
 
 
 def _ends(text):
@@ -79,7 +84,7 @@ def _ends(text):
 
 
 def _pushed(repo, br):
-    r = _git(repo, "-c", pr_mode.GH_CRED, "push", "-u", "origin", br, timeout=GIT_NETWORK_TIMEOUT_S)
+    r = pr_base._git(repo, "-c", pr_mode.GH_CRED, "push", "-u", "origin", br, timeout=GIT_NETWORK_TIMEOUT_S)
     if r.returncode:
         raise Blocked(f"push of {br} failed: {_ends((r.stderr or r.stdout).strip())}")
 
@@ -98,7 +103,7 @@ def _pr_title(a_dir, stage, br):
 
 def _open_pr(a_dir, repo, cfg, stage, br):
     """-> note. Reuses an open PR of the branch; creates none while the branch has no commit beyond the release branch."""
-    r = _run(["gh", "pr", "list", "--head", br, "--state", "open", "--json", "number,url"], repo)
+    r = pr_base._run(["gh", "pr", "list", "--head", br, "--state", "open", "--json", "number,url"], repo)
     if r.returncode:
         raise Blocked(f"gh pr list failed: {r.stderr.strip()[-300:]}")
     try:
@@ -109,48 +114,17 @@ def _open_pr(a_dir, repo, cfg, stage, br):
         return f"PR #{found[0]['number']} reused"
     rel = release_branch(repo, cfg)
     base = (
-        f"origin/{rel}" if _git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode == 0 else rel
+        f"origin/{rel}" if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode == 0 else rel
     )  # the remote head, not a stale local one
-    ahead = _git(repo, "rev-list", "--count", f"{base}..{br}")
+    ahead = pr_base._git(repo, "rev-list", "--count", f"{base}..{br}")
     if ahead.returncode == 0 and ahead.stdout.strip() == "0":
         return "no commit beyond the release branch yet: the PR opens at the next push"
     title = _pr_title(a_dir, stage, br)
     body = f"Stage {stage}. Task list: `.work/{stage}/TASKS.md`. Opened by the pipeline as a draft; it is marked ready after the last audit."
-    r = _run(["gh", "pr", "create", "--draft", "--base", rel, "--head", br, "--title", title, "--body", body], repo)
+    r = pr_base._run(["gh", "pr", "create", "--draft", "--base", rel, "--head", br, "--title", title, "--body", body], repo)
     if r.returncode:
         raise Blocked(f"gh pr create failed: {(r.stderr or r.stdout).strip()[-300:]}")
     return f"PR opened: {r.stdout.strip().splitlines()[-1] if r.stdout.strip() else br}"
-
-
-def _view(repo, br, field):
-    """-> the value of `gh pr view --json FIELD`, None when unknown."""
-    try:
-        r = _run(["gh", "pr", "view", br, "--json", field], repo)
-    except Blocked:  # no gh binary or it hangs: no PR
-        return None
-    try:
-        return json.loads(r.stdout or "{}").get(field) if r.returncode == 0 else None
-    except (ValueError, AttributeError):
-        return None
-
-
-def _landed(repo, rel, br, pr=True):
-    """-> '' when the stage branch is safe to delete (PR merged, or it adds nothing to the release branch), else the reason it is not."""
-    if pr and _view(repo, br, "state") == "MERGED":
-        return ""
-    for ref in (rel, f"origin/{rel}"):
-        if _git(repo, "rev-parse", "--verify", "-q", ref).returncode:
-            continue
-        if _git(repo, "diff", "--quiet", ref, br).returncode == 0:
-            return ""
-        cherry = _git(repo, "cherry", ref, br)
-        if cherry.returncode == 0 and not any(x.startswith("+") for x in cherry.stdout.splitlines()):
-            return ""
-        # squash of several commits, release moved on: a clean merge that leaves the release tree unchanged adds nothing
-        merged = _git(repo, "merge-tree", "--write-tree", ref, br)
-        if merged.returncode == 0 and merged.stdout.split()[:1] == [_git(repo, "rev-parse", f"{ref}^{{tree}}").stdout.strip()]:
-            return ""
-    return f"{br} has work that is not in {rel} and its PR is not MERGED; merge it first, then skip master-merged again"
 
 
 class CiReadError(Blocked):
@@ -162,7 +136,7 @@ def _ci_runs(repo, sha):
     Raises CiReadError when the read fails (no sha, gh error, bad JSON). Reads Actions runs only (no checks:read needed: fine-grained tokens lack it)."""
     if not sha:
         raise CiReadError("the head commit of the PR is unknown: CI cannot be read")
-    r = _run(["gh", "run", "list", "--commit", sha, "--limit", str(CI_RUNS_LIMIT), "--json", "name,status,conclusion"], repo)
+    r = pr_base._run(["gh", "run", "list", "--commit", sha, "--limit", str(CI_RUNS_LIMIT), "--json", "name,status,conclusion"], repo)
     if r.returncode:
         raise CiReadError(f"gh run list failed for {sha}: {(r.stderr or r.stdout).strip()[-200:]}")
     try:
@@ -180,7 +154,7 @@ def _ci_runs(repo, sha):
 
 def _ci_wait(repo, br, limit):
     """-> the finished workflow runs of the PR head, polling every CI_POLL_S; Blocked after `limit` s. An empty list is re-read CI_EMPTY_POLLS times when the repo has workflows (the runs may not exist yet)."""
-    sha = _view(repo, br, "headRefOid")
+    sha = pr_base._view(repo, br, "headRefOid")
     has_workflows = (Path(repo) / ".github" / "workflows").is_dir()
     deadline, empty = time.monotonic() + limit, 0
     while True:
@@ -203,7 +177,7 @@ def _pr_checks(repo, br, limit=None):
     """Checks of BR -> CompletedProcess: rc 0 green, 1 red or "no checks reported", GH_CHECKS_PENDING_RC pending. Reads the workflow
     runs of the PR head (`gh run list --commit <head sha>`, inside _ci_runs), never `gh pr checks`: a token without checks:read cannot read that.
     A failed read raises CiReadError, never "no checks reported". With `limit`, waits up to `limit` s."""
-    runs = _ci_wait(repo, br, limit) if limit else _ci_runs(repo, _view(repo, br, "headRefOid"))
+    runs = _ci_wait(repo, br, limit) if limit else _ci_runs(repo, pr_base._view(repo, br, "headRefOid"))
     pending = any(x["status"] != "COMPLETED" for x in runs)
     bad = _ci_failed(runs)
     rc, out = (GH_CHECKS_PENDING_RC, "pending") if pending else (1, ", ".join(bad)) if bad else (0, "") if runs else (1, "no checks reported")
@@ -213,7 +187,7 @@ def _pr_checks(repo, br, limit=None):
 
 def _failing(repo, br):
     """-> the names of the failed workflow runs of the PR head (`gh run list`, as _pr_checks reads them)."""
-    return _ci_failed(_ci_runs(repo, _view(repo, br, "headRefOid")))
+    return _ci_failed(_ci_runs(repo, pr_base._view(repo, br, "headRefOid")))
 
 
 def web_note(a_dir, stage) -> str:
@@ -223,10 +197,10 @@ def web_note(a_dir, stage) -> str:
 
 def append_body(repo, br, note) -> None:
     """Append NOTE to the body of the PR of branch BR (best effort: a failed edit changes nothing)."""
-    cur = _run(["gh", "pr", "view", br, "--json", "body", "--jq", ".body"], repo)
+    cur = pr_base._run(["gh", "pr", "view", br, "--json", "body", "--jq", ".body"], repo)
     if cur.returncode:
         return
-    _run(["gh", "pr", "edit", br, "--body", f"{cur.stdout.rstrip()}\n\n{note}"], repo)
+    pr_base._run(["gh", "pr", "edit", br, "--body", f"{cur.stdout.rstrip()}\n\n{note}"], repo)
 
 
 def _gates_gate(repo, cfg, br, runner=None):
@@ -256,10 +230,10 @@ def _gates_gate(repo, cfg, br, runner=None):
 
 
 def _ready(repo, cfg, br):
-    r = _run(["gh", "pr", "ready", br], repo)
+    r = pr_base._run(["gh", "pr", "ready", br], repo)
     note = "marked ready"
     if r.returncode:
-        if _view(repo, br, "isDraft") is not False:
+        if pr_base._view(repo, br, "isDraft") is not False:
             raise Blocked(f"gh pr ready failed and the PR of {br} is still a draft: {(r.stderr or r.stdout).strip()[-200:]}")
         note = "already ready"
     limit = int(checks_timeout(cfg))
@@ -277,26 +251,23 @@ def _ready(repo, cfg, br):
     return f"{note}; checks green"
 
 
-TITLE_RE = re.compile(r"^[a-z]+(\([\w./-]+\))?!?: \S.{0,100}$")
-
-
 def _idle(repo, cfg, br):
     """True when the main repo has no PR work: nested repos exist, the stage branch is missing or has no commit beyond the release branch, and no PR is open."""
     if not worktree.nested_repos(repo):
         return False
-    if _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
+    if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
         return True
-    ahead = _git(repo, "rev-list", "--count", f"{release_branch(repo, cfg)}..{br}")
-    return ahead.returncode == 0 and ahead.stdout.strip() == "0" and _view(repo, br, "state") not in ("OPEN", "MERGED")
+    ahead = pr_base._git(repo, "rev-list", "--count", f"{release_branch(repo, cfg)}..{br}")
+    return ahead.returncode == 0 and ahead.stdout.strip() == "0" and pr_base._view(repo, br, "state") not in ("OPEN", "MERGED")
 
 
 def _empty(repo, cfg, br):
     """True when the stage branch is missing or has no commit beyond the release branch and no PR of it is open or merged."""
-    if _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode == 0:
-        ahead = _git(repo, "rev-list", "--count", f"{release_branch(repo, cfg)}..{br}")
+    if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode == 0:
+        ahead = pr_base._git(repo, "rev-list", "--count", f"{release_branch(repo, cfg)}..{br}")
         if ahead.returncode or ahead.stdout.strip() != "0":
             return False
-    return _view(repo, br, "state") not in ("OPEN", "MERGED")
+    return pr_base._view(repo, br, "state") not in ("OPEN", "MERGED")
 
 
 def _nested_unlanded(repo, cfg, br, sep=""):
@@ -304,9 +275,9 @@ def _nested_unlanded(repo, cfg, br, sep=""):
     bad = []
     for n in worktree.nested_repos(repo):
         sub = os.path.join(repo, n)
-        if _git(sub, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
+        if pr_base._git(sub, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
             continue
-        why = _landed(sub, release_branch(sub, cfg), br, False)
+        why = pr_base._landed(sub, release_branch(sub, cfg), br, False)
         if why:
             bad.append(f"{n}: {why}")
     if bad:
@@ -314,21 +285,9 @@ def _nested_unlanded(repo, cfg, br, sep=""):
     return ""
 
 
-def _merge_title(a_dir, stage, br):
-    """-> the squash commit title: the `pr-title:` line of the stage TASKS.md when it is `<type>(<area>): <what>`, else `chore(<stage>): <goal>`."""
-    tl = os.path.join(a_dir, WORK_DIR, stage, TASKS_FILE)
-    text = Path(tl).read_text(encoding="utf-8") if os.path.isfile(tl) else ""
-    m = re.search(r"(?im)^pr-title:\s*(.+)$", text)
-    if m and TITLE_RE.match(m[1].strip()):
-        return m[1].strip()
-    g = re.search(r"(?im)^goal:\s*(.+)$", text)
-    goal = re.sub(r"\s+", " ", g[1]).strip(" .")[:80] if g else stage
-    return f"chore({stage.split('/phases/')[0].split('/')[-1]}): {goal[:1].lower() + goal[1:]}"
-
-
 def _squash_forbidden(repo):
     """True only when `gh repo view` says squash merges are off; unknown (gh error, odd output) is False."""
-    r = _run(["gh", "repo", "view", "--json", "squashMergeAllowed"], repo)
+    r = pr_base._run(["gh", "repo", "view", "--json", "squashMergeAllowed"], repo)
     try:
         return r.returncode == 0 and json.loads(r.stdout or "{}").get("squashMergeAllowed") is False
     except (ValueError, AttributeError):
@@ -376,7 +335,7 @@ def _checks_read(repo, br):
 
 def _mergeable_read(repo, br):
     """-> (mergeable,) once GitHub has computed it, else None: UNKNOWN is polled like a pending check."""
-    m = _view(repo, br, "mergeable")
+    m = pr_base._view(repo, br, "mergeable")
     return None if m == "UNKNOWN" else (m,)
 
 
@@ -394,49 +353,49 @@ def _checks_gate(repo, cfg, br, clock=SystemClock):
 
 def _merge(a_dir, repo, cfg, stage, br, clock=SystemClock):
     """-> note. Polls an UNKNOWN mergeability and pending checks (pr_checks_timeout), then squash-merges the stage PR once it is open, ready, mergeable and its checks are green; anything else is BLOCKED (the lead merges by hand)."""
-    state = _view(repo, br, "state")
+    state = pr_base._view(repo, br, "state")
     if state == "MERGED":
         return "PR already merged"
-    if state != "OPEN" and _landed(repo, release_branch(repo, cfg), br, False) == "":
+    if state != "OPEN" and pr_base._landed(repo, release_branch(repo, cfg), br, False) == "":
         return f"{br} adds nothing to {release_branch(repo, cfg)}: nothing to merge"
     if state != "OPEN":
         raise Blocked(f"no open PR for {br} (state: {state}): merge by hand, then skip master-merged")
-    if _view(repo, br, "isDraft") is not False:
+    if pr_base._view(repo, br, "isDraft") is not False:
         raise Blocked(f"the PR of {br} is still a draft")
     got = _poll(lambda: _mergeable_read(repo, br), checks_timeout(cfg), clock, what=f"mergeability of {br}")
     mergeable = got[0] if got else None
     if mergeable != "MERGEABLE":
         raise Blocked(f"the PR of {br} is {mergeable or 'of unknown mergeability'}: resolve it by hand, then skip master-merged")
     _checks_gate(repo, cfg, br, clock)
-    title = _merge_title(a_dir, stage, br)
-    r = _run(
+    title = pr_base._merge_title(a_dir, stage, br)
+    r = pr_base._run(
         ["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", f"Stage {stage}. Squash-merged by the pipeline after green CI."],
         repo,
         300,
     )
     if r.returncode:
-        if _view(repo, br, "state") == "MERGED":  # merged remotely; only the local branch cleanup failed
+        if pr_base._view(repo, br, "state") == "MERGED":  # merged remotely; only the local branch cleanup failed
             return f"PR squash-merged: {title} (local cleanup failed: {(r.stderr or r.stdout).strip()[-200:]})"
         raise Blocked(f"gh pr merge failed: {(r.stderr or r.stdout).strip()[-300:]}")
     return f"PR squash-merged: {title}"
 
 
 def _cleanup(a, repo, cfg, br):
-    if _git(repo, "rev-parse", "--git-dir").returncode:
+    if pr_base._git(repo, "rev-parse", "--git-dir").returncode:
         return "no git repo: nothing to clean"
-    exists = _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode == 0
+    exists = pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode == 0
     if (
-        exists and br != (rel := release_branch(repo, cfg)) and (why := _landed(repo, rel, br, _has_origin(repo)))
+        exists and br != (rel := release_branch(repo, cfg)) and (why := pr_base._landed(repo, rel, br, _has_origin(repo)))
     ):  # before wt.py clean: it force-deletes the job branches
         raise Blocked(why)
     if cfg.get("worktrees"):
-        w = _run([sys.executable, "-I", os.path.join(TOOLS, "wt.py"), "clean", "--stage", a.stage, "--dir", a.dir], a.dir, 300)
+        w = pr_base._run([sys.executable, "-I", os.path.join(TOOLS, "wt.py"), "clean", "--stage", a.stage, "--dir", a.dir], a.dir, 300)
         if w.returncode:
             raise Blocked(f"wt.py clean failed: {(w.stderr or w.stdout).strip()[-300:]}")
     res = _clean_repo(a, repo, cfg, br, True)
     for n in worktree.nested_repos(repo):  # local-only nested repos: no PR, no remote steps
         sub = os.path.join(repo, n)
-        if _git(sub, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
+        if pr_base._git(sub, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
             continue
         try:
             res += f"; [{n}] " + _clean_repo(a, sub, cfg, br, False)
@@ -454,13 +413,13 @@ def _to_release_branch(repo, rel, cur):
     """Switch to the release branch (or create it from origin) -> note or None."""
     if cur == rel:
         return None
-    if _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{rel}").returncode == 0:
-        r = _git(repo, "switch", rel)
+    if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{rel}").returncode == 0:
+        r = pr_base._git(repo, "switch", rel)
         if r.returncode:
             raise Blocked(f"cannot switch to {rel}: {r.stderr.strip()[-200:]}")
         return f"on {rel}"
-    if _git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode == 0:  # no local release branch yet: create it from origin
-        r = _git(repo, "switch", "-c", rel, f"origin/{rel}")
+    if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode == 0:  # no local release branch yet: create it from origin
+        r = pr_base._git(repo, "switch", "-c", rel, f"origin/{rel}")
         if r.returncode:
             raise Blocked(f"cannot create {rel} from origin/{rel}: {r.stderr.strip()[-200:]}")
         return f"created {rel} from origin/{rel}"
@@ -470,35 +429,35 @@ def _to_release_branch(repo, rel, cur):
 def _prune_origin(repo, br, rel):
     """Delete origin/br, fetch --prune, fast-forward the release branch -> notes."""
     out = []
-    if _git(repo, "ls-remote", "--exit-code", "--heads", "origin", br).returncode == 0:
-        r = _git(repo, "-c", pr_mode.GH_CRED, "push", "origin", "--delete", br, timeout=GIT_LONG_TIMEOUT_S)
+    if pr_base._git(repo, "ls-remote", "--exit-code", "--heads", "origin", br).returncode == 0:
+        r = pr_base._git(repo, "-c", pr_mode.GH_CRED, "push", "origin", "--delete", br, timeout=GIT_LONG_TIMEOUT_S)
         if r.returncode:
             raise Blocked(f"origin/{br} not deleted: {r.stderr.strip()[-200:]}")
         out.append(f"deleted origin/{br}")
-    r = _git(repo, "-c", pr_mode.GH_CRED, "fetch", "--prune", "origin", timeout=GIT_NETWORK_TIMEOUT_S)
+    r = pr_base._git(repo, "-c", pr_mode.GH_CRED, "fetch", "--prune", "origin", timeout=GIT_NETWORK_TIMEOUT_S)
     out.append("fetched" if r.returncode == 0 else f"fetch failed: {r.stderr.strip()[-120:]}")
-    if _git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode == 0:
-        r = _git(repo, "merge", "--ff-only", f"origin/{rel}")
+    if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode == 0:
+        r = pr_base._git(repo, "merge", "--ff-only", f"origin/{rel}")
         out.append(f"{rel} fast-forwarded" if r.returncode == 0 else f"{rel} not fast-forwarded: {r.stderr.strip()[-120:]}")
     return out
 
 
 def _clean_repo(a, repo, cfg, br, main):
     rel, out = release_branch(repo, cfg), []
-    exists = _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode == 0
-    if exists and br != rel and (why := _landed(repo, rel, br, main and _has_origin(repo))):
+    exists = pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode == 0
+    if exists and br != rel and (why := pr_base._landed(repo, rel, br, main and _has_origin(repo))):
         raise Blocked(why)
-    cur = _git(repo, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
+    cur = pr_base._git(repo, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
     if note := _to_release_branch(repo, rel, cur):
         out.append(note)
     if exists and br != rel:
-        r = _git(repo, "branch", "-D", br)
+        r = pr_base._git(repo, "branch", "-D", br)
         if r.returncode:
             raise Blocked(f"could not delete {br}: {r.stderr.strip()[-200:]}")
         out.append(f"deleted {br}")
     if main and pr_mode.has_origin(Run(dir=a.dir)):
         out += _prune_origin(repo, br, rel)
-    _git(repo, "worktree", "prune")
+    pr_base._git(repo, "worktree", "prune")
     return "; ".join(out) or "already clean"
 
 
@@ -509,7 +468,7 @@ def _squash_commit(repo, name, br, a_dir):
     if os.path.isfile(sf):
         with open(sf, encoding="utf-8") as f:
             subject = next((x.strip() for x in f if x.strip()), "") or subject
-    c = _run(
+    c = pr_base._run(
         [
             sys.executable,
             "-I",
@@ -529,34 +488,34 @@ def _squash_commit(repo, name, br, a_dir):
 def _back(repo, was, rel):
     """Return to the branch the user was on after a failed local merge."""
     if was and was != rel:
-        _git(repo, "switch", was)
+        pr_base._git(repo, "switch", was)
 
 
 def _local_merge_repo(repo, cfg, br, name, a_dir):
     rel = release_branch(repo, cfg)
-    if _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
+    if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
         return f"no branch {br}: skipped"
-    if br == rel or _landed(repo, rel, br, False) == "":
+    if br == rel or pr_base._landed(repo, rel, br, False) == "":
         return f"{br} adds nothing to {rel}: already merged"
     # untracked files count too (a squash can overwrite them), except the pipeline's own folders
-    if _git(repo, "status", "--porcelain", "--", ".", ":(exclude).work", ":(exclude).wt", ":(exclude).audits").stdout.strip():
+    if pr_base._git(repo, "status", "--porcelain", "--", ".", ":(exclude).work", ":(exclude).wt", ":(exclude).audits").stdout.strip():
         raise Blocked("working tree is dirty: commit or stash first")
-    was = _git(repo, "branch", "--show-current").stdout.strip()
-    r = _git(repo, "switch", rel)
+    was = pr_base._git(repo, "branch", "--show-current").stdout.strip()
+    r = pr_base._git(repo, "switch", rel)
     if r.returncode:
         raise Blocked(f"cannot switch to {rel}: {r.stderr.strip()[-200:]}")
     # the repo stays on `rel` after a good merge (loud note below); a failed one goes back to where the user was
-    r = _git(repo, "merge", "--squash", br)
+    r = pr_base._git(repo, "merge", "--squash", br)
     if r.returncode:
-        files = _git(repo, "diff", "--name-only", "--diff-filter=U").stdout.split()
-        _git(repo, "reset", "--merge")
+        files = pr_base._git(repo, "diff", "--name-only", "--diff-filter=U").stdout.split()
+        pr_base._git(repo, "reset", "--merge")
         _back(repo, was, rel)
         raise Blocked(f"conflict squashing {br} into {rel}; files: {', '.join(files) or r.stdout.strip()[-200:]}")
-    if _git(repo, "diff", "--cached", "--quiet").returncode == 0:
+    if pr_base._git(repo, "diff", "--cached", "--quiet").returncode == 0:
         return f"{br} brings no change to {rel}: already merged"
     c, subject = _squash_commit(repo, name, br, a_dir)
     if c.returncode:
-        _git(repo, "reset", "--merge")
+        pr_base._git(repo, "reset", "--merge")
         _back(repo, was, rel)
         raise Blocked(f"commit failed: {(c.stderr or c.stdout).strip()[-300:]}")
     note = f" NOTE: the checkout is now on `{rel}`, you were on `{was}`" if was and was != rel else ""
@@ -593,7 +552,7 @@ def _red(rollup):
 def _merge_green(repo, p):
     """Squash-merge one green Dependabot PR -> (merged, failed, line)."""
     n, title = p.get("number"), p.get("title", "")
-    m = _run(["gh", "pr", "merge", str(n), "--squash", "--delete-branch"], repo, 300)
+    m = pr_base._run(["gh", "pr", "merge", str(n), "--squash", "--delete-branch"], repo, 300)
     if m.returncode == 0:
         return 1, 0, f"#{n} merged: {title}"
     return 0, 1, f"#{n} skipped (merge failed: {(m.stderr or m.stdout).strip()[-120:]}): {title}"
@@ -601,16 +560,16 @@ def _merge_green(repo, p):
 
 def _sweep_ff(repo, rel):
     """Fetch and fast-forward the release branch -> note ("" when nothing to say)."""
-    f = _git(repo, "-c", pr_mode.GH_CRED, "fetch", "--prune", "origin", timeout=GIT_NETWORK_TIMEOUT_S)
+    f = pr_base._git(repo, "-c", pr_mode.GH_CRED, "fetch", "--prune", "origin", timeout=GIT_NETWORK_TIMEOUT_S)
     if f.returncode:
         return "fetch failed: " + f.stderr.strip()[-120:]
-    if _git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode:
+    if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{rel}").returncode:
         return ""
-    cur = _git(repo, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
+    cur = pr_base._git(repo, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
     if cur == rel:
-        u = _git(repo, "merge", "--ff-only", f"origin/{rel}")
-    elif _git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{rel}").returncode == 0:
-        u = _git(repo, "fetch", ".", f"origin/{rel}:{rel}")
+        u = pr_base._git(repo, "merge", "--ff-only", f"origin/{rel}")
+    elif pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{rel}").returncode == 0:
+        u = pr_base._git(repo, "fetch", ".", f"origin/{rel}:{rel}")
     else:
         return ""
     return f"{rel} fast-forwarded" if u.returncode == 0 else f"{rel} not fast-forwarded: {u.stderr.strip()[-120:]}"
@@ -619,10 +578,10 @@ def _sweep_ff(repo, rel):
 def _sweep(repo, cfg):
     rel = release_branch(repo, cfg)
     listing = ["gh", "pr", "list", "--author", "app/dependabot", "--state", "open", "--json"]
-    r = _run([*listing, "number,title,statusCheckRollup"], repo)
+    r = pr_base._run([*listing, "number,title,statusCheckRollup"], repo)
     token_gap = bool(r.returncode) and CI_DENIED_MSG in r.stdout + r.stderr
     if token_gap:  # the token cannot read check runs: list without them and read the workflow runs of each head
-        r = _run([*listing, "number,title,headRefOid"], repo)
+        r = pr_base._run([*listing, "number,title,headRefOid"], repo)
     if r.returncode:
         raise Blocked(f"gh pr list failed: {r.stderr.strip()[-300:]}")
     try:
@@ -654,7 +613,7 @@ def _sweep(repo, cfg):
 def _no_push_note(what, repo, cfg, br):
     """-> why the step has nothing to push or open (no origin, empty stage branch, work only in nested repos), else ""."""
     if (
-        what in ("open", "push", "ready", "merge") and not _has_origin(repo) and (what != "merge" or _view(repo, br, "state") not in ("OPEN", "MERGED"))
+        what in ("open", "push", "ready", "merge") and not _has_origin(repo) and (what != "merge" or pr_base._view(repo, br, "state") not in ("OPEN", "MERGED"))
     ):  # no origin = no PR: the local-merge flow owns the branch
         return "no origin: PR step skipped, the stage branch is merged by local-merge" + _nested_unlanded(repo, cfg, br, "; ")
     if what != "merge" and _empty(repo, cfg, br):  # an empty stage branch is never pushed and gets no PR
@@ -670,7 +629,7 @@ def _pr_step(what, a_dir, repo, cfg, stage, br):
     """open/push/ready/merge -> the report text (raises Blocked)."""
     if note := _no_push_note(what, repo, cfg, br):
         return note
-    if what == "merge" and _view(repo, br, "state") == "MERGED":  # a re-run: --delete-branch removed the branch, nothing to push
+    if what == "merge" and pr_base._view(repo, br, "state") == "MERGED":  # a re-run: --delete-branch removed the branch, nothing to push
         return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
     if what == "merge" and _idle(repo, cfg, br):  # stage work only in nested repos: no PR to merge
         return f"{br} adds nothing to the main repo release branch" + _nested_unlanded(repo, cfg, br, "; ")
@@ -722,25 +681,3 @@ def sweep_before_branch(a) -> str:
     v, text = run("sweep", a.dir, getattr(a, "stage", None) or pr_mode._sweep_name(a), pr_mode._sweep_name(a))
     print(f"== deps-sweep {v}\n{text}")
     return ""
-
-
-from .pr_release import (  # noqa: E402, F401 -- re-exported: pr_ops keeps every release name
-    _PIN,
-    _SEMVER,
-    LEVELS,
-    _already_released,
-    _bump,
-    _ensure_tag,
-    _github_release,
-    _goal_version,
-    _hook,
-    _merged_sha,
-    _plan_bump,
-    _release,
-    _release_level,
-    _release_ref,
-    _rewrite_pins,
-    _uses_workspace_version,
-    _ver,
-    _version_bump,
-)

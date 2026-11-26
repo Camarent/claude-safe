@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import configuration, phases, pr_mode, pr_ops, tasks
+from pipeline import configuration, phases, pr_base, pr_mode, pr_ops, tasks
 from tests.support.gitrepo import git
 
 IDENT = {f"GIT_{w}_{k}": v for w in ("AUTHOR", "COMMITTER") for k, v in (("NAME", "t"), ("EMAIL", "t@t"))}
@@ -172,7 +172,7 @@ class NoGhWithOrigin(Base):
         git(self.d, "checkout", "-q", "main")
         git(self.d, "merge", "-q", "--squash", "stage/s")
         git(self.d, "commit", "-qm", "sq")
-        with mock.patch.object(pr_ops, "_view", side_effect=AssertionError("gh called")):
+        with mock.patch.object(pr_base, "_view", side_effect=AssertionError("gh called")):
             v, text = pr_ops.run("cleanup", self.d, "s", "s")
         self.assertEqual(v, "DONE", text)
 
