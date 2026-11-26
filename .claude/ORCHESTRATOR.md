@@ -110,6 +110,12 @@ Per run: `cs-agent-cost <log> --top N`. Per task, per model, with retries and co
 - Rebuild dist before any UX check; stale dist hides fixed bugs.
 - After `retry --step audit-*` with a lead fix, orch may jump to `retro needed`; run `orch next` again after the retro, and re-run the audit by hand if orch does not.
 
+## Plan checks (`cs-plan check`)
+
+- `qrun-op:` fails a `Test:` line with a shell operator (`&&`, `||`, `|`, `;`, `!`) right after `cs-qrun --`: the architect wraps it as `cs-qrun -- bash -c '...'`.
+- `pins:` fails a task that edits a data or setting file a test pins without listing that test: the architect adds the pinning test to the task.
+- `docs-count:` warns on a docs task that asks a hand-written doc for a machine count or line number: counts belong to the generated `docs/INDEX.md`.
+
 ## Warning gate
 Before any merge to `master` every project check (`each` in `pipeline.json`) exits 0 with zero warnings: rule in `practices/audits.md`, project command text in the project's CLAUDE.md.
 - Planning brief for `architect` (or any agent you brief by hand): first run `cs-orch leads --stage S --text "<goal>"` and paste its output into the brief. The wave does this itself for dev, reviewer, audits and fix-plan.

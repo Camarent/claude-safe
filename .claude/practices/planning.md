@@ -65,6 +65,10 @@ A plan that adds a screen or a UI flow follows this template, in this order. Eac
 
 Phase gate: a UI phase that has no owner step or real-data run is not done. Its gate reason reads exactly: `gate: owner step or real-data run`.
 
+## Pinning tests and docs counts (`cs-plan check`)
+- Pinning tests (`pins:`): a task that edits a data or setting file a test pins (a `configuration` folder, a data file, or a .py word list) must list that test in `Test:` or `Predicted paths:`. Else `cs-plan check` fails. Reason: the dev runs only the listed tests.
+- Docs counts (`docs-count:`): a docs task must describe the behaviour, not write machine counts or line numbers into a hand-written doc. Those belong to the generated `docs/INDEX.md`, which no task writes by hand. Reason: a hand-written count goes stale at the next change.
+
 ## Acceptance checklist
 Plan.md `## Acceptance checklist`: one `- cmd: <one shell command> (expected result)` or `- eyes: <item>` line per end-state item. `cs-plan check` rejects a line with another tag, and a cmd with `cd`, `&&`, an env prefix or an absolute main-checkout path. After the final test the `acceptance` step runs each cmd through qrun from a fresh worktree of the stage branch (removed after, stage branch and main checkout untouched), writes `.work/<stage>/acceptance.md` and lists `eyes:` lines as MANUAL for the lead. A failed cmd stops before `master-merged`. Auditors read the file and never run it.
 
