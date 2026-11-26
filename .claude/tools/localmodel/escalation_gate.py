@@ -36,7 +36,10 @@ from localmodel.prompts import VERDICT_ANSWER  # noqa: E402
 def read(path, n):
     try:
         return open(path, errors="replace").read()[:n]
-    except OSError:
+    except FileNotFoundError:
+        return ""  # a missing notes or rules file is left out (gate_input)
+    except OSError as ex:
+        swallowed("escalation_gate.read", ex)
         return ""
 
 
@@ -172,8 +175,8 @@ def run(stage, task_id, d, failure_files, llm=None, notes_file="", rules_file=""
                 )
                 + "\n"
             )
-    except OSError:
-        pass
+    except OSError as ex:
+        swallowed("escalation_gate.run gate.jsonl", ex)  # the log is best effort; the verdict still goes out
     return out, text
 
 

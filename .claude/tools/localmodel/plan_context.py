@@ -96,7 +96,7 @@ def _name_batch(strata, fs, cfg, parts):
     try:
         items = json.JSONDecoder().raw_decode(ans[ans.index("{") :])[0].get("files", [])
         return [(i["path"], [n for n in i.get("lines", []) if isinstance(n, int)]) for i in items if isinstance(i, dict) and isinstance(i.get("path"), str)]
-    except (ValueError, AttributeError, TypeError):
+    except (ValueError, AttributeError, TypeError):  # KEEP: no usable json is the documented None answer
         return None
 
 
@@ -104,7 +104,7 @@ def _listed_files(root, cfg):
     """Files of the repo the naming step may offer (git list minus the index folder and `ignore` globs); None when git cannot run."""
     try:
         fs = gitx.run(root, "ls-files", "-z", "-co", "--exclude-standard").stdout.split("\0")
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):  # KEEP: git cannot run is the documented None answer
         return None
     return [f for f in fs if f and not f.startswith(".code-index/") and not any(fnmatch.fnmatch(f, g) for g in cfg["ignore"])]
 
@@ -120,7 +120,7 @@ def _name_section(strata, fs, cfg, part):
     ans = strata.strata_call(NAMING_HEAD + "\n".join(fs) + NAMING_ASK.format(n=cfg["per_section"]) + part[:6000], max_tokens=1500)
     try:
         return json.JSONDecoder().raw_decode(ans[ans.index("{") :])[0].get("files", [])
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError):  # KEEP: no usable json is the documented None answer
         return None
 
 
@@ -130,8 +130,8 @@ def _save_cache(cache_file, cache):
         with open(cache_file + ".tmp", "w", encoding="utf-8") as fh:
             json.dump(cache, fh)
         os.replace(cache_file + ".tmp", cache_file)
-    except OSError:
-        pass
+    except OSError as ex:
+        swallowed("plan_context._save_cache", ex)  # the cache is an optimisation: a write failure only costs a rebuild
 
 
 def _load_cache(cache_file, use_cache):
