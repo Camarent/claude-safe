@@ -498,6 +498,35 @@ def ccn_note(task_file) -> str:
     return CCN_NOTE if any(CCN_RE.search(line) for line in lines if line.startswith(("Goal:", "Done:"))) else ""
 
 
+REVIEW_INDEX_NOTE = " The generated docs INDEX.md diff from wt.py commit is expected: never a finding, never out of scope."
+DEV_CITE_NOTE = " Never cite line numbers of a file this task splits or moves code out of: cite the symbol."
+LIZARD_NOTE = (
+    " The limits come from AUDIT.md and the gates run lizard: on a retry after a red lizard gate split the function, do not raise a limit;"
+    " edit AUDIT.md only when the task lists it."
+)
+CI_DRIFT_NOTE = (
+    " The task mentions ci_drift_ignore: change only the ci_drift_ignore list in pipeline.json, one entry as the pr-ready message hints, never a gate."
+)
+PUBLIC_WORDS_NOTE = (
+    " The task mentions public-words: hits that match the baseline file are old; skip them and write one line"
+    " 'old public-words hits skipped: <count from the scan>' in the report; fix only new hits."
+)
+
+
+def _mentions(paths, words) -> bool:
+    """True when any existing file in paths contains one of words (case-sensitive)."""
+    return any(any(w in read_text(p) for w in words) for p in paths if p and os.path.isfile(p))
+
+
+def dev_notes(task_file, rework_file) -> str:
+    """Dev brief notes that depend on the task text: lizard (task or rework), ci_drift_ignore and public-words (task only)."""
+    return (
+        (LIZARD_NOTE if _mentions([task_file, rework_file], ("lizard", "AUDIT.md")) else "")
+        + (CI_DRIFT_NOTE if _mentions([task_file], ("ci_drift_ignore",)) else "")
+        + (PUBLIC_WORDS_NOTE if _mentions([task_file], ("public-words", "public words")) else "")
+    )
+
+
 def prompt_for(a, task, role, rework_file, rid) -> str:
     t = os.path.join(os.path.abspath(getattr(a, "dir", ".")), WORK_DIR, a.stage, f"{task['id']}.md")
     out = (
@@ -518,11 +547,13 @@ def prompt_for(a, task, role, rework_file, rid) -> str:
             + db_start_note(a)
             + TOOLING_BLOCKED_NOTE
             + ccn_note(t)
+            + DEV_CITE_NOTE
+            + dev_notes(t, rework_file)
             + affected_note(t, AFFECTED_DEV)
             + lead_note(t)
         )
         return f"Stage {a.stage}: take the task in {t} (read it there, not in the worktree; index .work/{a.stage}/TASKS.md).{extra} Mark nothing yourself. {_where(a, task)}{out}"
-    return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{affected_note(t, AFFECTED_REVIEW)}{SCOPE_HINT_NOTE}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"
+    return f"Review the result of the task in {t} against its done criteria ({_review_base(a, task)}). Before a FAIL on a 'still present' claim, quote the exact line from the current file.{REVIEW_INDEX_NOTE}{affected_note(t, AFFECTED_REVIEW)}{SCOPE_HINT_NOTE}{scope_note(a, task['id'])}{review_note(a, task['id'])}{out}"
 
 
 def plan_fix_prompt(a, task, rid, why, report) -> str:
