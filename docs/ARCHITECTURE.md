@@ -32,16 +32,16 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - Tests of the pipeline live in `.claude/tools/tests/`.
 
 ## Pipeline model route and tool settings
-- Model route: `.claude/tools/pipeline/e1.py:88` (`model_for`) decides every dev and reviewer model. Each dispatch starts on Haiku. Sonnet runs only when an E1 event holds (`e1.py:79`, `e1_event`): (a) the dev gate stayed red after the Haiku tries, (b) the dev reported ESCALATE, (c) a reviewer reported ESCALATE.
-- Tool settings: `.claude/tools/pipeline/configuration/literals.py:16` holds the named settings (timeouts, origin remote, price table), each with a default. An env override `CS_<NAME>` (`literals.py:14`) or the `tool_settings` object in `pipeline.json` (`literals.py:13`) replaces the default. Read them with `tool_setting` (`literals.py:97`).
+- Model route: `.claude/tools/pipeline/e1.py:88` (`model_for`) decides every dev and reviewer model. Each dispatch starts on Haiku. Sonnet runs only when an E1 event holds (`.claude/tools/pipeline/e1.py:79`, `e1_event`): (a) the dev gate stayed red after the Haiku tries, (b) the dev reported ESCALATE, (c) a reviewer reported ESCALATE.
+- Tool settings: `.claude/tools/pipeline/configuration/literals.py:79` (`_SETTINGS`) holds the named settings (timeouts, origin remote, price table), each with a default. An env override `CS_<NAME>` (`.claude/tools/pipeline/configuration/literals.py:14`) or the `tool_settings` object in `pipeline.json` (`.claude/tools/pipeline/configuration/literals.py:13`) replaces the default. Read them with `tool_setting` (`.claude/tools/pipeline/configuration/literals.py:97`).
 
 ## Pipeline module splits
 Five pipeline modules hold code moved out of older modules. Each old module re-exports the moved names, so old import paths keep working.
-- `.claude/tools/pipeline/worktree_base.py:25` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`worktree.py:21`).
-- `.claude/tools/pipeline/worktree_merge.py:35` (`_git_version`): git version and `merge-tree` checks, unmerged-file queries. `worktree.py` re-exports these names (`worktree.py:78`).
-- `.claude/tools/pipeline/plan_check_task.py:38` (`_lint`): per-task plan checks (test refs, cites, commands, paths). `plan_check.py` re-exports them (`plan_check.py:58`).
-- `.claude/tools/pipeline/steps_history.py:9` (`history`): event history, retry and report queries. `steps.py` re-exports them (`steps.py:57`).
-- `.claude/tools/pipeline/pr_release.py:15` (`_release_level`): version bump, release tag and GitHub release of a stage branch. `pr_ops.py` re-exports them (`pr_ops.py:727`). Cycle: `pr_release.py` calls `pr_ops.*` at run time through `from . import pr_ops` at its bottom (`pr_release.py:228`), after its own defs; `pr_ops.py` imports `pr_release` at its bottom (`pr_ops.py:727`). The cycle resolves because both imports come after the definitions.
+- `.claude/tools/pipeline/worktree_base.py:25` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:21`).
+- `.claude/tools/pipeline/worktree_merge.py:35` (`_git_version`): git version and `merge-tree` checks, unmerged-file queries. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:78`).
+- `.claude/tools/pipeline/plan_check_task.py:38` (`_lint`): per-task plan checks (test refs, cites, commands, paths). `plan_check.py` re-exports them (`.claude/tools/pipeline/plan_check.py:58`).
+- `.claude/tools/pipeline/steps_history.py:9` (`history`): event history, retry and report queries. `steps.py` re-exports them (`.claude/tools/pipeline/steps.py:57`).
+- `.claude/tools/pipeline/pr_release.py:15` (`_release_level`): version bump, release tag and GitHub release of a stage branch. `pr_ops.py` re-exports them (`.claude/tools/pipeline/pr_ops.py:44`). Shared git and gh helpers sit in `.claude/tools/pipeline/pr_base.py`, which both import. `pr_release.py` imports only `pr_base` and `pr_mode`, never `pr_ops`, so there is no import cycle.
 
 ## Shared state
 - Tool caches and venv: `./.uv` in the checkout, or `DEV_UV_DIR` (`scripts/dev.sh:10`).
