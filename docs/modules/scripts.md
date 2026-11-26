@@ -24,6 +24,8 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `scripts/sync-claude-config.sh` - runs `install-claude-config.sh` from a detached worktree of a git ref: dry run by default (no flag), `--apply` to write.
 - `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode; imports `pipeline.configuration` from `.claude/tools` (`scripts/pipeline_auto.py:16`).
 - `scripts/image_test.sh`, `scripts/dev.sh` - the image and host tests share `.claude/tools/ptest.py`.
+- `.claude/tools/pipeline/docs_impact.py` - stage gate: a doc that cites a file or top-level def the job diff changed must change too; `check` at `.claude/tools/pipeline/docs_impact.py:71`.
+- `.claude/tools/pipeline/empty_tests.py` - stage gate: lists test functions in a Python test file that assert nothing; `find` at `.claude/tools/pipeline/empty_tests.py:46`.
 
 ## Invariants and gotchas
 - `dev.sh` uses `UV_PYTHON_PREFERENCE=only-system` (`scripts/dev.sh:13`): never downloads an interpreter.

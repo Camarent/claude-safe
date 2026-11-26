@@ -22,6 +22,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - `scripts/release.sh` - pre-PR gate; never merges or pushes (`scripts/release.sh:2-3`).
 - `scripts/host_agents.py` - agent rendering; `main` at `scripts/host_agents.py:115`.
 - `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode (opt-in); `main` at `scripts/pipeline_auto.py:44`.
+- Stage gates: `docs_impact.py` (stale doc check) and `empty_tests.py` (assert-free test check) under `.claude/tools/pipeline/`; see `modules/scripts.md`.
 
 ## Build and test commands
 - Build images: `./run.sh --rebuild` (`README.md:29`).
