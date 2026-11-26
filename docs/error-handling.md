@@ -8,6 +8,8 @@ An `except` that swallows an error needs one of three things:
 
 A silent `except` with no reason is a bug. When a silent swallow stays on purpose, put `# KEEP: <reason>` on the `except` line and list the site below. `test_error_handling_doc.py` checks that every row points at a real `except` line and that every `# KEEP:` in the code has a row.
 
+The script-step timeout (`script_timeout()` in `.claude/tools/pipeline/util.py`) is the `script_timeout_s` tool setting (`tool_settings` in pipeline.json), and the env `ORCH_SCRIPT_TIMEOUT` overrides it.
+
 ## search
 
 - `.claude/tools/search/lsp.py:117` - rg prints one JSON object per line; a non-JSON line is skipped, not an error

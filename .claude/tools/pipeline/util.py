@@ -21,9 +21,9 @@ from pipeline.configuration import (
     EV_SKIP,
     HOME,
     ORCH_LOG,
-    SCRIPT_TIMEOUT_S,
     TASKS_FILE,
     WORK_DIR,
+    tool_setting,
 )
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # tools dir of this checkout
@@ -224,8 +224,8 @@ def run_py(script, *args, cwd=None, timeout=None) -> subprocess.CompletedProcess
 
 
 def script_timeout(default=None) -> float:
-    """Seconds one script step may run: env ORCH_SCRIPT_TIMEOUT, else DEFAULT (SCRIPT_TIMEOUT_S when None). A bad value, 0, a negative, nan (nan > 0 is False) and inf (no finite wait for the OS timer) give DEFAULT."""
-    default = float(SCRIPT_TIMEOUT_S if default is None else default)
+    """Seconds one script step may run: env ORCH_SCRIPT_TIMEOUT, else DEFAULT (the SCRIPT_TIMEOUT_S tool setting when None: pipeline.json tool_settings.script_timeout_s of the project at os.getcwd(), the driver runs from the workspace root). A bad value, 0, a negative, nan (nan > 0 is False) and inf (no finite wait for the OS timer) give DEFAULT."""
+    default = float(tool_setting("SCRIPT_TIMEOUT_S") if default is None else default)
     try:
         v = float(os.environ.get(ENV_SCRIPT_TIMEOUT, default))
     except ValueError:

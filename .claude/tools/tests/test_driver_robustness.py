@@ -73,8 +73,8 @@ class QuotedDir(unittest.TestCase):
 
 class ScriptLimits(unittest.TestCase):
     def test_inf_env_gives_default(self):
-        with mock.patch.dict(os.environ, {util.ENV_SCRIPT_TIMEOUT: "inf"}):
-            self.assertEqual(util.script_timeout(), util.SCRIPT_TIMEOUT_S)
+        with mock.patch.dict(os.environ, {util.ENV_SCRIPT_TIMEOUT: "inf"}), mock.patch.object(util, "tool_setting", return_value=42.0):
+            self.assertEqual(util.script_timeout(), 42.0)
 
     def test_step_limit_exceeds_pr_checks_wait(self):
         with mock.patch.dict(os.environ, {util.ENV_SCRIPT_TIMEOUT: "60"}):
