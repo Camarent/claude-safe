@@ -22,7 +22,7 @@ SKIP = ("node_modules", "target", WORK_DIR, ".cache", "dist", ".wt", ".venv", "_
 LINK = ("node_modules",)
 
 
-def git(repo, *args, check=True):
+def git(repo, *args, check=True) -> str:
     return gitx.out(repo, *args, timeout=GIT_LONG_TIMEOUT_S, check=check)
 
 
@@ -58,7 +58,7 @@ def _stray_ignored(repo, root):
         return False
 
 
-def nested_repos(repo):
+def nested_repos(repo) -> list[str]:
     """Relative paths of git repos nested in `repo` (depth <= 3), not the repo itself. A git-ignored dir whose `.git` is a stray empty folder or file (no valid repo) is neither returned nor walked."""
     found = []
     base = repo.rstrip(os.sep).count(os.sep)
@@ -74,7 +74,7 @@ def nested_repos(repo):
     return found
 
 
-def nested_repo_of(path, repos):
+def nested_repo_of(path, repos) -> str:
     """-> the relative dir in REPOS (nested_repos of a repo) that is the longest proper ancestor dir of the repo-relative PATH, else ""."""
     parts = path.rstrip("/").split("/")[:-1]
     for n in range(len(parts), 0, -1):
@@ -117,7 +117,7 @@ def _job_worktrees(info):
     return {rel: path for rel, path in info["repos"].items() if not os.path.islink(path)}
 
 
-def layout(a_dir, stage, task):
+def layout(a_dir, stage, task) -> tuple[dict, str, str, str]:
     cfg = project(a_dir)
     repo = os.path.abspath(repo_dir(a_dir, cfg))
     root = os.path.join(os.path.abspath(a_dir), ".wt", stage, task, os.path.basename(repo))
@@ -141,7 +141,7 @@ def _manifest(a_dir, stage):
     return os.path.join(os.path.abspath(a_dir), ".wt", stage, "manifest.json")
 
 
-def read_manifest(a_dir, stage):
+def read_manifest(a_dir, stage) -> dict:
     """The persisted structure of a stage's job worktrees: {task: {branch, base, root, repos: {relpath: path}}}. No file -> {}; a file that does not parse is an error (an empty dict would forget every job)."""
     p = _manifest(a_dir, stage)
     if not os.path.isfile(p):
@@ -162,7 +162,7 @@ def _manifest_lock(a_dir, stage):
         yield
 
 
-def live_job(a_dir, stage, task):
+def live_job(a_dir, stage, task) -> dict | None:
     """The manifest entry of a task whose job worktree still exists on disk, else None."""
     info = read_manifest(a_dir, stage).get(task)
     return info if info and os.path.isdir(info["root"]) else None

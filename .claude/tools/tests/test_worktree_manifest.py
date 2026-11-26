@@ -80,6 +80,7 @@ class CrashAndVersionTest(unittest.TestCase):
             worktree.create(self.d, "s", "t1")
         info = worktree.live_job(self.d, "s", "t1")
         self.assertIsNotNone(info)
+        assert info is not None  # narrows live_job's Optional for mypy
         self.assertEqual(set(info), {"branch", "root", "base", "repos"})
         self.assertTrue(os.path.isdir(info["root"]))
         again = worktree.create(self.d, "s", "t1")  # a retry completes the entry

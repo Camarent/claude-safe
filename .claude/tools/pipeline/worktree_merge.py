@@ -73,7 +73,7 @@ def _unmerged(repo, branch, want, wt=""):
     return f"{branch} in {repo} is not merged into {base}"
 
 
-def skip_blocker(a_dir, stage, task):
+def skip_blocker(a_dir, stage, task) -> str:
     """Why skipping `task` would strand its work: uncommitted changes in its job worktree, or job commits the work branch lacks (`_unmerged`). "" when safe or when the task has no live job worktree. `wt.py merge` lands the work first."""
     if not live_job(a_dir, stage, task):
         return ""
@@ -86,7 +86,7 @@ def skip_blocker(a_dir, stage, task):
     return ""
 
 
-def empty_job(a_dir, stage, task):
+def empty_job(a_dir, stage, task) -> bool:
     """True when a task's job worktrees hold nothing to merge: no uncommitted changes and no commits ahead of the stage branch, in every repo. False when a branch is missing (no proof) or there is no live worktree."""
     cfg, branch, parts = _parts(a_dir, stage, task)
     if not parts:
@@ -100,12 +100,12 @@ def empty_job(a_dir, stage, task):
     return True
 
 
-def settled_job(a_dir, stage, task):
+def settled_job(a_dir, stage, task) -> bool:
     """True when nothing of the task's job worktrees is left to merge: empty (`empty_job`), its content already in the stage branch (`is_merged`, also after a red merge gate left the branch behind) or hand-merged (`marked_merged`). A done task like this needs no merge: its worktree may go."""
     return empty_job(a_dir, stage, task) or is_merged(a_dir, stage, task) or marked_merged(a_dir, stage, task)
 
 
-def remove(a_dir, stage, task, force=False):
+def remove(a_dir, stage, task, force=False) -> dict:
     """Remove a task's worktrees and branches. Refuses (RuntimeError, nothing removed) when that would lose uncommitted or unmerged work, unless `force`."""
     cfg, repo, root, branch = layout(a_dir, stage, task)
     if not marked_merged(a_dir, stage, task):
@@ -178,7 +178,7 @@ class Blocked(RuntimeError):
 SUBJECT = commit_subject.policy("[a-z]+", r"[\w./-]+", area_required=False, min_tail=3)
 
 
-def subject_ok(s):
+def subject_ok(s) -> bool:
     """True for `<type>(<area>): <what>`, or Revert/Reapply around one (the quoted text must itself be a valid subject). No newline."""
     return commit_subject.subject_ok(s, SUBJECT)
 
@@ -210,7 +210,7 @@ def _dirty(path, repo, nested=None, skip_link=False):
 PIPELINE_DIRS = (".work/", ".wt/", ".audits/")  # the pipeline's own folders: never a stray edit
 
 
-def touched_nested(a_dir, stage, nested):
+def touched_nested(a_dir, stage, nested) -> list[str]:
     """-> the nested repos of NESTED that STAGE touches (a Predicted path of its task files or a job manifest repo lies inside), or NESTED whole when the stage has no plan yet."""
     plan = os.path.join(os.path.abspath(a_dir), WORK_DIR, stage)
     try:
@@ -224,7 +224,7 @@ def touched_nested(a_dir, stage, nested):
     return [n for n in nested if any(p == n or p.startswith(n + "/") for p in named)]
 
 
-def dirty_report(a_dir, stage=None):
+def dirty_report(a_dir, stage=None) -> str:
     """ "" when the main checkout and every nested repo hold no uncommitted work, else one line naming the files. Run before a pipeline starts: a hung or hand-run agent may have left edits. With STAGE, a nested repo the stage's plan does not touch is not checked."""
     out = []
     nested = nested_repos(a_dir)
@@ -286,7 +286,7 @@ def _parallel_wave(a_dir, stage, task):
     return any(n.endswith(".md") and n != f"{task}.md" and wave_of(n) == mine for n in names)
 
 
-def commit(a_dir, stage, task, subject):
+def commit(a_dir, stage, task, subject) -> dict:
     """Commit every change of the task's worktrees (one commit per repo, nested first) with `<type>(<area>): <what>`. -> {rel: short sha | None (nothing to commit)}."""
     if not subject_ok(subject):
         raise RuntimeError(f"commit subject must look like `<type>(<area>): <what>` (lower-case type, at least 4 chars of text): {subject!r}")
@@ -372,7 +372,7 @@ def _conflict_hunks(r):
     return "conflicted hunks:\n" + (hunks or "no conflicted hunks")
 
 
-def merge(a_dir, stage, task):
+def merge(a_dir, stage, task) -> dict:
     """Squash-merge the task's job branch into `branch_work` of every repo it has a worktree in (nested first), one commit per repo with the branch's own subject.
     -> {rel: "merged" | "nothing"}. Conflict: the main checkout is reset, raises Conflict. Cannot start: raises Blocked. A `.merged` marker (mark_merged) skips the task."""
     cfg, branch, parts = _parts(a_dir, stage, task)
@@ -469,7 +469,7 @@ def _same_head(recorded, now):
     return isinstance(recorded, str) and len(recorded) >= MERGED_MIN_SHA and bool(now) and (now.startswith(recorded) or recorded.startswith(now))
 
 
-def marker_state(a_dir, stage, task):
+def marker_state(a_dir, stage, task) -> str:
     """-> "none" (no marker), "valid" (the marker's job branch heads are unchanged, or it is an older marker without heads) or "stale" (a head moved, the marker is unreadable or no worktree is left to compare)."""
     path = os.path.join(os.path.dirname(layout(a_dir, stage, task)[2]), MERGED_MARKER)
     if not os.path.isfile(path):
@@ -486,12 +486,12 @@ def marker_state(a_dir, stage, task):
     return "valid" if heads and same else "stale"
 
 
-def marked_merged(a_dir, stage, task):
+def marked_merged(a_dir, stage, task) -> bool:
     """True while the task's `.merged` marker is valid (`marker_state`): it records the job branch head of every repo and counts only while each head is unchanged, so a rework commit made after a hand merge is merged and guarded again. Mark a hand merge last, right before the branch and worktree are removed."""
     return marker_state(a_dir, stage, task) == "valid"
 
 
-def mark_merged(a_dir, stage, task):
+def mark_merged(a_dir, stage, task) -> dict:
     """The task's work was merged by hand (a conflict fix): later `merge` skips it and `remove` stops guarding it, while the job branches keep the heads they have now (`marked_merged`)."""
     base = os.path.dirname(layout(a_dir, stage, task)[2])
     os.makedirs(base, exist_ok=True)
@@ -499,14 +499,14 @@ def mark_merged(a_dir, stage, task):
     return {"marked": task}
 
 
-def is_merged(a_dir, stage, task):
+def is_merged(a_dir, stage, task) -> bool:
     """True when every job branch exists and the work branch already holds its tree (merge-tree check, uncommitted changes count as not merged). A `.merged` marker alone proves nothing (it may be stale), and a missing branch is not merged. False when it cannot tell (no worktree)."""
     cfg, branch, parts = _parts(a_dir, stage, task)
     want = work_branch(cfg, stage)
     return bool(parts) and all(git(r, "rev-parse", "--verify", "--quiet", branch, check=False) and not _unmerged(r, branch, want, w) for _rel, r, w in parts)
 
 
-def diff(a_dir, stage, task, limit=JOB_DIFF_MAX_CHARS):
+def diff(a_dir, stage, task, limit=JOB_DIFF_MAX_CHARS) -> str:
     """The task's work for review: per repo, the stat and the diff `branch_work...branch`, cut at `limit` characters per repo."""
     cfg, branch, parts = _parts(a_dir, stage, task)
     want = work_branch(cfg, stage)
@@ -522,7 +522,7 @@ def diff(a_dir, stage, task, limit=JOB_DIFF_MAX_CHARS):
     return "\n\n".join(out) or "(no committed changes on the job branch)"
 
 
-def clean(a_dir, stage):
+def clean(a_dir, stage) -> dict:
     """Remove every job worktree and branch of a stage, then `.wt/<stage>` and stale worktree records. Only after the stage is merged: unmerged branches are deleted too."""
     _cfg, repo, _root, _b = layout(a_dir, stage, "x")
     out = {t: remove(a_dir, stage, t, force=True)["removed"] for t in list_wt(a_dir, stage)}
@@ -536,12 +536,12 @@ def clean(a_dir, stage):
     return {"cleaned": out}
 
 
-def review_marker(a_dir, stage, task):
+def review_marker(a_dir, stage, task) -> str:
     """The review-base marker lives next to the job folder, outside every repo root, so it never shows as dirty."""
     return os.path.join(os.path.abspath(a_dir), ".wt", stage, f"{task}.review-base")
 
 
-def review_begin(a_dir, stage, task):
+def review_begin(a_dir, stage, task) -> dict:
     """Before the reviewer edits for mutation checks: record the HEAD of each job worktree. Blocked (RuntimeError naming the files) when one is dirty or there is none."""
     _cfg, _branch, parts = _parts(a_dir, stage, task)
     if not parts:
@@ -557,7 +557,7 @@ def review_begin(a_dir, stage, task):
     return {"shas": shas}
 
 
-def review_reset(a_dir, stage, task):
+def review_reset(a_dir, stage, task) -> dict:
     """Undo whatever the reviewer did in the job worktrees: reset --hard to the recorded HEAD, clean -fd (no -x: ignored build/seed files stay), verify.
     RuntimeError when HEAD or the status is still wrong (the marker stays). No marker = nothing to do. Idempotent."""
     marker = review_marker(a_dir, stage, task)
@@ -583,12 +583,12 @@ def review_reset(a_dir, stage, task):
     return {"reset": True}
 
 
-def review_pending(a_dir, stage):
+def review_pending(a_dir, stage) -> list[str]:
     """Tasks of a stage whose review marker is still there (the reviewer or the driver died before the reset)."""
     base = os.path.join(os.path.abspath(a_dir), ".wt", stage)
     return sorted(f[: -len(".review-base")] for f in os.listdir(base) if f.endswith(".review-base")) if os.path.isdir(base) else []
 
 
-def list_wt(a_dir, stage):
+def list_wt(a_dir, stage) -> list[str]:
     base = os.path.join(os.path.abspath(a_dir), ".wt", stage)
     return sorted(d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))) if os.path.isdir(base) else []

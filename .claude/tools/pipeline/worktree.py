@@ -243,7 +243,7 @@ class RefreshConflict(RuntimeError):
         self.base = base
 
 
-def refresh(a_dir, stage, task, discard=False):
+def refresh(a_dir, stage, task, discard=False) -> dict[str, list]:
     """Before a retry: rebase the job branch of every repo in the manifest onto its recorded base (the stage branch), so the retry sees merges that landed after the first dispatch. `discard`: first drop uncommitted files (a retry after BLOCKED starts clean). -> {"rebased": [...], "discarded": [...]}; RefreshConflict (a RuntimeError; rebase aborted, nothing resolved) on a conflict."""
     info = live_job(a_dir, stage, task)
     res: dict[str, list] = {"rebased": [], "discarded": []}
@@ -281,7 +281,7 @@ def refresh(a_dir, stage, task, discard=False):
     return res
 
 
-def refresh_stale(a_dir, stage, tasks):
+def refresh_stale(a_dir, stage, tasks) -> tuple[list, dict]:
     """Before merge-w<N>: rebase every task's job branch whose base is not an ancestor of the stage tip (a lead fix or an earlier wave landed after it was cut) and whose work is not on the stage branch yet. -> (refreshed task ids, {task: reason} for rebases that conflicted, left as they were: the merge then reports the conflict)."""
     done: list[str] = []
     failed: dict[str, str] = {}
@@ -350,13 +350,13 @@ def _run_setup(a_dir, stage, task, root, cfg, clock=time.monotonic, keep=False):
             raise RuntimeError(f"worktree_setup `{cmd}` failed in the new worktree of {task} ({why}); the worktree was removed")
 
 
-def repair_env(a_dir, stage, task):
+def repair_env(a_dir, stage, task) -> None:
     """Rerun the `worktree_setup` commands in the existing job worktree of TASK (one environment repair; the worktree is kept on failure)."""
     cfg, _repo, root, _branch = layout(a_dir, stage, task)
     _run_setup(a_dir, stage, task, root, cfg, keep=True)
 
 
-def link_private(repo, root, prefix, skip=(), nested=None):
+def link_private(repo, root, prefix, skip=(), nested=None) -> list:
     """Symlink every nested repo below PREFIX (pipeline.json `nested_repo_dir_prefix`; "" = off) that ROOT has no worktree of (SKIP = their relative paths) to the main checkout's copy, so a dev or an acceptance command can read a gitignored private repo. NESTED = the nested repos of REPO when the caller has them already. -> the links made. A link stays only when git ignores it in ROOT (`check-ignore`): otherwise it would show as an untracked path, make the worktree dirty and could be committed, so it is removed again (any project). A write through a link reaches the main checkout: tasks that edit a nested repo must name its files (they get a worktree of their own)."""
     made = []
     for rel in (nested_repos(repo) if nested is None else nested) if prefix else []:
@@ -444,7 +444,7 @@ def _add_nested(repo, root, rel, branch, want):
     return sub
 
 
-def add_repo(a_dir, stage, task, rel):
+def add_repo(a_dir, stage, task, rel) -> dict:
     """A dev needs a nested repo its task does not list: give the task's job worktree a real worktree of REL (on the job branch) and record it, so commit, review and merge handle it like a listed repo. -> the manifest entry."""
     cfg, repo, root, branch = layout(a_dir, stage, task)
     if rel not in nested_repos(repo):
@@ -465,7 +465,7 @@ def _wants_nested(a_dir, stage, task, root, rel, text):
     return added or bool(re.search(r"(?<![\w.-])" + re.escape(rel) + r"(?![\w-])", text))  # named by the task, or added later
 
 
-def create(a_dir, stage, task):
+def create(a_dir, stage, task) -> dict:
     cfg, repo, root, branch = layout(a_dir, stage, task)
     want = work_branch(cfg, stage)
     nested = nested_repos(repo)
