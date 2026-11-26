@@ -4,11 +4,37 @@ import glob
 import os
 import re
 
-from .configuration import AFFECTED_MAX_TESTS, PIN_DATA_DIR, PIN_DATA_EXTS, PIN_PY_WORDS, PINS_PREFIX
+from . import gitx
+from .configuration import (
+    AFFECTED_CODE_EXTS,
+    AFFECTED_MAX_TESTS,
+    AFFECTED_TEST_DIRS,
+    PIN_DATA_DIR,
+    PIN_DATA_EXTS,
+    PIN_PY_WORDS,
+    PINS_PREFIX,
+    TEST_NAME_RE,
+)
 from .plan_files import paths_in, task_type
-from .plan_rules import _is_test_path, _referencing_tests
 from .util import read_text
 from .worktree import nested_repos
+
+
+def _is_test_path(path):
+    """True for a test file: a TEST_NAME_RE file name, or any file under a `test`/`tests` directory."""
+    return bool(re.search(TEST_NAME_RE, os.path.basename(path)) or AFFECTED_TEST_DIRS & set(path.split("/")[:-1]))
+
+
+def _referencing_tests(repo, rels, stem):
+    """-> sorted repo-relative test files (TEST_NAME_RE name, or under a `test`/`tests` dir) that mention STEM as a whole word, in REPO and its nested repos."""
+    found = set()
+    for rel in rels:
+        r = os.path.join(repo, rel) if rel else repo
+        for f in gitx.try_text(r, "grep", "-l", "-w", "-F", "-e", stem).splitlines():
+            full = os.path.join(rel, f)
+            if full.endswith(AFFECTED_CODE_EXTS) and _is_test_path(full):
+                found.add(full)
+    return sorted(found)
 
 
 def _goal_lines(text):

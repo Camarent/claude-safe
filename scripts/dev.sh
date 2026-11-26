@@ -20,7 +20,7 @@ case "${1:-}" in
          uv sync --frozen 2>/dev/null || { uv lock && uv sync --frozen; } ;;
   check) run ruff check . && run ruff format --check . && run mypy ;;
   fix)   run ruff format . ; run ruff check --fix --unfixable F401 . ;;   # format first (check exits 1 while findings remain); F401 stays manual: some "unused" imports are re-exports
-  test)  ORCH_AGENTS_DIR="$root/.claude/agents" run python .claude/tools/ptest.py "${@:2}" ;;   # parallel, one file per process (patterns optional)
+  test|ptest)  ORCH_AGENTS_DIR="$root/.claude/agents" run python .claude/tools/ptest.py "${@:2}" ;;   # parallel, one file per process (patterns optional); ptest is the alias the task Test lines use
   pytest) ORCH_AGENTS_DIR="$root/.claude/agents" run pytest -q "${@:2}" ;;   # serial runner, for -k / single tests
   itest) [ -n "${PIPELINE_PROJECT_DIR:-}" ] || { echo "itest needs PIPELINE_PROJECT_DIR=<project dir with pipeline.json>" >&2; exit 2; }
          PIPELINE_PROJECT_DIR="$PIPELINE_PROJECT_DIR" run pytest -q .claude/tools/tests/integration "${@:2}" ;;   # opt-in: real project settings, read-only

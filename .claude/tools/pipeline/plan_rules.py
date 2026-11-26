@@ -17,7 +17,6 @@ from .configuration import (
     AFFECTED_MAX_TESTS,
     AFFECTED_MIN_STEM,
     AFFECTED_SHOWN,
-    AFFECTED_TEST_DIRS,
     AFFECTED_WARN_PREFIX,
     BARE_TAG_RE,
     CMD_REF_PREFIX,
@@ -41,7 +40,6 @@ from .configuration import (
     SKIP_GATE_WARN_PREFIX,
     TASK_DIR_WEIGHT,
     TASK_FILES_FAIL,
-    TEST_NAME_RE,
     TOOL_FIELD,
     TOOLS_DIR,
     WEBTEST_WARN_PREFIX,
@@ -49,6 +47,7 @@ from .configuration import (
 )
 from .generated import generated_among, marker
 from .plan_files import PATH_FILE, acceptance_items, paths_in, task_type
+from .plan_pins import _is_test_path, _referencing_tests, check_pinned_tests
 from .shellwords import split_commands
 from .stagedir import workspace_of
 from .util import read_text
@@ -148,30 +147,11 @@ def check_generated_paths(d, tid, repo) -> list[str]:
     ]
 
 
-def _is_test_path(path):
-    """True for a test file: a TEST_NAME_RE file name, or any file under a `test`/`tests` directory."""
-    return bool(re.search(TEST_NAME_RE, os.path.basename(path)) or AFFECTED_TEST_DIRS & set(path.split("/")[:-1]))
-
-
-def _referencing_tests(repo, rels, stem):
-    """-> sorted repo-relative test files (TEST_NAME_RE name, or under a `test`/`tests` dir) that mention STEM as a whole word, in REPO and its nested repos."""
-    found = set()
-    for rel in rels:
-        r = os.path.join(repo, rel) if rel else repo
-        for f in gitx.try_text(r, "grep", "-l", "-w", "-F", "-e", stem).splitlines():
-            full = os.path.join(rel, f)
-            if full.endswith(AFFECTED_CODE_EXTS) and _is_test_path(full):
-                found.add(full)
-    return sorted(found)
-
-
 def check_affected_tests(d, tid, repo=None) -> list[str]:
     """`tests-use:` warning (never fails a check; the `pins:` errors of plan_pins come with it): a non-test Predicted path whose file name is used by test files that neither the task's `Affected tests:` line, its Predicted paths nor its Test lines name; the dev would find them only when the gate goes red. Skipped for `Type: report` and for a task whose Predicted paths are all test files. Code files only; a name more than AFFECTED_MAX_TESTS tests mention is too common and gives nothing. A name matches as a whole word (a string search, not a call graph): a warning, not proof."""
     text = read_text(os.path.join(d, tid + ".md"))
     if not repo or task_type(text) == "report":
         return []
-    from .plan_pins import check_pinned_tests  # lazy: plan_pins imports this module
-
     out = check_pinned_tests(d, tid, repo)  # `pins:` errors ride with this check
     paths = [p for p in paths_in(text) if not p.endswith("/") and not glob.has_magic(p)]
     src = [p for p in paths if p.endswith(AFFECTED_CODE_EXTS) and not _is_test_path(p)]
