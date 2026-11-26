@@ -286,12 +286,14 @@ def _parallel_wave(a_dir, stage, task):
     return any(n.endswith(".md") and n != f"{task}.md" and wave_of(n) == mine for n in names)
 
 
-def commit(a_dir, stage, task, subject) -> dict:
-    """Commit every change of the task's worktrees (one commit per repo, nested first) with `<type>(<area>): <what>`. -> {rel: short sha | None (nothing to commit)}."""
+def commit(a_dir, stage, task, subject, regen=None) -> dict:
+    """Commit every change of the task's worktrees (one commit per repo, nested first) with `<type>(<area>): <what>`. -> {rel: short sha | None (nothing to commit)}.
+    `regen` False skips the docs index regeneration (the commit then holds only what the caller staged); None: regenerate unless the task shares its parallel wave."""
     if not subject_ok(subject):
         raise RuntimeError(f"commit subject must look like `<type>(<area>): <what>` (lower-case type, at least 4 chars of text): {subject!r}")
     _cfg, _branch, parts = _parts(a_dir, stage, task)
-    regen = not _parallel_wave(a_dir, stage, task)  # tasks of one parallel wave would each rewrite the shared index: the lead regenerates it
+    if regen is None:
+        regen = not _parallel_wave(a_dir, stage, task)  # tasks of one parallel wave would each rewrite the shared index: the lead regenerates it
     out: dict = {}
     for rel, r, w in parts:
         if regen:
