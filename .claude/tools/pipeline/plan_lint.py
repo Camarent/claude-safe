@@ -22,18 +22,18 @@ from .util import TOOLS, read_text
 GLOB_CHARS = "*?["
 
 
-def is_registry(path):
+def is_registry(path) -> bool:
     """True when the file NAME holds a registry word as a whole token (`edited-ids.js`; not `playlist.js`) and is not a test file (`weak-list-real.test.js`)."""
     name = os.path.basename(path)
     return not re.search(TEST_NAME_RE, name) and bool(REGISTRY_WORDS & set(re.split(r"[^a-z0-9]+", name.lower())))
 
 
-def is_fragmented(path):
+def is_fragmented(path) -> bool:
     """True for a directory or glob entry: the fragment-directory design, one file per task."""
     return path.endswith("/") or any(c in path for c in GLOB_CHARS)
 
 
-def classify_shared(path, modes):
+def classify_shared(path, modes) -> str:
     """-> `error`, `warn` or `` for a file listed by SHARED_MIN or more tasks with the given modes (`rows`, `mass`, ``).
     Fragments (directory or glob) are fine. A data file where all listings are `(rows)` is fine; where all but ONE are `(rows)` that one is the owner: warning only. Other data or registry files: error."""
     if len(modes) < SHARED_MIN or is_fragmented(path):
@@ -47,7 +47,7 @@ def classify_shared(path, modes):
     return "warn" if line and rows == len(modes) - 1 else "error"
 
 
-def shared_file_errors(listings):
+def shared_file_errors(listings) -> list[str]:
     """-> `shared-file:` errors from LISTINGS {path: [(task id, mode)]}."""
     out = []
     for f, es in listings.items():
@@ -104,7 +104,7 @@ def _test_files(repo, cmd):
     return out[:TEST_ENV_MAX_FILES]
 
 
-def test_env_errors(d, tid, repo):
+def test_env_errors(d, tid, repo) -> list[str]:
     """-> `test-env:` errors for one task: a Test:/Done command that needs live Chrome and a test file it names that reads a git-ignored path (absent in a clean worktree)."""
     text = read_text(os.path.join(d, tid + ".md"))
     cmds = re.findall(r"(?im)^(?:Test|Done):\s*(.*)$", text)
@@ -121,7 +121,7 @@ def test_env_errors(d, tid, repo):
     return out
 
 
-def ux_vars_errors(d, repo):
+def ux_vars_errors(d, repo) -> list[str]:
     """-> `ux-vars:` error when the stage has flag ui, the AUDIT.md ```ux block has `<name>` placeholders and TASKS.md has no `UX-VARS:` line naming each."""
     if not parse_flags(tasks_path(d))["ui"]:
         return []

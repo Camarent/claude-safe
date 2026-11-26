@@ -66,7 +66,7 @@ def _under(path, root):
 MAIN_CHECKOUT_MSG = "Test line names an absolute workspace path (it runs in the main checkout, not the job worktree, so a new test file is 'not found'): use a path relative to the repo root"
 
 
-def main_checkout_problems(test_text, repo=None):
+def main_checkout_problems(test_text, repo=None) -> list[str]:
     """Problems for the text of one `Test:` line: an absolute path inside the main checkout, i.e. under DEFAULT_WORKSPACE or REPO. The dev runs in a job worktree, so such a path runs the main tree or nothing. Exempt: paths under TOOLS_DIR (qrun, ptest) and under a WORK_DIR folder of a root (scratch output). Shared by brieflint and plan.py check."""
     roots = {os.path.normpath(r) for r in (DEFAULT_WORKSPACE, repo) if r}
     for tok in ABS_PATH_RE.findall(test_text):
@@ -78,12 +78,12 @@ def main_checkout_problems(test_text, repo=None):
     return []
 
 
-def nested_repo(repo, path, repos=None):
+def nested_repo(repo, path, repos=None) -> str:
     """-> the relative dir of the longest ancestor of PATH (below REPO, REPO itself excluded) that is a nested git repo, else "". One definition of a nested repo: worktree.nested_repos (REPOS = its result when the caller has it, so a loop over paths walks the tree once)."""
     return nested_repo_of(path, nested_repos(repo) if repos is None else repos)
 
 
-def check_nested_repo_paths(d, tid, repo=None, prefix=""):
+def check_nested_repo_paths(d, tid, repo=None, prefix="") -> list[str]:
     """Problems for one task file: a Predicted path under a nested-repo dir (PREFIX, pipeline.json `nested_repo_dir_prefix`) that is in no nested git repo of REPO. Job worktrees hold no nested repos unless wt.py gives one a worktree, so otherwise only a lead step (`owner: ops`) may name one. "" = rule off."""
     if not prefix:
         return []
@@ -102,7 +102,7 @@ def check_nested_repo_paths(d, tid, repo=None, prefix=""):
 OPEN_EDIT_RE = re.compile(r"(?:outside|beyond|other than|not in|not among)\s+(?:the\s+)?(?:predicted|listed|named)\s+(?:paths?|files?)\b", re.I)
 
 
-def check_open_edit(d, tid, prefix=""):
+def check_open_edit(d, tid, prefix="") -> list[str]:
     """`open-edit:` warning for one task file: the text lets the dev edit files outside Predicted paths ("if it lives outside Predicted paths, edit it"). The dev cannot reach a file in a nested repo (PREFIX, `nested_repo_dir_prefix`) from the job worktree, so the architect names every file; `repos:` warning when Predicted paths are in both the project repo and a nested repo."""
     text = read_text(os.path.join(d, tid + ".md"))
     out = []
@@ -119,7 +119,7 @@ def check_open_edit(d, tid, prefix=""):
 WEBTEST_BY_RE = re.compile(r"(?i)\b(?:run|driven|done|checked|executed)\s+by\s+the\s+web-?tester\b|\bweb-?tester\s+(?:runs|must run|drives)\b")
 
 
-def check_webtest_type(d, tid):
+def check_webtest_type(d, tid) -> list[str]:
     """`webtest:` warning (never fails a check): the brief says the web-tester runs the task but its `Type:` is not `webtest`. A dev cannot drive a browser; the driver would give the task to a dev, who can only reply BLOCKED."""
     text = read_text(os.path.join(d, tid + ".md"))
     if task_type(text) != "webtest" and (m := WEBTEST_BY_RE.search(text)):
@@ -138,7 +138,7 @@ def _tracked(repo, rels):
     return [f for f in r.stdout.split("\0") if f] if not r.returncode else []
 
 
-def check_generated_paths(d, tid, repo):
+def check_generated_paths(d, tid, repo) -> list[str]:
     """`generated:` warning (never fails a check): Predicted paths names a tracked file whose header says it is generated (setting `generated_marker`). The dev must regenerate it with its generator, not edit it by hand; list the source file instead."""
     rels = [p for p in paths_in(read_text(os.path.join(d, tid + ".md"))) if not p.endswith("/")]
     hits = generated_among(repo, _tracked(repo, rels), marker(workspace_of(d)))
@@ -165,7 +165,7 @@ def _referencing_tests(repo, rels, stem):
     return sorted(found)
 
 
-def check_affected_tests(d, tid, repo=None):
+def check_affected_tests(d, tid, repo=None) -> list[str]:
     """`tests-use:` warning (never fails a check): a non-test Predicted path whose file name is used by test files that neither the task's `Affected tests:` line, its Predicted paths nor its Test lines name; the dev would find them only when the gate goes red. Skipped for `Type: report` and for a task whose Predicted paths are all test files. Code files only; a name more than AFFECTED_MAX_TESTS tests mention is too common and gives nothing. A name matches as a whole word (a string search, not a call graph): a warning, not proof."""
     text = read_text(os.path.join(d, tid + ".md"))
     if not repo or task_type(text) == "report":
@@ -199,7 +199,7 @@ def _affected_line(tid, p, stem, users):
     return f"{AFFECTED_WARN_PREFIX} {tid}: {', '.join(users[:AFFECTED_SHOWN])} mention {stem!r} ({p}) but the task does not name them: list them under `Affected tests:` (or `none` if they do not assert the old behaviour)"
 
 
-def check_negative_tag(d, tid):
+def check_negative_tag(d, tid) -> list[str]:
     """`neg:` warning (never fails a check): a Done/Test line bans a bare markup tag fragment with a negative grep (`! grep -q "<script"`). Such a criterion also blocks a later fix that legitimately needs the tag; the architect narrows it with an attribute or a path."""
     out = []
     for ln in read_text(os.path.join(d, tid + ".md")).splitlines():
@@ -211,7 +211,7 @@ def check_negative_tag(d, tid):
     return out
 
 
-def check_skip_gate(d, tid):
+def check_skip_gate(d, tid) -> list[str]:
     """`skip-gate:` warning (never fails a check): the task file says a test is skipped (`pytest.mark.skipif`, `pytest.skip(`). cs-qrun exits 3 on a skipped test, so a skip gate reads as not green; a registered marker the conftest deselects is the fix."""
     if re.search(SKIP_GATE_RE, read_text(os.path.join(d, tid + ".md"))):
         return [f"{SKIP_GATE_WARN_PREFIX} {tid} says skipif/pytest.skip: {SKIP_GATE_MSG}"]
@@ -235,7 +235,7 @@ def _transitive_deps(ents, tid):
     return seen
 
 
-def check_unlisted_prereq(d, e, ents):
+def check_unlisted_prereq(d, e, ents) -> list[str]:
     """`prereq:` warning (never fails a check): the task file names another task of the stage in the same wave or a later one that the task does not depend on, directly or through others. Tasks of one wave start together from the same base, so work the brief needs from such a task is not there; add it with `cs-plan edit-task --id N --depends M`, which moves the task to the wave after M (an earlier wave is merged before this task starts, so it needs no line)."""
     tid, wave = e["id"], e["wave"]
     by = {x["id"]: x for x in ents}
@@ -259,7 +259,7 @@ def _is_docs_path(path):
     return any(fnmatch.fnmatch(path, g) for g in (*DOC_PATHS, DOCS_WAVE_DIR + "*"))
 
 
-def check_docs_wave(d, e, ents):
+def check_docs_wave(d, e, ents) -> list[str]:
     """`docs-wave:` error: every Predicted path of the task is a docs path (`*.md` or under `docs/`) and a code task of the same wave is not among its dependencies, direct or through others. The docs then run beside the code they describe and may read it before it lands; add the dependency with `cs-plan edit-task --id N --depends M`, which moves the docs task to the wave after M."""
     tid, wave = e["id"], e["wave"]
     own = paths_in(read_text(os.path.join(d, tid + ".md")))
@@ -289,7 +289,7 @@ def check_docs_wave(d, e, ents):
 DOCS_LINE_RE = re.compile(r"^\s*docs\s*:\s*\S", re.I | re.M)
 
 
-def check_docs_target(tasks_md, workspace):
+def check_docs_target(tasks_md, workspace) -> list[str]:
     """Problem when TASKS.md has the `docs` flag but the final-docs step would find no target: a `docs:` line in TASKS.md or PROGRESS.md, or an existing `docs/` folder in the workspace. A `## Docs` section in CLAUDE.md alone does not count (it may say "No docs folder yet"). Without one the step ends BLOCKED, so the plan check stops it earlier."""
     from .tasks import parse_flags
 
@@ -318,7 +318,7 @@ def _bulk_warning(tid, text):
     return []
 
 
-def check_task_size(d, tid):
+def check_task_size(d, tid) -> list[str]:
     """Problems for one task file: more than TASK_FILES_FAIL predicted files (error); a `size:` warning for a hand edit over BULK_MIN rows."""
     text = read_text(os.path.join(d, tid + ".md"))
     n = sum(TASK_DIR_WEIGHT if p.endswith("/") or glob.has_magic(p) else 1 for p in set(paths_in(text)))
@@ -327,7 +327,7 @@ def check_task_size(d, tid):
     return _bulk_warning(tid, text)
 
 
-def protected_gates(workspace, cfg):
+def protected_gates(workspace, cfg) -> list[tuple[str, list[str]]]:
     """-> [(name, [glob])] from pipeline.json `protected_gates` ([{name, paths}]) and `protected gate <name>: <globs>` lines of the audit file."""
     out = []
     for g in cfg.get("protected_gates") or []:
@@ -344,7 +344,7 @@ def _covers(glob_, path):
     return fnmatch.fnmatch(path, g) or path.startswith(g + "/") or fnmatch.fnmatch(os.path.basename(path), g)
 
 
-def check_gate_mentions(d, tid, gates):
+def check_gate_mentions(d, tid, gates) -> list[str]:
     """`gate:` warnings (never fail a check) for one task: a Predicted path covered by a protected gate whose name the task text does not mention (the dev finds the insert-only gate only when the suite goes red)."""
     text = read_text(os.path.join(d, tid + ".md"))
     paths, probs = paths_in(text), []
@@ -386,12 +386,12 @@ def _by_repo(repo, paths):
     return groups
 
 
-def git_state(repo, paths):
+def git_state(repo, paths) -> dict[str, tuple[set[str], set[str]] | None]:
     """-> {nested repo dir ("" = REPO): (tracked set, ignored set) or None}: `ls-files -z` and `check-ignore --stdin -z` once per repo, run inside the nested repo for a path under one; None for a repo that is no git work tree or whose git fails."""
     return {sub: _repo_state(os.path.join(repo, sub), ps) for sub, ps in _by_repo(repo, paths).items()}
 
 
-def untracked_problems(paths, repo, state=None):
+def untracked_problems(paths, repo, state=None) -> list[str]:
     """Problems (no task id prefix) for Predicted PATHS: one that exists but is untracked, or that git ignores (the dev's commit would not hold it), judged in the nested repo that holds it. A path a task has yet to create does not exist, so it is not flagged. STATE = git_state() over the whole stage (else computed here)."""
     probs = []
     state = git_state(repo, paths) if state is None else state
@@ -410,7 +410,7 @@ def untracked_problems(paths, repo, state=None):
     return probs
 
 
-def check_untracked(d, tid, repo, state=None):
+def check_untracked(d, tid, repo, state=None) -> list[str]:
     """Problems for one task file: see untracked_problems(). STATE = git_state() over the whole stage (else computed here)."""
     return [f"{tid}: {m}" for m in untracked_problems(paths_in(read_text(os.path.join(d, tid + ".md"))), repo, state)]
 
@@ -438,7 +438,7 @@ def _target(words, i, attached):
     return words[i + 1] if i + 1 < len(words) else ""
 
 
-def written_files(cmd):
+def written_files(cmd) -> set[str]:
     """Files the command itself writes (`>`, `>>`, `tee [-a]`, `-o`, `--output`), with trailing `;&|)` removed."""
     out = set()
     words = _split_words(cmd)
@@ -468,7 +468,7 @@ def _is_file_token(tok):
     return "/" in tok or tok.rsplit(".", 1)[-1].lower() in DONE_WHEN_EXTS
 
 
-def done_when_problems(phase, repo, produced, lead_text):
+def done_when_problems(phase, repo, produced, lead_text) -> list[str]:
     """Problems for one Plan.md phase: a file named in `done_when` that does not exist and that no Predicted/owned path, no lead step (ops-N line, LEAD_TEXT) and no `>`/`-o`/`tee` of the command produces. A path with `/` is an error; a bare name is a `done:` warning (it may be a tool argument). Quoted strings, `-m` arguments, absolute paths and names without `/` or a known extension are skipped."""
     cmd = MODULE_ARG_RE.sub(" ", QUOTED_RE.sub(" ", phase["done_when"]))
     written = written_files(cmd)
@@ -492,7 +492,7 @@ ACCEPT_ENV_RE = re.compile(r"^[A-Za-z_]\w*=")
 ACCEPT_CD_RE = re.compile(r"(?:^|[;&|]\s*)cd(?:\s|$)")
 
 
-def reads_as_prose(text):
+def reads_as_prose(text) -> bool:
     """True when TEXT is a sentence, not a command, judged from the words alone (never from this host's PATH, so a plan checks the same everywhere): two or more sentence words, a sentence word or opener as the first word, or a full stop at the end. A word that is an option, a path, an assignment or holds a quote or shell character means a command."""
     words = text.split()
     if len(words) < 2 or any(w.startswith("-") or any(c in w for c in "/=$`|<>;&('\"") for w in words):
@@ -501,7 +501,7 @@ def reads_as_prose(text):
     return text.endswith(".") or low[0] in ACCEPTANCE_PROSE_OPENERS or sum(w in ACCEPTANCE_PROSE_WORDS for w in low) >= 2
 
 
-def manual_tag(text):
+def manual_tag(text) -> str | None:
     """-> the text after `MANUAL:` when `done_when` TEXT starts with that tag (a check a person runs, not a shell command), else None. An empty rest is a tag with no check."""
     head, sep, rest = text.partition(":")
     return rest.strip() if sep and head.strip() == ACCEPTANCE_MANUAL else None
@@ -570,7 +570,7 @@ def _accept_cmd_problems(text, repo):
     return probs
 
 
-def acceptance_problems(plan_md_text, repo=None):
+def acceptance_problems(plan_md_text, repo=None) -> list[str]:
     """Problems for the `## Acceptance checklist` lines: each starts with `cmd:` or `eyes:`; a cmd is one plain shell command. A missing section is reported elsewhere."""
     probs = []
     for tag, text in acceptance_items(plan_md_text):
@@ -581,7 +581,7 @@ def acceptance_problems(plan_md_text, repo=None):
     return probs
 
 
-def release_flag_problems(tasks_mds):
+def release_flag_problems(tasks_mds) -> list[str]:
     """`release:` warnings (never fail) over the TASKS.md of a feature's phases (in order): `no-release` set in a non-final phase but not in the final one. The driver reads the release flag from the final phase alone, so the flag would be dropped."""
     seen = [(m, bool(re.search(r"(?im)^\s*flags\s*:.*\bno-release\b", read_text(m)))) for m in tasks_mds]
     if len(seen) > 1 and not seen[-1][1] and any(v for _, v in seen[:-1]):
@@ -598,7 +598,7 @@ def _field(text, name):
     return m[1].strip() if m else ""
 
 
-def is_per_file_task(text):
+def is_per_file_task(text) -> bool:
     """Heuristic (phrases in configuration PER_FILE_PHRASES): the Goal/Done text says to decide or process each file. The Test, Outputs, Tool and Dry run lines are not searched."""
     body = "\n".join(
         ln for ln in text.splitlines() if not re.match(rf"(?i)({'|'.join(map(re.escape, (OUTPUTS_FIELD, TOOL_FIELD, DRYRUN_FIELD, 'Test')))}):", ln)
@@ -606,7 +606,7 @@ def is_per_file_task(text):
     return any(re.search(p, body) for p in PER_FILE_PHRASES)
 
 
-def per_file_problems(d, tid):
+def per_file_problems(d, tid) -> list[str]:
     """Problems for one task file: a 'decide per file' task with neither an `Outputs:` list nor a `Test:` line holding a per-file check phrase (PER_FILE_CHECK_PHRASES). The checklist alone does not prove each file was decided."""
     text = read_text(os.path.join(d, tid + ".md"))
     if not is_per_file_task(text) or _field(text, OUTPUTS_FIELD):
@@ -619,14 +619,14 @@ def per_file_problems(d, tid):
     ]
 
 
-def dryrun_required(text):
+def dryrun_required(text) -> bool:
     """True when the task runs a tool over data: a `Tool:` line, or a script in Predicted paths used with a dry-run flag (DRYRUN_FLAGS) in its text."""
     if _field(text, TOOL_FIELD):
         return True
     return any(p.endswith(SCRIPT_EXTS) for p in paths_in(text)) and any(f in text for f in DRYRUN_FLAGS)
 
 
-def dryrun_missing_problems(d, tid):
+def dryrun_missing_problems(d, tid) -> list[str]:
     """Problems for one task file: it runs a tool over data (dryrun_required) but has no `Dry run: <cmd> # expect > N changes` line, so a no-op tool goes unnoticed."""
     text = read_text(os.path.join(d, tid + ".md"))
     if not dryrun_required(text):
@@ -643,7 +643,7 @@ def dryrun_missing_problems(d, tid):
 DRYRUN_LINE_RE = re.compile(r"^(?P<cmd>.+?)\s*#\s*expect\s*>\s*(?P<n>\d+)\s*changes?\s*$", re.I)
 
 
-def parse_dryrun(value):
+def parse_dryrun(value) -> tuple[str, int] | None:
     """-> (cmd, n) from `cmd  # expect > n changes`, None when malformed."""
     m = DRYRUN_LINE_RE.match(value or "")
     return (m["cmd"], int(m["n"])) if m else None
