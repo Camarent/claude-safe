@@ -240,6 +240,14 @@ def _gates_gate(repo, cfg, br, runner=None):
     return f"{PR_GATES_STEP}: {len(gates) + len(ci)} command(s) green"
 
 
+CI_OFF_NOTE = "CI unavailable by setting: merged on green local gates"
+
+
+def ci_off(cfg) -> bool:
+    """True when the project set `ci_available` false: no CI runs, so the pipeline waits for none and merges on green local gates."""
+    return not cfg.get("ci_available", True)
+
+
 def _ready(repo, cfg, br):
     r = pr_base._run(["gh", "pr", "ready", br], repo)
     note = "marked ready"
@@ -247,6 +255,8 @@ def _ready(repo, cfg, br):
         if pr_base._view(repo, br, "isDraft") is not False:
             raise Blocked(f"gh pr ready failed and the PR of {br} is still a draft: {(r.stderr or r.stdout).strip()[-200:]}")
         note = "already ready"
+    if ci_off(cfg):  # the local gates of _gates_gate are the only gates here: no CI wait
+        return f"{note}; {CI_OFF_NOTE}"
     limit = int(checks_timeout(cfg))
     try:
         c = _pr_checks(repo, br, limit)
@@ -350,14 +360,20 @@ def _mergeable_read(repo, br):
     return None if m == "UNKNOWN" else (m,)
 
 
-def _checks_gate(repo, cfg, br, clock=SystemClock):
-    """Polls the checks of `br` until none is pending (pr_checks_timeout), then raises Blocked unless they are green and squash merges are allowed."""
+def _checks_wait(repo, cfg, br, clock=SystemClock):
+    """Polls the checks of `br` until none is pending (pr_checks_timeout), then raises Blocked unless they are green."""
     c = _poll(lambda: _checks_read(repo, br), checks_timeout(cfg), clock, what=f"checks of {br}")
     if c is None:
         raise Blocked(f"checks of {br} still pending after the wait: merge by hand when green, then skip master-merged")
     if c.returncode and "no checks reported" not in (c.stdout + c.stderr):
         names = _failing(repo, br)
         raise Blocked(f"checks of {br} are not green ({', '.join(names) or 'pending'}): merge by hand when they are, then skip master-merged")
+
+
+def _checks_gate(repo, cfg, br, clock=SystemClock):
+    """Waits for the checks of `br` (_checks_wait) unless `ci_available` is false, then raises Blocked unless squash merges are allowed."""
+    if not ci_off(cfg):
+        _checks_wait(repo, cfg, br, clock)
     if _squash_forbidden(repo):
         raise Blocked(f"the repo allows no squash merge (rebase-only or merge-commit-only): merge the PR of {br} by hand, then skip master-merged")
 
@@ -379,15 +395,18 @@ def _merge(a_dir, repo, cfg, stage, br, clock=SystemClock):
         raise Blocked(f"the PR of {br} is {mergeable or 'of unknown mergeability'}: resolve it by hand, then skip master-merged")
     _checks_gate(repo, cfg, br, clock)
     title = pr_base._merge_title(a_dir, stage, br)
-    r = pr_base._run(
-        ["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", f"Stage {stage}. Squash-merged by the pipeline after green CI."],
-        repo,
-        300,
+    body = (
+        f"Stage {stage}. Squash-merged by the pipeline on green local gates (CI unavailable by setting)."
+        if ci_off(cfg)
+        else f"Stage {stage}. Squash-merged by the pipeline after green CI."
     )
+    r = pr_base._run(["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", body], repo, 300)
     if r.returncode:
         if pr_base._view(repo, br, "state") == "MERGED":  # merged remotely; only the local branch cleanup failed
             return f"PR squash-merged: {title} (local cleanup failed: {(r.stderr or r.stdout).strip()[-200:]})"
         raise Blocked(f"gh pr merge failed: {(r.stderr or r.stdout).strip()[-300:]}")
+    if ci_off(cfg):  # the gates ran at the pr-ready step; the master-merged step does not run them again
+        return f"PR squash-merged: {title}; local gates of the pr-ready step relied on ({CI_OFF_NOTE})"
     return f"PR squash-merged: {title}"
 
 
@@ -650,7 +669,7 @@ def _pr_step(what, a_dir, repo, cfg, stage, br):
         return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
     if what == "ready":
         opened = _open_pr(a_dir, repo, cfg, stage, br)
-        if note := "\n".join(x for x in (web_note(a_dir, stage), skipped_notes(a_dir, stage)) if x):
+        if note := "\n".join(x for x in (web_note(a_dir, stage), skipped_notes(a_dir, stage), CI_OFF_NOTE if ci_off(cfg) else "") if x):
             append_body(repo, br, note)  # the skipped browser check and timed-out skips must show in the PR, never silent
         return gates + "; " + opened + "; " + _ready(repo, cfg, br)
     return _open_pr(a_dir, repo, cfg, stage, br)
