@@ -47,6 +47,7 @@ DOCS_IMPACT_KEY = "docs_impact_gate"  # pipeline.json key: the docs impact check
 DOCS_IMPACT_DEFAULT = True  # the key when pipeline.json does not set it
 DOCS_IMPACT_EXEMPT_KEY = "docs_impact_exempt"  # pipeline.json key: globs of docs the docs impact check never flags as stale
 DOCS_IMPACT_SYMBOL_MIN = 3  # a top-level def or class name shorter than this is not read as a symbol a doc can cite
+DOCS_IMPACT_GENERIC_SYMBOLS = frozenset({"main"})  # def names every script has: a doc citing another file's `main` is not made stale by this diff
 DOCS_IMPACT_DEF_RE = re.compile(r"^(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)")  # a column-0 def, async def or class line; group 1 = the name
 DOCS_IMPACT_HEADER_RE = re.compile(r"^@@ .* @@ ?(.*)$")  # a hunk header; group 1 = the function context git puts after it
 DOCS_IMPACT_PATH_RE = r"(?<![\w/.-]){path}(?![\w/-]|\.\w)"  # template: a changed path word-bounded in a doc

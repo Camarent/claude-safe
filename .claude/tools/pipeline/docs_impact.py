@@ -11,6 +11,7 @@ from . import cite_check
 from .configuration import (
     DOCS_IMPACT_DEF_RE,
     DOCS_IMPACT_EXEMPT_KEY,
+    DOCS_IMPACT_GENERIC_SYMBOLS,
     DOCS_IMPACT_HEADER_RE,
     DOCS_IMPACT_PATH_RE,
     DOCS_IMPACT_SYMBOL_MIN,
@@ -37,7 +38,7 @@ def _changes(diff_text) -> tuple[set[str], set[str]]:
             cur = cite_check._header_file(ln, cur, paths)
             if cur:
                 paths.add(cur)
-    return paths, {s for s in syms if len(s) >= DOCS_IMPACT_SYMBOL_MIN}
+    return paths, {s for s in syms if len(s) >= DOCS_IMPACT_SYMBOL_MIN and s not in DOCS_IMPACT_GENERIC_SYMBOLS}
 
 
 def doc_files(worktree, docs_dir) -> list[str]:

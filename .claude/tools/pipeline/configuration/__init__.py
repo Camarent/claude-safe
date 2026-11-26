@@ -39,6 +39,7 @@ from .cite_check import (  # noqa: F401  (re-export: the facade keeps every name
     DOCS_IMPACT_DEF_RE,
     DOCS_IMPACT_DEFAULT,
     DOCS_IMPACT_EXEMPT_KEY,
+    DOCS_IMPACT_GENERIC_SYMBOLS,
     DOCS_IMPACT_HEADER_RE,
     DOCS_IMPACT_KEY,
     DOCS_IMPACT_PATH_RE,

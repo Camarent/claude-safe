@@ -69,6 +69,12 @@ class TestDocsImpactCheck(unittest.TestCase):
         diff = file_diff("a.py", "@@ -1 +1 @@ def ab():\n-def ab():\n+def ab(x):\n")
         self.assertEqual(self.check(diff, {"docs/m.md": "call `ab`\n"}), [])
 
+    def test_generic_main_is_ignored_but_a_specific_def_is_not(self):
+        main_diff = file_diff("a.py", "@@ -1 +1 @@ def main(argv=None):\n-def main():\n+def main(argv=None):\n")
+        self.assertEqual(self.check(main_diff, {"docs/m.md": "`main` of b.py\n"}), [])
+        foo_diff = file_diff("a.py", "@@ -1 +1 @@ def foo(x):\n-def foo():\n+def foo(x):\n")
+        self.assertEqual(len(self.check(foo_diff, {"docs/m.md": "`foo` and `main`\n"})), 1)
+
     def test_exempt_doc_is_not_flagged(self):
         diff = added_file("a.py")
         docs = {"docs/decisions.md": "see a.py for the parser\n"}
