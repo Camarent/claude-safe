@@ -98,6 +98,24 @@ class T(unittest.TestCase):
         self.ban({"pattern": "([", "use": "x"}, {"pattern": "^pytest", "use": "scripts/dev.sh test"})
         self.assertEqual(len(plan_testcmd.check_test_ban(self.d, TID, self.ws)), 1)
 
+    def test_qrun_shell_operator_after_dashes_is_an_error(self):
+        for line in ("Test: cs-qrun -- ! grep -q x f", "Test: cs-qrun -- && ls out", "Test: `cs-qrun -- | cat`"):
+            self.task(line)
+            got = plan_testcmd.check_qrun_operator(self.d, TID)
+            self.assertEqual(len(got), 1, line)
+            self.assertTrue(got[0].startswith("qrun-op:"))
+            self.assertIn("bash -c", got[0])
+            self.assertEqual(plan_check.errors_of(got), got)
+
+    def test_qrun_decoys_no_error(self):
+        for line in ("Test: cs-qrun -- scripts/dev.sh test x.py", 'Test: cs-qrun -- bash -c "! grep -q x f"'):
+            self.task(line)
+            self.assertEqual(plan_testcmd.check_qrun_operator(self.d, TID), [], line)
+
+    def test_qrun_operator_reported_once_per_task(self):
+        self.task("Test: cs-qrun -- ! grep x f && cs-qrun -- ! grep y g")
+        self.assertEqual(len(plan_testcmd.check_qrun_operator(self.d, TID)), 1)
+
     def test_bare_pytest_stays_a_warning_not_an_error(self):
         self.cfg(test_command_hint="make test", test_ban=[{"pattern": "^nomatch$", "use": "x"}])
         self.task("Test: pytest tests/x.py")

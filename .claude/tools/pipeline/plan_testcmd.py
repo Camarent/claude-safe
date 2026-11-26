@@ -3,7 +3,18 @@
 import os
 import re
 
-from .configuration import BARE_RUNNER_RE, TEST_BAN_KEY, TEST_BAN_PREFIX, TESTCMD_HINT_KEY, TESTCMD_WARN_PREFIX, gates_of, project
+from .configuration import (
+    BARE_RUNNER_RE,
+    QRUN_OP_PREFIX,
+    QRUN_OP_RE,
+    QRUN_OPS,
+    TEST_BAN_KEY,
+    TEST_BAN_PREFIX,
+    TESTCMD_HINT_KEY,
+    TESTCMD_WARN_PREFIX,
+    gates_of,
+    project,
+)
 from .plan_commands import _strip_wrappers
 from .shellwords import split_commands
 from .util import read_text
@@ -77,4 +88,17 @@ def check_test_ban(d, tid, workspace) -> list[str]:
         for pat, use in bans:
             if pat.search(cmd):
                 return [f"{TEST_BAN_PREFIX} {tid}: Test runs `{part.strip()}`, which the project bans (pipeline.json `test_ban`): use {use}"]
+    return []
+
+
+def check_qrun_operator(d, tid) -> list[str]:
+    """`qrun-op:` error for one task: a `Test:` line gives a shell operator (`!`, `&&`, `||`, `|`, `;`) as the first word after `cs-qrun --`; cs-qrun runs a program, not a shell, so it exits 127."""
+    m = TEST_LINE_RE.search(read_text(os.path.join(d, tid + ".md")))
+    if not m:
+        return []
+    for hit in re.finditer(QRUN_OP_RE, m[1].replace("`", " ")):
+        if hit[1] in QRUN_OPS:
+            return [
+                f"{QRUN_OP_PREFIX} {tid}: Test runs `cs-qrun -- {hit[1]} ...`, a shell operator cs-qrun cannot run (it runs a program, exit 127): wrap the shell part as cs-qrun -- bash -c '...'"
+            ]
     return []

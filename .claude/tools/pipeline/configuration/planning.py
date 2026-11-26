@@ -154,6 +154,14 @@ SCOPE_HINT_NOTE = " Predicted paths are a planning hint: a file outside them is 
 SCOPE_WARN_NOTE = " Scope note: the job changed files outside the task's predicted paths and the task text does not name them: {files}. Name them in your report; this alone is not a FAIL."
 TEST_BAN_KEY = "test_ban"  # pipeline.json: list of {"pattern": regex, "use": text}; a task `Test:` command part matching a pattern is an error naming `use` (plan_testcmd.check_test_ban)
 TEST_BAN_PREFIX = "testban:"  # error prefix of plan_testcmd.check_test_ban
+QRUN_OP_PREFIX = "qrun-op:"  # error prefix of plan_testcmd.check_qrun_operator
+QRUN_OPS = ("!", "&&", "||", "|", ";")  # a word right after `cs-qrun --` that is a shell operator: cs-qrun runs a program, not a shell (exit 127)
+QRUN_OP_RE = r"\bcs-qrun\s+--\s+(\S+)"  # the first word after `cs-qrun --` in a Test: line (plan_testcmd.check_qrun_operator)
+PINS_PREFIX = "pins:"  # warning prefix of a task's pinned-line check (the pins rule)
+DOCS_COUNT_PREFIX = "docs-count:"  # warning prefix of the docs-count rule (a task that writes a count or line number into docs)
+DOCS_COUNT_RE = (
+    r"(?i)line numbers?|path:line|count of|number of (files|lines|tests|functions|symbols)|\bN lines"  # a docs line that pins a count or a line number
+)
 TESTCMD_WARN_PREFIX = "testcmd:"  # warning prefix of plan_testcmd.check_bare_test_runner; plan_check.errors_of never fails on it
 TESTCMD_HINT_KEY = "test_command_hint"  # pipeline.json: the project's real test command (what a `Test:` line should run instead of bare pytest); when unset a `gates` command that runs pytest through a wrapper is used
 BARE_RUNNER_RE = r"^(?:pytest|py\.test|(?:python[\d.]*)(?:\s+-\w+)*\s+-m\s+pytest)(?:\s|$)"  # a command that starts pytest with no wrapper
