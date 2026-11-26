@@ -51,7 +51,7 @@ Plan error: when a FAIL is because a symbol or path named in the task's `Done:`/
 
 <!-- caveman:begin -->
 Escalation rules (the driver applies them; you cannot change a model):
-1. E1: a dev or reviewer step moves from Haiku to Sonnet only after one of these three events, and no other: (a) the gate command stayed red after two Haiku tries; (b) the dev reply is `ESCALATE:` and names one concrete reason; (c) the reviewer verdict is `ESCALATE` and names one defect with file and line.
+1. E1: a dev or reviewer step moves from Haiku to Sonnet only after one of these four events, and no other: (a) the gate command stayed red after two Haiku tries; (b) the dev reply is `ESCALATE:` and names one concrete reason; (c) the reviewer verdict is `ESCALATE` and names one defect with file and line; (d) a merge-gate fix dev (fix-gate) ended BLOCKED, or its re-merge FAILed, so the next fix is a Sonnet dev.
 2. E2: a reviewer verdict is exactly one of `PASS`, `FAIL`, `ESCALATE`. `PASS` means wrong, risky and nit counts are all 0. `ESCALATE` with all three counts 0 is invalid: the driver treats it as `PASS` and logs a warning with the report id.
 3. E3: a file path pattern never selects a model. Do not add routing by path, topic or word such as "network" or "parser".
 4. E4: an escalation runs once per task and step. After it the next verdict is final for that round; a second `ESCALATE` of the same kind blocks to the lead with the named reason.

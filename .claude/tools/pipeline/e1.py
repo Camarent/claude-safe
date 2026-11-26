@@ -4,12 +4,14 @@ E1 events (`mine` = the task's events, the same list the task state reads):
   a  dev: the gate stayed red after the Haiku tries (red test/gate reports, or failed review rounds)
   b  dev: the last dev report is ESCALATE, or an earlier E1 dev dispatch keeps the task on Sonnet
   c  reviewer: a reviewer ESCALATE report exists; later reviewers stay on Sonnet
+  d  fix-gate dev (role `fix-gate`, `mine` = the earlier fix-gate steps of the wave): an earlier fix dev ended BLOCKED or its re-merge FAILed
 No event means Haiku. This module imports nothing from steps: steps imports it.
 """
 
 import re
 
 from .configuration import (
+    BLOCKED,
     ESCALATE,
     EV_DISPATCH,
     EV_REPORT,
@@ -26,6 +28,7 @@ E1_WHY = {
     "a": "E1(a): dev gate stayed red after the Haiku tries; Sonnet dev",
     "b": "E1(b): dev escalated; Sonnet dev",
     "c": "E1(c): reviewer escalated; Sonnet reviewer",
+    "d": "E1(d): fix-gate fix failed (BLOCKED or red re-merge); Sonnet fix",
 }
 PLAN_ERROR_RE = re.compile(rf"^\s*{PLAN_ERROR}:\s*(.*)$", re.MULTILINE)  # reviewer report line: the task file is wrong, not the dev
 
@@ -76,19 +79,30 @@ def _reviewer_event(mine):
     return "c" if escalated else None
 
 
+def _fix_gate_event(mine):
+    """E1(d): an earlier fix-gate dev of this wave ended BLOCKED, or its re-merge script step FAILed (the red gate is still there)."""
+    return (
+        "d"
+        if any(e["ev"] == EV_REPORT and ((e["role"] == "dev" and e["verdict"] == BLOCKED) or (e["role"] == "script" and e["verdict"] == FAIL)) for e in mine)
+        else None
+    )
+
+
 def e1_event(role, mine) -> str | None:
-    """-> 'a', 'b', 'c' or None: the E1 event that holds for ROLE ('dev' or 'reviewer') in the task's events MINE."""
+    """-> 'a', 'b', 'c', 'd' or None: the E1 event that holds for ROLE ('dev', 'reviewer' or 'fix-gate') in the task's events MINE."""
     if role == "dev":
         return _dev_event(mine)
     if role == "reviewer":
         return _reviewer_event(mine)
+    if role == "fix-gate":
+        return _fix_gate_event(mine)
     return None
 
 
 def model_for(role, task, mine) -> tuple[str, str | None]:
     """-> (model, why): Sonnet with an `E1(...)` why when an E1 event holds for ROLE, else (Haiku, None).
 
-    TASK is not read: the owner_sonnet and review_sonnet flags no longer pick a model.
+    TASK is not read: the owner_sonnet and review_sonnet flags no longer pick a model. For role `fix-gate` TASK is None.
     """
     event = e1_event(role, mine)
     if event is None:
