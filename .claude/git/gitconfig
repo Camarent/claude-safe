@@ -1,0 +1,13 @@
+[user]
+	name = Camarent
+	email = 3629354+Camarent@users.noreply.github.com
+[core]
+	hooksPath = /root/.claude/git/hooks
+[credential "https://github.com"]
+	helper = 
+	helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/usr/bin/gh auth git-credential
+[include]
+	path = /root/.claude/git/privacy.gitconfig

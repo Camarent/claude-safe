@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Root phase: only what needs root (claude update, X socket dir, ownership). Then re-exec as the
+# non-root `node` user, remapped to the host uid/gid so files in the mounts are never root-owned.
+# HOME stays /root (every tool and rule refers to /root/.claude); it is owned by node, not by root.
+if [[ "$(id -u)" == "0" ]]; then
+    hostUid="${HOST_UID:-1000}"; hostGid="${HOST_GID:-1000}"
+    echo -e "\033[36mChecking for Claude Code updates...\033[0m"
+    if npm install -g @anthropic-ai/claude-code@latest --silent >/tmp/claude-update.log 2>&1; then
+        echo -e "\033[32mClaude Code is up to date ($(claude --version 2>/dev/null || echo unknown)).\033[0m"
+    else
+        echo -e "\033[33mCould not check for updates (offline?) — using existing version.\033[0m"
+    fi
+    groupmod -o -g "$hostGid" node 2>/dev/null
+    usermod -o -u "$hostUid" -g "$hostGid" -d /root node 2>/dev/null
+    # Vetted apt rows (EXTRA-TOOLS.md, ACCEPT, pinned) are installed here, the only place with root.
+    # A row accepted mid-session is installed at the next container start.
+    [[ -r /root/.claude/tools/xtools.py ]] && python3 -I /root/.claude/tools/xtools.py check --install --kinds apt >/tmp/xtools-apt.log 2>&1
+    mkdir -p -m 1777 /tmp/.X11-unix
+    mkdir -p /opt/jstools /data
+    # Hand over what an earlier root session left behind (host files become the host user's again).
+    # Only root-owned entries are touched; -xdev keeps this to one filesystem per mount.
+    for d in /root /root/.claude /root/.cache/chrome-devtools-mcp/chrome-profile /data /opt/jstools /opt/cargo /opt/rustup /workspace; do
+        [[ -d "$d" ]] && find "$d" -xdev -user root -exec chown -h "$hostUid:$hostGid" {} + 2>/dev/null
+    done
+    [[ -f /root/.claude.json ]] && chown "$hostUid:$hostGid" /root/.claude.json
+    exec setpriv --reuid=node --regid=node --init-groups env HOME=/root USER=node "$0" "$@"
+fi
+
+# Command index check: every hook command in settings.json and every cs-* name in paths.json must resolve on PATH.
+# Warns loudly; the exit code is non-zero only when CS_STRICT=1.
+if [[ -r /root/.claude/tools/cmdindex.py && -r /root/.claude/settings.json ]]; then
+    python3 -I /root/.claude/tools/cmdindex.py check-path --settings /root/.claude/settings.json || exit 1
+fi
+
+# Virtual display for the browser. Chrome runs headful against this rather than
+# --headless, which is trivially fingerprinted by bot detection.
+export DISPLAY=:99
+Xvfb "$DISPLAY" -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+
+for _ in $(seq 1 50); do
+    [[ -e "/tmp/.X11-unix/X${DISPLAY#:}" ]] && break
+    sleep 0.1
+done
+
+if [[ -e "/tmp/.X11-unix/X${DISPLAY#:}" ]]; then
+    echo -e "\033[32mVirtual display ready on $DISPLAY — browser tools available.\033[0m"
+else
+    echo -e "\033[33mXvfb did not start (see /tmp/xvfb.log) — browser tools may fail.\033[0m"
+fi
+
+chromeProfile=/root/.cache/chrome-devtools-mcp/chrome-profile
+mkdir -p "$chromeProfile"
+
+# The profile outlives the container, and so do Chrome's singleton locks if a
+# session ends uncleanly. They point at the old container's hostname, so Chrome
+# then refuses to start ("browser is already running") for every later session.
+# Only one container uses this profile at a time, so clearing them is safe.
+rm -f "$chromeProfile"/Singleton{Lock,Socket,Cookie}
+
+# snip installs itself as a PreToolUse hook on Bash in ~/.claude/settings.json,
+# and unpacks its filter library into ~/.config/snip. The settings file is
+# bind-mounted from the host and the filters are not, so this runs every start.
+# It is idempotent: repeated runs leave a single hook entry.
+if [[ "${SNIP_OFF:-0}" == "1" ]]; then
+    snip init --uninstall >/dev/null 2>&1
+    echo -e "\033[33msnip disabled — shell output reaches Claude unfiltered.\033[0m"
+elif snip init >/dev/null 2>&1; then
+    echo -e "\033[32msnip active — verbose shell output is filtered ($(snip gain 2>/dev/null | grep -oE '[0-9.]+[KM]? tokens saved' | head -1 || echo 'no history yet')).\033[0m"
+else
+    echo -e "\033[33mCould not install the snip hook — continuing without it.\033[0m"
+fi
+
+# ponytail (opt-in via --ponytail) is a plugin stored in the bind-mounted
+# ~/.claude, so it would persist into later sessions. Enable it only when asked
+# and disable it otherwise.
+if [[ "${PONYTAIL:-0}" == "1" ]]; then
+    if claude plugin marketplace add DietrichGebert/ponytail >/dev/null 2>&1 \
+        && { claude plugin install ponytail@ponytail >/dev/null 2>&1 || claude plugin enable ponytail@ponytail >/dev/null 2>&1; }; then
+        echo -e "\033[32mponytail enabled — Claude is biased toward minimal code.\033[0m"
+    else
+        echo -e "\033[33mCould not install ponytail — continuing without it.\033[0m"
+    fi
+else
+    claude plugin disable ponytail@ponytail >/dev/null 2>&1 || true
+fi
+
+if [[ -n "${RUN_CMD:-}" ]]; then exec bash -c "$RUN_CMD"; fi
+
+exec claude --mcp-config /etc/claude/mcp-servers.json "$@"

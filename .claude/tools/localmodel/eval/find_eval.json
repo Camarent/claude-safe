@@ -1,0 +1,17 @@
+[
+ {"q": "where is the progress migration", "expect": ["web/migrate.js"]},
+ {"q": "dictation exercise", "expect": ["web/ui/dictation.js"]},
+ {"q": "question timer", "expect": ["web/ui/question-timer.js", "web/session/qtimer.js"]},
+ {"q": "who handles arrow key navigation", "expect": ["web/ui/arrow-nav.js"]},
+ {"q": "play button", "expect": ["web/ui/play-button.js"]},
+ {"q": "placement test screen", "expect": ["web/ui/placement.js"]},
+ {"q": "results screen play row", "expect": ["web/ui/results.js"]},
+ {"q": "settings for speech voice", "expect": ["web/ui/settings-speech.js"]},
+ {"q": "catalog audio", "expect": ["web/ui/catalog-audio.js"]},
+ {"q": "i18n translation lookup", "expect": ["web/ui/i18n.js"]},
+ {"q": "home screen", "expect": ["web/ui/home.js"]},
+ {"q": "stimulus rendering", "expect": ["web/ui/stimulus.js"]},
+ {"q": "session feedback after an answer", "expect": ["web/ui/session-feedback.js"]},
+ {"q": "group card on the catalog", "expect": ["web/ui/group-card.js"]},
+ {"q": "rust migration tests", "expect": ["crates/sample-core/tests/migrate.rs"]}
+]

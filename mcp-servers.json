@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "chrome-devtools-mcp",
+      "args": [
+        "--executablePath=/usr/local/bin/browser",
+        "--viewport=1280x800",
+        "--chromeArg=--no-sandbox",
+        "--chromeArg=--disable-blink-features=AutomationControlled",
+        "--chromeArg=--lang=en-US"
+      ]
+    }
+  }
+}

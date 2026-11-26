@@ -1,0 +1,7 @@
+.claude/tools/pipeline/configuration/flags.py
+.claude/tools/pipeline/configuration/gitbranch.py
+.claude/tools/pipeline/configuration/literals.py
+.claude/tools/pipeline/configuration/paths.py
+.claude/tools/pipeline/configuration/project.py
+.claude/tools/pipeline/configuration/publish.py
+.claude/tools/pipeline/gate_record.py

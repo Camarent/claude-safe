@@ -1,0 +1,8 @@
+.claude/tools/pipeline/cli_plan.py
+.claude/tools/pipeline/cmdindex.py
+.claude/tools/pipeline/commit_subject.py
+.claude/tools/pipeline/ctx.py
+.claude/tools/pipeline/e1.py
+.claude/tools/pipeline/gate_paths.py
+.claude/tools/pipeline/gate_secrets.py
+.claude/tools/pipeline/generated.py

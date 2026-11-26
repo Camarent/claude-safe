@@ -1,0 +1,65 @@
+{
+  "_comment": "Ceiling for what a local-dev brief may allow. qrun-wrapped commands are checked on the INNER command too. In code mode the model may also run git add/commit, but only inside its own worktree branch (localdev/<id>); push, reset, rebase, clean are never allowed.",
+  "bash_prefixes": [
+    "python3 -m unittest",
+    "python3 -I /root/.claude/tools/qrun.py --",
+    "cargo test",
+    "cargo clippy",
+    "cargo fmt",
+    "cargo build",
+    "cargo check",
+    "wasm-pack build",
+    "node --test",
+    "node ",
+    "npm test",
+    "npm run",
+    "npx eslint",
+    "bash scripts/",
+    "scripts/",
+    "make ",
+    "jq ",
+    "git status",
+    "git diff",
+    "git log",
+    "rg ",
+    "grep ",
+    "ls ",
+    "wc "
+  ],
+  "forbidden_words": [
+    "rm ",
+    "curl",
+    "wget",
+    "sudo",
+    "git push",
+    "git reset",
+    "git rebase",
+    "git clean",
+    "--force",
+    "pip install",
+    "npm install",
+    "cargo install",
+    "chmod",
+    "> /",
+    "| sh",
+    "| bash"
+  ],
+  "max_turns": 60,
+  "max_read_also_dirs": 3,
+  "architecture_sources": [
+    ".localdev/architecture.md",
+    "docs/ARCHITECTURE.md"
+  ],
+  "architecture_max_words": 400,
+  "profile_by_extension": {
+    ".rs": "rust",
+    ".js": "js",
+    ".mjs": "js",
+    ".py": "python",
+    ".md": "docs"
+  },
+  "code_mode_git": [
+    "git add",
+    "git commit"
+  ]
+}

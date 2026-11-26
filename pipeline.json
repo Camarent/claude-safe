@@ -1,0 +1,46 @@
+{
+  "audit_file": "AUDIT.md",
+  "branch_release": "master",
+  "pipeline_install_check": "scripts/sync-claude-config.sh --compare {work_branch}",
+  "ci_drift_ignore": [
+    "git config",
+    "scripts/dev.sh sync",
+    "curl -fsSL",
+    "mkdir -p",
+    "./gitleaks detect",
+    "rc=0",
+    "exit $rc"
+  ],
+  "public_words_baseline": "docs/public-words-baseline.txt",
+  "worktree_setup": [
+    "ln -sfn \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.uv\" .uv"
+  ],
+  "gates": [
+    {
+      "name": "check",
+      "cmd": "scripts/dev.sh check"
+    },
+    {
+      "name": "dead",
+      "cmd": "test -z \"$(scripts/dev.sh dead)\""
+    },
+    {
+      "name": "sec",
+      "cmd": "scripts/dev.sh sec"
+    },
+    {
+      "name": "ccn",
+      "cmd": "scripts/dev.sh ccn"
+    }
+  ],
+  "gates_final": [
+    {
+      "name": "cov",
+      "cmd": "scripts/dev.sh cov"
+    }
+  ],
+  "worktrees": true,
+  "public_forbidden_words": [
+    "/home/"
+  ]
+}

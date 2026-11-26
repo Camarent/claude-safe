@@ -1,0 +1,6 @@
+.claude/tools/pipeline/stagedir.py
+.claude/tools/pipeline/starter_tools.py
+.claude/tools/pipeline/tasks.py
+.claude/tools/pipeline/triggers.py
+.claude/tools/pipeline/util.py
+.claude/tools/pipeline/verdicts.py

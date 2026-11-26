@@ -1,0 +1,67 @@
+{
+ "feature": {
+  "bad_depends": [
+   0,
+   "01-a: depends on unknown or later phase zzz",
+   "02-b: depends on unknown or later phase late"
+  ],
+  "bump_phase": [
+   0,
+   "01-a: plans a version bump or release, but pipeline.json has release_script: the finish phase bumps (target = the vX.Y.Z in the Plan.md goal) and tags itself; drop this phase"
+  ],
+  "checklist_empty": [
+   0,
+   "Plan.md: `## Acceptance checklist` is missing or empty: one `- cmd:` or `- eyes:` line per checkable end-state item"
+  ],
+  "done_when_cd": [
+   0,
+   "01-a: done_when starts with `cd proj` but the driver already runs it in proj: drop the cd"
+  ],
+  "done_when_sentence": [
+   0,
+   "01-a: done_when is not a shell command (`sh -n` fails): write one command, not a sentence"
+  ],
+  "folder_missing": [
+   0,
+   "02-b: folder ROOT/.work/f/phases/02-b missing"
+  ],
+  "good_depends": [
+   0
+  ],
+  "no_done_when": [
+   0,
+   "01-a: no done_when"
+  ],
+  "plan_missing": [
+   0,
+   "ROOT/.work/f/Plan.md missing"
+  ],
+  "shared_paths": [
+   0,
+   "02-b and 01-a share paths: src/a/x / src/a"
+  ],
+  "stage_problems": [
+   1,
+   "01-a/task-1: missing ROOT/.work/f/phases/01-a/task-1.md",
+   "01-a/task-1: depends on missing task-9"
+  ]
+ },
+ "refs": {
+  "cap_five": [
+   "task-1: test t/test_6.py mentions `clipMeta` but is not in Predicted paths (add it, or say why it stays)",
+   "task-1: test t/test_5.py mentions `clipMeta` but is not in Predicted paths (add it, or say why it stays)",
+   "task-1: test t/test_4.py mentions `clipMeta` but is not in Predicted paths (add it, or say why it stays)",
+   "task-1: test t/test_3.py mentions `clipMeta` but is not in Predicted paths (add it, or say why it stays)",
+   "task-1: test t/test_2.py mentions `clipMeta` but is not in Predicted paths (add it, or say why it stays)"
+  ],
+  "hit": [
+   "task-1: test web/spec_x.js mentions `otherSym` but is not in Predicted paths (add it, or say why it stays)",
+   "task-1: test web/tests/c.test.js mentions `clipMeta` but is not in Predicted paths (add it, or say why it stays)"
+  ],
+  "named_in_text": [],
+  "no_match": [],
+  "no_predicted": [],
+  "no_symbols": [],
+  "predicted_test": []
+ }
+}
