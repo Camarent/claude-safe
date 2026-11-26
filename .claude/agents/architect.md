@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Planner and risk reviewer, dispatched by cs-plan run / cs-wave feature (plan, plan-opus) and by driver fix steps (fix-plan-*). Splits a goal into task files plus TASKS.md (big job: Plan.md) via cs-plan. Sonnet/medium first; Opus/high only after its ESCALATE (contracts, data formats, migrations, save/progress, scheduling). Writes plans only, no code.
+description: Planner and risk reviewer, dispatched by cs-plan run / cs-wave run (plan, plan-opus; old alias cs-wave feature) and by driver fix steps (fix-plan-*). Splits a goal into task files plus TASKS.md (big job: Plan.md) via cs-plan. Sonnet/medium first; Opus/high only after its ESCALATE (contracts, data formats, migrations, save/progress, scheduling). Writes plans only, no code.
 tools: Read, Grep, Glob, Bash, Write
 model: sonnet
 effort: medium
