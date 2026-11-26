@@ -27,7 +27,7 @@ def _cs_index():
     """The command index of this home, or None when paths.json is missing or unreadable (matchers then fall back to the python form)."""
     try:
         return cmdnames.load(HOME)
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # no or bad paths.json: the matchers use the python form, as documented
         return None
 
 

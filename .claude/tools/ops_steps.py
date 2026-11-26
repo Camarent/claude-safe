@@ -39,7 +39,7 @@ from pipeline.configuration import (
     repo_dir,
 )
 from pipeline.stagedir import resolve_stage
-from pipeline.util import add_common_args, read_jsonl, read_text, work_path, write_text
+from pipeline.util import add_common_args, read_jsonl, read_text, swallowed, work_path, write_text
 from pipeline.worktree import nested_repos
 
 KEEP_REPORT_RE = re.compile(r"^\s*(?:VERDICT\s*:\s*)?(BLOCKED|FAIL|ESCALATE)\b")  # the retro reads these reports
@@ -154,7 +154,7 @@ def _is_public(repo):
         with open(os.path.join(repo, "CLAUDE.md"), encoding="utf-8", errors="replace") as fh:
             if any(PUBLIC_MARK_RE.search(line) for line in fh):
                 return True
-    except OSError:
+    except OSError:  # no readable CLAUDE.md: no public mark here, so gh decides
         pass
     try:
         r = subprocess.run(list(GH_VISIBILITY_ARGS), cwd=repo, capture_output=True, text=True, timeout=GIT_QUICK_TIMEOUT_S, check=False)
@@ -162,7 +162,8 @@ def _is_public(repo):
             return None
         private = json.loads(r.stdout or "{}").get("isPrivate")
         return None if private is None else private is False
-    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
+    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError) as e:
+        swallowed("ops_steps._is_public", e)  # None: public_words_gate fails closed on an unknown visibility
         return None
 
 

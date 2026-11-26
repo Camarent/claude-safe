@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
 from pipeline.configuration import INDEX_TIMEOUT_S, VERDICT_PREFIX, tool_setting
-from pipeline.util import add_common_args, script_timeout
+from pipeline.util import add_common_args, script_timeout, swallowed
 
 LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "search", "local.py")
 
@@ -65,7 +65,8 @@ def vacuum_bloated(db):
         finally:
             con.close()
         return f"{db}: vacuumed, saved {(before - os.path.getsize(db)) // (1024 * 1024)} MB"
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as e:
+        swallowed("index_step.vacuum_bloated", e)  # best effort: a busy or unreadable DB is left alone
         return ""
 
 

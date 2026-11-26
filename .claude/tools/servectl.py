@@ -40,6 +40,7 @@ from pipeline.configuration import (
     tool_setting,
 )
 from pipeline.serve_rule import start_refusal
+from pipeline.util import swallowed
 
 PROC = "/proc"  # Linux process table: group membership, zombie state and start time
 STARTTIME_INDEX = 19  # index after `(comm)` in /proc/<pid>/stat: state is field 3, so starttime (field 22) is index 19
@@ -76,7 +77,7 @@ def proc_stat(pid):
     try:
         with open(os.path.join(PROC, str(pid), "stat"), encoding="utf-8") as f:
             rest = f.read().rsplit(")", 1)[1].split()
-    except (OSError, IndexError):
+    except (OSError, IndexError):  # the process is gone (or /proc has no such stat): the caller reads None as gone
         return None
     return rest[0], int(rest[2]), int(rest[STARTTIME_INDEX])
 
@@ -87,7 +88,7 @@ def group_live(pgid):
         try:
             os.killpg(pgid, 0)
             return True
-        except OSError:
+        except OSError:  # no such group (ESRCH) or no permission to signal it: not one we can see as live
             return False
     for name in os.listdir(PROC):
         if not name.isdigit():
@@ -142,7 +143,8 @@ def load_records(d):
         try:
             with open(p, encoding="utf-8") as f:
                 out.append((p, json.load(f)))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as e:
+            swallowed("servectl.load_records", e)  # an unreadable state file is skipped; the log line keeps it visible
             continue
     return out
 
@@ -152,7 +154,7 @@ def port_open(port):
     try:
         with socket.create_connection((SERVE_HOST, port), timeout=tool_setting("SERVE_CONNECT_TIMEOUT_S")):
             return True
-    except OSError:
+    except OSError:  # connection refused or timed out: the port is not open yet, which is the answer asked for
         return False
 
 

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from . import gitx
 from .configuration import GIT_MIN_VERSION, GIT_SAFE_ENV, GIT_TIMEOUT_S, GITHUB_HOSTS, project, repo_path, tool_cmd, tool_setting, work_branch
+from .util import swallowed
 
 GH_CRED = "credential.helper=!gh auth git-credential"
 
@@ -19,7 +20,8 @@ _git = gitx.try_run  # tests patch pr_mode._git
 def _run(args, cwd):
     try:
         return subprocess.run(args, cwd=cwd, capture_output=True, text=True, env={**os.environ, **GIT_SAFE_ENV}, timeout=GIT_TIMEOUT_S, check=False)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as e:
+        swallowed("pr_mode._run", e)  # caller reads None as "unknown", not as a failed command
         return None
 
 

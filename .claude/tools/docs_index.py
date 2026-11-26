@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pipeline import gitx
+from pipeline.util import swallowed
 from search.ask_code import find_root
 
 IGNORE_DIRS = {
@@ -123,8 +124,8 @@ def scan(root, rel):
                     m = pattern.match(line)
                     if m:
                         symbols.append(next(g for g in m.groups() if g))
-    except OSError:
-        pass
+    except OSError as e:
+        swallowed("docs_index.scan", e)  # keep the lines and symbols read so far
     return lines, symbols
 
 
