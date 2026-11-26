@@ -72,7 +72,10 @@ class Base(unittest.TestCase):
         self.cfg()
 
     def cfg(self, **kw):
-        Path(self.d, "pipeline.json").write_text(json.dumps({"gate": False, "testrun": False, "qualityrun": False, "worktrees": True, **kw}), encoding="utf-8")
+        Path(self.d, "pipeline.json").write_text(
+            json.dumps({"gate": False, "testrun": False, "qualityrun": False, "worktrees": True, "docs_cite_final": False, **kw}),
+            encoding="utf-8",
+        )
 
     def tasks(self, flags=NOFLAGS):
         (self.w / "TASKS.md").write_text(TASKS.format(flags=flags), encoding="utf-8")
@@ -453,7 +456,7 @@ class FinishPhase(Base):
 
     def test_feature_retro_gets_lead_log_from_pipeline_json(self):
         with open(os.path.join(self.d, "pipeline.json"), "w") as fh:
-            json.dump({"lead_log": ["/x/lead.jsonl"]}, fh)
+            json.dump({"lead_log": ["/x/lead.jsonl"], "docs_cite_final": False}, fh)
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("PIPELINE_LEAD_LOG", None)
             prompt = self._feature_retro_prompt()
