@@ -28,7 +28,7 @@ from .verdicts import AUDITORS
 TRIGGER_AGENTS = AUDITORS
 
 
-def is_trigger(d):
+def is_trigger(d) -> bool:
     return (
         d["agent"] in TRIGGER_AGENTS
         or (d["agent"] == "architect" and d.get("model") == MODEL_OPUS)
@@ -37,11 +37,11 @@ def is_trigger(d):
     )
 
 
-def trigger_log(a):
+def trigger_log(a) -> str:
     return os.path.join(a.dir, WORK_DIR, "triggers.jsonl")
 
 
-def log_trigger(a, rec):
+def log_trigger(a, rec) -> None:
     append_jsonl(trigger_log(a), {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "stage": a.stage, **rec})
 
 
@@ -140,7 +140,7 @@ def _number_signals(w):
     return sig
 
 
-def retro_signals(a):
+def retro_signals(a) -> list[tuple[str, str]]:
     """-> [(name, text)] for every retro signal that tripped, from orch.jsonl and triggers.jsonl. Context, turns and cost come from ledger.py (see cmd_retro)."""
     w, log = paths(a)
     evs = read_jsonl(log)

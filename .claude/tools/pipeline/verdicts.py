@@ -52,12 +52,12 @@ KILLED_RC = "rc=-"  # a claude run ended by a signal (`wave: claude rc=-9`): as 
 FINDING_SKIP_RE = re.compile(FINDING_SKIP_PATTERN, re.I)
 
 
-def is_unclear(reason):
+def is_unclear(reason) -> bool:
     """True when the report reason is one the auto retry runs for: no verdict line, no report file, a FAIL without findings, or a run killed by a signal."""
     return reason in UNCLEAR_REASONS or KILLED_RC in (reason or "")
 
 
-def missing_note(role, reason):
+def missing_note(role, reason) -> str:
     """The retry prompt for an unclear report: names the missing line and the words the role may answer with."""
     allowed, _ = ROLES[role]
     words = "|".join(allowed)
@@ -114,7 +114,7 @@ def _reviewer_stub(role, m, text):
     return bool(m) and m.group(1) == FAIL and role == REVIEWER and not _has_finding(text)
 
 
-def verdict(role, text, report_id=""):
+def verdict(role, text, report_id="") -> tuple[str, str]:
     """-> (verdict, reason). `VERDICT: X` on its own line wins; else ESCALATE:/dev heuristics; unclear = the role's safe verdict."""
     allowed, safe = ROLES[role]
     if role == MERGER:

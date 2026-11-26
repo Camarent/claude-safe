@@ -1,5 +1,6 @@
 """Shared helpers: jsonl, atomic text write, clock, stage paths, json-line print, tool subprocess."""
 
+import argparse
 import contextlib
 import json
 import math
@@ -28,11 +29,11 @@ from pipeline.configuration import (
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # tools dir of this checkout
 
 
-def now():
+def now() -> float:
     return time.time()
 
 
-def paths(a):
+def paths(a) -> tuple[str, str]:
     """-> (stage dir, orch.jsonl path) for any object with .dir and .stage."""
     w = os.path.join(a.dir, WORK_DIR, a.stage)
     if not os.path.exists(os.path.join(w, TASKS_FILE)):
@@ -44,7 +45,7 @@ def paths(a):
     return w, os.path.join(w, ORCH_LOG)
 
 
-def work_subdir(name):
+def work_subdir(name) -> str:
     """Subdir of .work/<stage>/ that holds file `name` ("" = top level)."""
     b = os.path.basename(name)
     if b.startswith("report-"):
@@ -56,7 +57,7 @@ def work_subdir(name):
     return ""
 
 
-def work_path(stage_dir, name, create=False):
+def work_path(stage_dir, name, create=False) -> str:
     """Path of file `name` in a stage dir by layout; create=True makes the subdir (writers). Readers fall back to the old top-level path when only that exists."""
     sub = work_subdir(name)
     new = os.path.join(stage_dir, sub, name)
@@ -69,7 +70,7 @@ def work_path(stage_dir, name, create=False):
     return new
 
 
-def parse_jsonl(lines, dicts_only=False):
+def parse_jsonl(lines, dicts_only=False) -> tuple[list, list[int]]:
     """-> (records, numbers of the unreadable lines) for LINES of JSONL. Blank lines are skipped; dicts_only drops other JSON values (silently)."""
     out, bad = [], []
     for n, line in enumerate(lines, 1):
@@ -85,7 +86,7 @@ def parse_jsonl(lines, dicts_only=False):
     return out, bad
 
 
-def read_jsonl(path, quiet=False, dicts_only=True, errors="strict"):
+def read_jsonl(path, quiet=False, dicts_only=True, errors="strict") -> list:
     """-> the records of a JSONL file ([] when missing). Blank lines are skipped; a line that is not JSON (a truncated last line after a crash) is skipped with one stderr warning unless QUIET.
     dicts_only (default) keeps only JSON objects: every log the pipeline writes holds objects, and a stray number or list must not reach `e["ev"]`; errors is the text decoding policy ("replace" tolerates bad bytes)."""
     if not os.path.exists(path):
@@ -97,7 +98,7 @@ def read_jsonl(path, quiet=False, dicts_only=True, errors="strict"):
     return out
 
 
-def scan_json(text, opens="{", line_start=False):
+def scan_json(text, opens="{", line_start=False) -> tuple[bool, object]:
     """-> (found, value): the first JSON document in TEXT that starts at a char of OPENS (at a line start when LINE_START); raw_decode from each candidate."""
     dec = json.JSONDecoder()
     pat = re.compile(f"^[{re.escape(opens)}]" if line_start else f"[{re.escape(opens)}]", re.M)
@@ -109,7 +110,7 @@ def scan_json(text, opens="{", line_start=False):
     return False, None
 
 
-def first_json_obj(text, greedy=False):
+def first_json_obj(text, greedy=False) -> dict | None:
     """-> the first JSON object (dict) in TEXT, or None. greedy=True: parse the span from the first `{` to the last `}` only (a model answer with one object); else raw_decode from each `{`."""
     text = text or ""
     if greedy:
@@ -130,13 +131,13 @@ def first_json_obj(text, greedy=False):
     return None
 
 
-def est_tokens(text):
+def est_tokens(text) -> int:
     """Conservative token estimate of `text`: ASCII chars / 3.5, every other char (Japanese, Cyrillic ...) as one token."""
     ascii_chars = sum(1 for c in text if c < "\x80")
     return int(ascii_chars / EST_ASCII_CHARS_PER_TOKEN) + len(text) - ascii_chars
 
 
-def text_arg(v):
+def text_arg(v) -> str:
     """V is `@file` (the file's text) or a literal."""
     if v.startswith("@"):
         with open(v[1:], encoding="utf-8") as f:
@@ -144,7 +145,7 @@ def text_arg(v):
     return v
 
 
-def append_jsonl(path, rec):
+def append_jsonl(path, rec) -> None:
     """Append one record as one `write` on an O_APPEND descriptor: concurrent writers (the driver and `orch report`) cannot interleave inside a line."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     lead = ""
@@ -160,7 +161,7 @@ def append_jsonl(path, rec):
         os.close(fd)
 
 
-def swallowed(where, exc):
+def swallowed(where, exc) -> None:
     """Best-effort paths swallow their errors by design; leave one stderr line so a hidden bug can still be seen."""
     print(f"swallowed in {where}: {type(exc).__name__}: {str(exc)[:200]}", file=sys.stderr)
 
@@ -168,7 +169,7 @@ def swallowed(where, exc):
 LOCAL_LOG_MAX_BYTES = 5 * 1024 * 1024  # past this the log moves to `.1` (one generation kept)
 
 
-def local_log(msg):
+def local_log(msg) -> None:
     """One timestamped line about a local-model call (request, answer time, slot wait) in $LOCALMODEL_LOG, else <tools home>/logs/localmodel.log. Never printed, never raises."""
     path = os.environ.get("LOCALMODEL_LOG") or os.path.join(HOME, "logs", "localmodel.log")
     try:
@@ -181,11 +182,11 @@ def local_log(msg):
         pass
 
 
-def append_event(log, ev):
+def append_event(log, ev) -> None:
     append_jsonl(log, {**ev, "t": now()})
 
 
-def read_text(path, default=""):
+def read_text(path, default="") -> str:
     if not os.path.exists(path):
         return default
     with open(path, encoding="utf-8") as f:
@@ -195,7 +196,7 @@ def read_text(path, default=""):
 NEW_FILE_MODE = 0o644  # mode of a file write_text creates (an existing file keeps its mode)
 
 
-def write_text(path, text):
+def write_text(path, text) -> None:
     """Atomic and durable: write a uniquely named temp file next to `path`, fsync it, then rename. Two writers of one path (threads included) never share a temp file, and a crash leaves the old file or the new one, not an empty one."""
     directory = os.path.dirname(os.path.abspath(path))
     os.makedirs(directory, exist_ok=True)
@@ -213,16 +214,16 @@ def write_text(path, text):
         raise
 
 
-def jprint(obj):
+def jprint(obj) -> None:
     print(json.dumps(obj))
 
 
-def run_py(script, *args, cwd=None, timeout=None):
+def run_py(script, *args, cwd=None, timeout=None) -> subprocess.CompletedProcess[str]:
     """Run `python3 -I tools/<script> <args>` capturing text output. -> CompletedProcess."""
     return subprocess.run([sys.executable, "-I", os.path.join(TOOLS, script), *args], cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def script_timeout(default=None):
+def script_timeout(default=None) -> float:
     """Seconds one script step may run: env ORCH_SCRIPT_TIMEOUT, else DEFAULT (SCRIPT_TIMEOUT_S when None). A bad value, 0, a negative, nan (nan > 0 is False) and inf (no finite wait for the OS timer) give DEFAULT."""
     default = float(SCRIPT_TIMEOUT_S if default is None else default)
     try:
@@ -232,7 +233,7 @@ def script_timeout(default=None):
     return v if math.isfinite(v) and v > 0 else default
 
 
-def run_capture(args, cwd=None, timeout=None, env=None, swallow=False, **kw):
+def run_capture(args, cwd=None, timeout=None, env=None, swallow=False, **kw) -> subprocess.CompletedProcess[str] | None:
     """subprocess.run with captured text output (check=False) -> CompletedProcess. swallow=True: -> None when the command cannot run or times out; else those errors raise."""
     try:
         return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env, check=False, **kw)
@@ -242,7 +243,7 @@ def run_capture(args, cwd=None, timeout=None, env=None, swallow=False, **kw):
         return None
 
 
-def default_dir():
+def default_dir() -> str:
     """Default for `--dir`: the nearest dir upward from the cwd that holds pipeline.json, else `.`. An agent that `cd`s into a nested repo still reaches the workspace's `.work`."""
     d = os.getcwd()
     while True:
@@ -254,11 +255,11 @@ def default_dir():
         d = up
 
 
-def unreported(evs):
+def unreported(evs) -> list[str]:
     """Ids of dispatches that got neither a report nor a later retry/skip/dispatch of the same task (a newer dispatch supersedes it)."""
     reported = {e["id"] for e in evs if e["ev"] == EV_REPORT}
 
-    def cleared(i, e):  # a later retry/skip/dispatch of the same task settles the dispatch
+    def cleared(i, e) -> bool:  # a later retry/skip/dispatch of the same task settles the dispatch
         return any(x["ev"] in (EV_RETRY, EV_SKIP, EV_DISPATCH) and x.get("task") == e.get("task") for x in evs[i + 1 :])
 
     return [e["id"] for i, e in enumerate(evs) if e["ev"] == EV_DISPATCH and e["id"] not in reported and not cleared(i, e)]
@@ -268,7 +269,7 @@ def unreported(evs):
 from pipeline.stagedir import STAGE_NAME_RE, stage_root  # noqa: E402, F401
 
 
-def add_common_args(ap, dir_default=".", stage=False, dir_required=False):
+def add_common_args(ap, dir_default=".", stage=False, dir_required=False) -> None:
     """The `--dir` (and, with STAGE, the required `--stage`) options most step scripts share."""
     if dir_required:
         ap.add_argument("--dir", required=True)
@@ -278,7 +279,7 @@ def add_common_args(ap, dir_default=".", stage=False, dir_required=False):
         ap.add_argument("--stage", required=True)
 
 
-def add_subcommand(sub, name, fn, stage_required=True):
+def add_subcommand(sub, name, fn, stage_required=True) -> argparse.ArgumentParser:
     """Argparse boilerplate of both CLIs: a subcommand with --stage and --dir."""
     p = sub.add_parser(name)
     p.add_argument("--stage", required=stage_required, default="" if not stage_required else None)

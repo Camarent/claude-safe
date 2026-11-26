@@ -52,7 +52,7 @@ def _add_depends(row, line):
         row["depends"] += [t for t in re.findall(r"(?:task|ops)-\d+", dep.group(1)) if t not in row["depends"]]
 
 
-def parse_tasks(tasks_md):
+def parse_tasks(tasks_md) -> list[dict[str, Any]]:
     """-> ordered list of {id, owner_sonnet, review_sonnet} from the TASKS.md table (wave order if a Graph line exists)."""
     if not os.path.exists(tasks_md):
         return []  # brief-only stage: the architect writes TASKS.md later
@@ -79,7 +79,7 @@ def parse_tasks(tasks_md):
     return [rows[t] for t in order]
 
 
-def depends_problem(tasks):
+def depends_problem(tasks) -> str | None:
     """-> a message when the `Depends:` lines are unusable (unknown task, itself, a cycle, or a Graph wave that is not after its dependencies), else None."""
     by = {t["id"]: t for t in tasks}
     for t in tasks:
@@ -93,7 +93,7 @@ def depends_problem(tasks):
     return None
 
 
-def parse_flags(tasks_md):
+def parse_flags(tasks_md) -> dict[str, Any]:
     """`flags: ui docs no-merge no-test no-audit no-publish` anywhere in TASKS.md. Default: merge, test, audit, release on; ui, docs off."""
     f: dict[str, Any] = {
         "ui": False,

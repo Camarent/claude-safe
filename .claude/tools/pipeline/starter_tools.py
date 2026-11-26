@@ -37,12 +37,12 @@ STARTERS = (
 )
 
 
-def detect(repo):
+def detect(repo) -> list[tuple[str, list[str]]]:
     """-> [(language, [lines])] for every language whose marker file is in the repo root."""
     return [(lang, lines) for marks, lang, lines in STARTERS if any(os.path.exists(os.path.join(repo, m)) for m in marks)]
 
 
-def draft(repo):
+def draft(repo) -> str:
     """-> the AUDIT.md block text to propose, or "" when no language is recognised."""
     found = detect(repo)
     if not found:

@@ -61,8 +61,8 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         self.assertEqual(tasks.parse_flags(t)["effort"], "low")  # high without a reason is ignored
         with open(t, "a", encoding="utf-8") as f:
             f.write("high-because: migration rewrites user data\n")
-        f = tasks.parse_flags(t)
-        self.assertEqual((f["effort"], f["why"]), ("high", "migration rewrites user data"))
+        flags = tasks.parse_flags(t)
+        self.assertEqual((flags["effort"], flags["why"]), ("high", "migration rewrites user data"))
         self.base()
         self.run_batch(["merger"], "DONE")
         self.run_batch(["tester", "web-tester"], "PASS", "PASS")

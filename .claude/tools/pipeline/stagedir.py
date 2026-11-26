@@ -13,7 +13,7 @@ def _bad_name(stage):
     return not stage.strip("/") or os.pardir in parts or os.curdir in parts or os.path.isabs(stage)
 
 
-def resolve_stage(d, stage, strict=True, phases=False):
+def resolve_stage(d, stage, strict=True, phases=False) -> str:
     """-> `<d>/.work/<stage>`.
     strict: D becomes absolute and a STAGE that is empty, absolute or holds a `.`/`..` part raises ValueError. Lenient (strict=False): any name, D as given.
     phases: when that dir does not exist, the first `.work/*/phases/<stage>` that does (S may be a bare phase name)."""
@@ -29,7 +29,7 @@ def resolve_stage(d, stage, strict=True, phases=False):
     return direct
 
 
-def stage_root(d, stage):
+def stage_root(d, stage) -> str | None:
     """-> the nearest dir upward from `d` (first; then the cwd) that holds `.work/<stage>`, or None. A bad STAGE name (`..`, absolute, other separators) gives None.
     The walk stops after the first dir holding `pipeline.json` and after the second git repo root (a nested repo sits inside its workspace), never reaching `/`."""
     if not STAGE_NAME_RE.fullmatch(stage or "") or ".." in stage:
@@ -47,7 +47,7 @@ def stage_root(d, stage):
     return None
 
 
-def workspace_of(d):
+def workspace_of(d) -> str:
     """The dir holding .work (where pipeline.json lives): D or the nearest parent named `.work`, one level up."""
     base = os.path.abspath(d)
     while os.path.basename(base) != WORK and os.path.dirname(base) != base:
