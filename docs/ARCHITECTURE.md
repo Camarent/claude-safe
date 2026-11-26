@@ -31,6 +31,10 @@ The repo builds the base image and optional toolchain layers, provides host-side
 - Setup: `scripts/dev.sh sync` needs `uv` and a system Python 3.11+ (`README.md:201`).
 - Tests of the pipeline live in `.claude/tools/tests/`.
 
+## Pipeline model route and tool settings
+- Model route: `.claude/tools/pipeline/e1.py:88` (`model_for`) decides every dev and reviewer model. Each dispatch starts on Haiku. Sonnet runs only when an E1 event holds (`e1.py:79`, `e1_event`): (a) the dev gate stayed red after the Haiku tries, (b) the dev reported ESCALATE, (c) a reviewer reported ESCALATE.
+- Tool settings: `.claude/tools/pipeline/configuration/literals.py:16` holds the named settings (timeouts, origin remote, price table), each with a default. An env override `CS_<NAME>` (`literals.py:14`) or the `tool_settings` object in `pipeline.json` (`literals.py:13`) replaces the default. Read them with `tool_setting` (`literals.py:97`).
+
 ## Pipeline module splits
 Five pipeline modules hold code moved out of older modules. Each old module re-exports the moved names, so old import paths keep working.
 - `.claude/tools/pipeline/worktree_base.py:25` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`worktree.py:21`).
@@ -41,7 +45,7 @@ Five pipeline modules hold code moved out of older modules. Each old module re-e
 
 ## Shared state
 - Tool caches and venv: `./.uv` in the checkout, or `DEV_UV_DIR` (`scripts/dev.sh:10`).
-- Pipeline stage state: `.work/` (not documented here).
+- Pipeline stage state is runtime data, kept in an ignored work folder, not in the repo.
 - Browser profile: `browser-profile/` on the host, mounted into the container (`README.md:43`).
 
 ## Docs
