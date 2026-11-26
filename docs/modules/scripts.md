@@ -14,7 +14,7 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `scripts/image_test.sh [IMAGE]` (`scripts/image_test.sh:5`, default `claude-safe:rust`). Runs the test suite in the image, repo mounted read-only.
 - `scripts/sync-claude-config.sh [--apply] [REF]`: sync `~/.claude` from a git ref; dry run by default (lists the files that would be overwritten, writes nothing), `--apply` writes; `--compare [REF]` writes nothing and exits 0 when `~/.claude` matches REF, 10 when a file would be overwritten (the driver's `pipeline_install_check`; it runs even while a driver holds the lock); refuses while a driver holds `.work/*/wave.lock` (`scripts/sync-claude-config.sh:40`).
 - `scripts/host_agents.py [--home DIR] [--out DIR] [--prefix pl-] [--apply]`: `main` at `scripts/host_agents.py:115`, `render` at `:104`.
-- `scripts/pipeline_auto.py feature|run ...`: execs `cs-wave` with the full default flags and permission mode `auto` (opt-in). `auto_flags` at `scripts/pipeline_auto.py:27`, `plan` at `:35`, `main` at `:44`. First argument other than `feature` or `run` exits 2 (`:50`).
+- `scripts/pipeline_auto.py run NAME` (or `feature NAME`): execs `cs-wave` with the full default flags and permission mode `auto` (opt-in). `auto_flags` at `scripts/pipeline_auto.py:27`, `plan` at `:35`, `main` at `:44`. First argument other than `feature` or `run` exits 2 (`:50`).
 
 ## Key files
 - `scripts/dev.sh` - dev checks; all tool caches live in `./.uv` (`:10`), or `DEV_UV_DIR`.
@@ -25,6 +25,7 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode; imports `pipeline.configuration` from `.claude/tools` (`scripts/pipeline_auto.py:16`).
 - `scripts/image_test.sh`, `scripts/dev.sh` - the image and host tests share `.claude/tools/ptest.py`.
 - `.claude/tools/pipeline/docs_impact.py` - stage gate: a doc that cites a file or top-level def the job diff changed must change too; `check` at `.claude/tools/pipeline/docs_impact.py:71`.
+- `.claude/tools/pipeline/entry.py` - shared entry helpers: the status-line formatter, the shared run flags, the open-phase resolver and the feature-level BLOCKED copy; `write_blocked` writes it.
 - `.claude/tools/pipeline/empty_tests.py` - stage gate: lists test functions in a Python test file that assert nothing; `find` at `.claude/tools/pipeline/empty_tests.py:46`.
 
 ## Invariants and gotchas
