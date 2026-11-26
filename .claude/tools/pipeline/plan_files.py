@@ -407,18 +407,23 @@ def task_affected_tests(text) -> str:
     return "" if v.lower().rstrip(".") == "none" else v
 
 
-TASK_TYPES = ("code", "report", "webtest")
+TASK_TYPES = ("code", "report", "webtest", "research")
 
 
 def task_type(text) -> str:
-    """The `Type:` header of a task file's text, lowercased; `code` when absent. `report` = the deliverable is a file outside any repo (no diff); `webtest` = a browser check the web-tester agent runs (no dev, no worktree: the task's `Test:` validates its report on the stage branch checkout)."""
-    m = re.search(r"(?im)^Type:[ \t]*(\S*)", text)
+    """The `Type:` (or `Kind:`) header of a task file's text, lowercased; `code` when absent. `report` = the deliverable is a file outside any repo (no diff); `webtest` = a browser check the web-tester agent runs (no dev, no worktree: the task's `Test:` validates its report on the stage branch checkout); `research` = a read-only investigation task."""
+    m = re.search(r"(?im)^(?:Type|Kind):[ \t]*(\S*)", text)
     return m[1].lower() if m else "code"
 
 
 def task_inputs(text) -> list[str]:
     """The `Inputs:` header lines of a task file's text, comma separated: [] when absent."""
     return [x.strip("` ") for m in re.finditer(r"(?im)^Inputs:[ \t]*(.*)$", text) for x in m[1].split(",") if x.strip("` ")]
+
+
+def task_outputs(text) -> list[str]:
+    """The `Outputs:` header lines of a task file's text, comma separated: [] when absent."""
+    return [x.strip("` ") for m in re.finditer(r"(?im)^Outputs:[ \t]*(.*)$", text) for x in m[1].split(",") if x.strip("` ")]
 
 
 def task_paths(d, tid) -> list[str]:
