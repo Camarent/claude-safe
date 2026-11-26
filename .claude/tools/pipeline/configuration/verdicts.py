@@ -24,7 +24,8 @@ DEV, REVIEWER, MERGER, TESTER, WEB_TESTER, DOCS_WRITER, OPS, SCRIPT, PUBLISHER, 
 SCOUT = "scout"  # read-only research: writes its report to the task's Outputs: path (research_apply.py)
 MODEL_HAIKU, MODEL_SONNET, MODEL_OPUS = "haiku", "sonnet", "opus"  # model names of `claude --model` and the agent files
 UX_REVIEWER = "ux-reviewer"
-AUDITORS = ("sec-auditor", "arch-auditor", UX_REVIEWER)
+FRESHNESS_AUDITOR = "freshness-auditor"  # docs freshness audit: one Haiku pass per feature at its finish phase (no escalation)
+AUDITORS = ("sec-auditor", "arch-auditor", UX_REVIEWER, FRESHNESS_AUDITOR)
 AUDITOR_ESCALATE = ("sec-auditor", "arch-auditor")  # auditors that start on a cheaper model and may answer ESCALATE (unfinished areas) to get one Opus rerun
 AUDITOR_START_MODEL = {
     "sec-auditor": MODEL_SONNET,

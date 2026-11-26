@@ -75,5 +75,18 @@ class AgentRules(unittest.TestCase):
         self.assertIn("Edit and resolve nothing except step 4's `__init__.py` case", text)
 
 
+class FreshnessAuditorAgent(unittest.TestCase):
+    def test_freshness_auditor_is_read_only_haiku(self):
+        text = read(os.path.join(AGENTS, "freshness-auditor.md"))
+        front = text.split("---", 2)[1]
+        self.assertIn("model: haiku", front)
+        self.assertIn("effort: low", front)
+        tools = next(ln for ln in front.splitlines() if ln.startswith("tools:"))
+        self.assertNotIn("Edit", tools)
+        self.assertNotIn("Write", tools)
+        self.assertIn("VERDICT: CLEAN", text)
+        self.assertIn("VERDICT: FIXES", text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -85,6 +85,8 @@ PROJECT_DEFAULTS: dict = {
     "docs_impact_gate": True,  # docs impact check (pipeline/docs_impact.py, after the cite check): a changed file or top-level def a doc cites needs that doc changed too; false = off
     # cite check over the whole docs folder at every stage end (steps_finaltest.py --doc-cites), not only the docs the stage changed; false = no step
     "docs_cite_final": True,
+    # docs freshness audit (freshness-auditor, Haiku): once per feature, in its finish phase, beside sec and arch; false = no audit
+    "docs_fresh_audit": True,
     "empty_test_gate": True,  # empty-test check (pipeline/empty_tests.py, after the docs impact check): a changed test function with no assert, raises check or mock assertion is FAIL; false = off
     "empty_test_marker": EMPTY_TEST_MARKER_DEFAULT,  # comment on the def line or the line above that skips a test with no assertion; it must give a reason after the colon
     "empty_test_file_re": EMPTY_TEST_FILE_RE,  # regex over the repo path: the changed files the empty-test check reads as test files

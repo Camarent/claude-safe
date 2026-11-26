@@ -661,6 +661,7 @@ from .verdicts import (  # noqa: F401  (re-export: the facade keeps every name i
     FAIL,
     FEATURE_LOCK,
     FIXES,
+    FRESHNESS_AUDITOR,
     LANDED,
     MERGE_CONFLICT_MARK,
     MERGE_FIX_TRIES,

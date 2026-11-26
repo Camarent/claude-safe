@@ -48,6 +48,8 @@ ADD_DIR_AGENTS = (
     "pl-arch-auditor",
     "sec-auditor",
     "pl-sec-auditor",
+    "freshness-auditor",
+    "pl-freshness-auditor",
     "scout",
     "pl-scout",
     "researcher",
