@@ -18,13 +18,13 @@ class IncidentsTest(unittest.TestCase):
         self.d = self.tmp.name
         base = Path(self.d, ".work", "s")
         (base / "patches").mkdir(parents=True)
-        (base / "patches" / "task-1.patch").write_text(PATCH_A, encoding="utf-8")
+        (base / "patches" / "alpha.patch").write_text(PATCH_A, encoding="utf-8")
         (base / "patches" / "task-2__sub_c.patch").write_text(PATCH_B, encoding="utf-8")
-        (base / "task-1.md").write_text("spec of task 1", encoding="utf-8")
+        (base / "alpha.md").write_text("spec of task 1", encoding="utf-8")
         (base / "reports").mkdir(exist_ok=True)
         (base / "reports" / "report-a9.md").write_text("FAIL: src/a.js:3 expected 1 got 2", encoding="utf-8")
         evs = [
-            {"ev": "report", "id": "a1", "task": "task-1", "role": "reviewer", "verdict": "PASS"},
+            {"ev": "report", "id": "a1", "task": "alpha", "role": "reviewer", "verdict": "PASS"},
             {"ev": "report", "id": "a2", "task": "task-2", "role": "reviewer", "verdict": "FAIL"},
             {"ev": "report", "id": "a9", "task": "final-test", "role": "script", "verdict": "FAIL", "file": str(base / "reports" / "report-a9.md")},
             {"ev": "report", "id": "a10", "task": "final-test", "role": "script", "verdict": "DONE"},
@@ -37,10 +37,10 @@ class IncidentsTest(unittest.TestCase):
     def test_scan_matches_failure_text_to_the_task_patch(self):
         stubs = incidents.scan(self.d, "s")
         self.assertEqual(len(stubs), 1)  # the green final-test is no trigger
-        self.assertEqual([c["task"] for c in stubs[0]["candidates"]], ["task-1"])
+        self.assertEqual([c["task"] for c in stubs[0]["candidates"]], ["alpha"])
         self.assertEqual(stubs[0]["candidates"][0]["reviewer"], ["PASS"])
         self.assertTrue(os.path.exists(f"{self.d}/.work/s/retro/incidents.json"))
-        self.assertIn("task-1 (review: PASS)", "\n".join(incidents.render(stubs, "s")))
+        self.assertIn("alpha (review: PASS)", "\n".join(incidents.render(stubs, "s")))
 
     def test_scan_without_events_is_empty(self):
         self.assertEqual(incidents.scan(self.tmp.name + "/none", "x"), [])
@@ -66,6 +66,34 @@ class IncidentsTest(unittest.TestCase):
             incidents.keep(self.d, "s", "i1", "maybe", "x")
         with self.assertRaises(ValueError):
             incidents.keep(self.d, "s", "i9", "unclear", "x")
+
+    def _write_slow_rows(self, lines):
+        (Path(self.d, ".work", "s", "retro")).mkdir(parents=True, exist_ok=True)
+        Path(self.d, ".work", "s", "retro", "slow-suite.jsonl").write_text("\n".join(lines), encoding="utf-8")
+
+    def test_slow_suite_row_ranks_first(self):
+        good = '{"kind": "slow-suite", "project": "proj", "step": "cmd: pytest", "seconds": 612.3, "limit": 600}'
+        bad_kind = '{"kind": "other", "project": "proj", "step": "x", "seconds": 1, "limit": 2}'
+        bad_num = '{"kind": "slow-suite", "project": "proj", "step": "x", "seconds": "slow", "limit": 600}'
+        self._write_slow_rows([good, bad_kind, bad_num, "not json"])
+        stubs = incidents.scan(self.d, "s")
+        self.assertEqual([s["trigger"] for s in stubs], ["slow-suite", "final-test FAIL"])
+        self.assertEqual([s["id"] for s in stubs], ["i1", "i2"])
+        self.assertEqual(stubs[0]["candidates"], [])
+        self.assertIn("proj cmd: pytest 612.3s over limit 600s", stubs[0]["failure"])
+        self.assertIn(
+            "  i1: slow-suite proj cmd: pytest 612.3s over limit 600s: raise tool_settings.script_timeout_s or skip with --note",
+            incidents.render(stubs, "s"),
+        )
+
+    def test_keep_slow_suite_stub_saves_no_patch(self):
+        self._write_slow_rows(['{"kind": "slow-suite", "project": "proj", "step": "cmd: pytest", "seconds": 612.3, "limit": 600}'])
+        incidents.scan(self.d, "s")
+        path = incidents.keep(self.d, "s", "i1", "reviewer-miss", "timed out, not a review miss")
+        text = Path(path).read_text(encoding="utf-8")
+        self.assertIn("task: unknown", text)
+        self.assertIn("proj cmd: pytest 612.3s over limit 600s", text)
+        self.assertFalse(Path(self.d, ".notes", "incidents", "s-i1.patch").exists())
 
 
 if __name__ == "__main__":

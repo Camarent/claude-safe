@@ -53,6 +53,7 @@ line; the request brief). When its report arrives the outcome (CLEAN, FIXES, LAN
 Use it at stage retro to see which high-effort or audit calls found something, and tune the "risky" criteria in `practices/planning.md`.
 
 ## Retro
+- Slow-suite incidents (`retro/slow-suite.jsonl`, a command that hit its time limit) are listed first in the retro digest.
 - Incidents: `wt.py merge` saves each task's diff to `.work/<stage>/patches/<task>[__<repo>].patch` before the squash and the worktree removal. `orch.py retro` runs `retro/incidents.py scan` (red `final-test`, `merge-fix`, blocked `pr-ready` matched to the patches by file names in the failure text) and prints one INCIDENT line per trigger. The lead reads each, then `retro/incidents.py keep --stage S --id I --label reviewer-miss|not-a-miss|unclear --cause ".."` writes `<project>/.notes/incidents/<stage>-<id>.md`; `reviewer-miss` also keeps the patch and the task spec as a future reviewer-eval case. Project data: stays in the project's `.notes`, never in the shared pipeline.
 When `/run-feature` finishes with `retro needed (...)`, the main session runs `orch.py retro --stage S`, adds the transcript numbers from `retro/ledger.py` / `retro/agent_cost.py`,
 and writes `.work/S/retro/retro.md` (<= 15 lines: tripped signals with numbers, one-line cause each, the pipeline change made in the same pass). A retro is due when any of:
