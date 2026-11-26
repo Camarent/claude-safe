@@ -87,6 +87,12 @@ explicit_package_bases = true
 module = ["audit.*", "localmodel.*", "pipeline.*", "search.*", "retro.*", "brieflint", "cmd_guard", "codenames", "commit", "docs_index", "index_step", "local", "merge_wave", "model_guard", "ops_steps", "orch", "plan", "pr_steps", "ptest", "qrun", "review_guard", "sync_caveman", "testrun", "ux_run", "wave", "wt", "xtools", "tests.*"]
 check_untyped_defs = true
 
+# fully typed pipeline modules: every public def has parameter and return annotations (docs/decisions.md)
+[[tool.mypy.overrides]]
+module = ["pipeline", "pipeline.agents", "pipeline.configuration", "pipeline.configuration.ci_poll", "pipeline.configuration.cite_check", "pipeline.configuration.cleanup", "pipeline.configuration.defaults", "pipeline.configuration.env", "pipeline.configuration.errors", "pipeline.configuration.layout", "pipeline.configuration.limits", "pipeline.configuration.planning", "pipeline.configuration.pr_gates", "pipeline.configuration.public", "pipeline.configuration.qrun", "pipeline.configuration.serve", "pipeline.configuration.tuning", "pipeline.configuration.verdicts", "pipeline.plan_review", "pipeline.run", "pipeline.steps_docfix", "pipeline.verify_retry", "pipeline.webskip", "pipeline.worktrees"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
 # tests monkeypatch on purpose: `lambda: seen.append(x) or y` and `obj.method = fake` are idiomatic there
 [[tool.mypy.overrides]]
 module = ["tests.*"]

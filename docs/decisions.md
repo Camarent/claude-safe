@@ -194,3 +194,12 @@ Owner decisions for the packaging and safety task (task-9). Reason = the report 
 ## E1 dispatch and old logs
 
 Reason: the model route is one rule now: a Sonnet dev or reviewer needs an E1 event, logged as `E1(a|b|c)` (`pipeline/e1.py`). Old logs with a ccn or extra-round why still parse: the task state reads the why as text and no parser drops it. A running stage whose task sits on Sonnet without an E1 event gets Haiku at its next dispatch, because the model is read from the events, not from a flag. Reason for the change: owner cost decision, fewer Sonnet dispatches.
+
+## Strict typing: disallow_untyped_defs (task-13)
+
+Reason: the modules below have every def annotated, so mypy runs them with `disallow_untyped_defs = true` and `disallow_incomplete_defs = true` (the `[[tool.mypy.overrides]]` block in `pyproject.toml`). Found by running mypy with that flag and keeping the modules with no error line; no source was edited for this. Other modules stay on the looser default until their defs are annotated.
+
+Modules (24, `pipeline` package):
+
+- `pipeline`, `pipeline.agents`, `pipeline.plan_review`, `pipeline.run`, `pipeline.steps_docfix`, `pipeline.verify_retry`, `pipeline.webskip`, `pipeline.worktrees`
+- `pipeline.configuration`, `pipeline.configuration.ci_poll`, `pipeline.configuration.cite_check`, `pipeline.configuration.cleanup`, `pipeline.configuration.defaults`, `pipeline.configuration.env`, `pipeline.configuration.errors`, `pipeline.configuration.layout`, `pipeline.configuration.limits`, `pipeline.configuration.planning`, `pipeline.configuration.pr_gates`, `pipeline.configuration.public`, `pipeline.configuration.qrun`, `pipeline.configuration.serve`, `pipeline.configuration.tuning`, `pipeline.configuration.verdicts`
