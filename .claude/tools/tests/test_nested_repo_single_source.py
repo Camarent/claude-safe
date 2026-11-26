@@ -102,7 +102,7 @@ class WaveConflictShared(unittest.TestCase):
     def test_other_wave_is_free(self):
         ents = [self.write(1, "a/x.py")]
         ents[0]["wave"] = 2
-        plan_insert._check_overlap(ents, {"id": "task-9", "wave": 1}, ["a/x.py"], {"task-1": plan_files.task_path_modes(self.d, "task-1")})
+        self.assertIsNone(plan_insert._check_overlap(ents, {"id": "task-9", "wave": 1}, ["a/x.py"], {"task-1": plan_files.task_path_modes(self.d, "task-1")}))
 
 
 class OverlapReadsOnce(unittest.TestCase):
@@ -117,7 +117,8 @@ class OverlapReadsOnce(unittest.TestCase):
         with mock.patch.object(plan_check, "task_path_modes", wraps=plan_files.task_path_modes) as read:
             probs = plan_check._overlap_problems(d, ents)
         self.assertEqual(read.call_count, len(ents))
-        self.assertEqual([p.split(" share")[0] for p in probs], ["task-1 and task-3", "task-2 and task-5"])
+        ids = [e["id"] for e in ents]
+        self.assertEqual([p.split(" share")[0] for p in probs], [f"{ids[0]} and {ids[2]}", f"{ids[1]} and {ids[4]}"])
 
 
 if __name__ == "__main__":

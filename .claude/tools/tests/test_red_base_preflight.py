@@ -181,21 +181,21 @@ class RedBasePreflightTest(unittest.TestCase):
 class RedBaseFlagGoneTest(unittest.TestCase):
     """--allow-red-base no longer exists: a red base always blocks."""
 
-    def parse_fails(self, parse, argv):
+    def assert_parse_fails(self, parse, argv):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             parse(argv)
 
     def test_plan_run_rejects_flag(self):
-        self.parse_fails(cli_plan.build().parse_args, ["run", "--feature", "f", "--prompt-file", "p", "--allow-red-base"])
+        self.assert_parse_fails(cli_plan.build().parse_args, ["run", "--feature", "f", "--prompt-file", "p", "--allow-red-base"])
 
     def test_wave_run_rejects_flag(self):
-        self.parse_fails(cli_wave.main, ["run", "--stage", "s", "--dir", ".", "--dry-run", "--allow-red-base"])
+        self.assert_parse_fails(cli_wave.main, ["run", "--stage", "s", "--dir", ".", "--dry-run", "--allow-red-base"])
 
     def test_feature_rejects_flag(self):
         ap = argparse.ArgumentParser()
         sub = ap.add_subparsers(dest="cmd", required=True)
         cli_feature.add_feature_command(sub)
-        self.parse_fails(ap.parse_args, ["feature", "--feature", "f", "--allow-red-base"])
+        self.assert_parse_fails(ap.parse_args, ["feature", "--feature", "f", "--allow-red-base"])
 
 
 if __name__ == "__main__":

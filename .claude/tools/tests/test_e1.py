@@ -196,7 +196,7 @@ class ReplayTest(_SeqBase):
 
     nxt = RouteTest.nxt
 
-    def check(self, mine, task=TASK):
+    def assert_e1_why(self, mine, task=TASK):
         r = self.nxt(mine, task)
         if r and r.get("action") == "dispatch" and r["agent"] in ("dev", "reviewer") and r["model"] in (MODEL_SONNET, MODEL_OPUS):
             self.assertTrue((r.get("why") or "").startswith("E1("), mine)
@@ -226,15 +226,15 @@ class ReplayTest(_SeqBase):
             [dev("a1"), rep("BLOCKED", "dev", "a1")],
         ]
         for mine in logs:
-            self.check(mine)
-        self.check([], {**TASK, "owner_sonnet": True})
-        self.check([dev("a1"), done("a1"), rev("a2"), rep("FAIL", "reviewer", "a2")], {**TASK, "review_sonnet": True})
+            self.assert_e1_why(mine)
+        self.assert_e1_why([], {**TASK, "owner_sonnet": True})
+        self.assert_e1_why([dev("a1"), done("a1"), rev("a2"), rep("FAIL", "reviewer", "a2")], {**TASK, "review_sonnet": True})
 
     def test_e1_events_each_dispatch_sonnet_with_their_why(self):
-        self.assertEqual(self.check([dev("a1"), rep("ESCALATE", "dev", "a1")])["why"][:5], "E1(b)")
-        self.assertEqual(self.check([dev("a1"), done("a1"), rev("a2"), rep("ESCALATE", "reviewer", "a2")])["why"][:5], "E1(c)")
+        self.assertEqual(self.assert_e1_why([dev("a1"), rep("ESCALATE", "dev", "a1")])["why"][:5], "E1(b)")
+        self.assertEqual(self.assert_e1_why([dev("a1"), done("a1"), rev("a2"), rep("ESCALATE", "reviewer", "a2")])["why"][:5], "E1(c)")
         reds = [dev("a1"), done("a1"), script("a2", "test run: x"), red(self.d, "a2"), dev("a3"), done("a3"), script("a4", "test run: x"), red(self.d, "a4")]
-        self.assertEqual(self.check(reds)["why"][:5], "E1(a)")
+        self.assertEqual(self.assert_e1_why(reds)["why"][:5], "E1(a)")
 
 
 if __name__ == "__main__":
