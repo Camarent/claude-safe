@@ -659,6 +659,7 @@ from .verdicts import (  # noqa: F401  (re-export: the facade keeps every name i
     RERUN_FROM,
     REVIEWER,
     ROLES,
+    SCOUT,
     SCRIPT,
     SEVERE_PATTERN,
     SKIPPED,

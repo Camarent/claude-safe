@@ -106,6 +106,17 @@ def webtest_prompt(a, task, rid) -> str:
     )
 
 
+def research_prompt(a, task, rid) -> str:
+    """The brief of a `Type: research` task for the scout (read-only, no Write tool): the task file is the checklist; the scout's reply is the report, the lead saves it."""
+    t = os.path.join(os.path.abspath(a.dir), WORK_DIR, a.stage, f"{task['id']}.md")
+    return (
+        f"Stage {a.stage}: answer the research question of the task in {t} (read it there; index .work/{a.stage}/TASKS.md). Do its Goal and Steps; read the tree only, never edit or delete."
+        " Your reply is the document the task names, not a file: you have no Write tool, so the lead saves your reply as the report."
+        " The first line of your reply is `VERDICT: DONE|BLOCKED` (BLOCKED when the question cannot be answered from the tree; then say why in the body), then the document body."
+        f" Scratchpad for temp files: {WORK_DIR}/{a.stage}/{SCRATCH_DIR}/ (write nothing temporary elsewhere). Report id: {rid}."
+    )
+
+
 def extra_leads(d, text) -> str:
     """Exact, no-model parts for a brief: where the names marked with backticks are defined, and the outline of each file under Predicted paths. "" when lp has nothing."""
     try:
