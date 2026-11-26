@@ -18,7 +18,7 @@ PRACTICES_DIR = os.path.join(HOME, "practices")
 GUIDELINES_DIR = os.path.join(PRACTICES_DIR, "guidelines")  # guidelines.py / prepare_repo.py: one <lang>.md per language plus base.md
 
 
-def tool_cmd(script):
+def tool_cmd(script) -> str:
     """Command prefix that runs a pipeline tool in isolated mode: tool_cmd("qrun.py") -> "python3 -I <tools>/qrun.py"."""
     return f"python3 -I {os.path.join(TOOLS_DIR, script)}"
 
@@ -31,7 +31,7 @@ def _cs_index():
         return None
 
 
-def cs_names(index=None):
+def cs_names(index=None) -> tuple[str, ...]:
     """Every container-side `cs-*` name (prefix from the index) plus its aliases that carry the prefix; derived from cmdnames.names_for."""
     index = index or _cs_index()
     if not index:
@@ -46,6 +46,6 @@ QRUN_PATTERN = (  # head of a qrun call: `python3 -I .../qrun.py`, a bare path t
 )
 
 
-def allowed(*words):
+def allowed(*words) -> str:
     """Verdict list as written in a report instruction: allowed(DONE, FAIL) -> "DONE|FAIL"."""
     return "|".join(words)

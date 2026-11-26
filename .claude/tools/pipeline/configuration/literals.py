@@ -5,6 +5,7 @@ and leaves a swallowed() line on stderr."""
 import math
 import os
 import re
+from typing import Any
 
 from .errors import ConfigError
 from .project import project
@@ -93,7 +94,7 @@ def _swallow(where, exc):
     swallowed(where, exc)
 
 
-def tool_setting(name):
+def tool_setting(name) -> Any:  # the type follows the setting: a float timeout, the remote str or the price tuple of _SETTINGS
     """-> the value of the named tool setting (a key of _SETTINGS): env `CS_<NAME>` first (when allowed), then pipeline.json `tool_settings.<key>` of the
     project at the cwd (tools run from the workspace root), then the default. A value that does not parse falls back and is reported."""
     default, key, parse, env_ok = _SETTINGS[name]

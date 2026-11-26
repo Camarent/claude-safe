@@ -19,7 +19,7 @@ def _check_publish_entry(e, files, bad):
         raise ConfigError("pipeline.json: `publish` `cwd` and `files` keys must be relative paths inside the project (no leading / and no ..)")
 
 
-def publish_entries(cfg):
+def publish_entries(cfg) -> dict:
     """-> {url: {"cwd", "build", "page", "files"}} from cfg `publish` (validated; {} when absent). `cwd` defaults to ".", `files` to {}."""
     raw = cfg.get(PUBLISH_KEY) or {}
     bad = 'pipeline.json: `publish` must map an artifact URL to {"build": "<one command>", "page": "<file>", "cwd": "<dir>", "files": {"<published path>": "<file>"}}'
