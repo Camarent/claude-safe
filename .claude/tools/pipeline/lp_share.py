@@ -48,7 +48,7 @@ def _bash_kind(cmd):
     return None
 
 
-def classify(name, inp):
+def classify(name, inp) -> str | None:
     """-> 'local:find' | 'local:nav-<sub>' | 'grep' | 'glob' | None for one tool_use block.
     Calls aimed at the pipeline itself (the pipeline HOME) or at docs/logs are not project code search: None."""
     inp = inp or {}
@@ -65,7 +65,7 @@ def classify(name, inp):
     return None
 
 
-def count_file(path, c=None):
+def count_file(path, c=None) -> collections.Counter:
     """Add the search-call counts of one transcript file to Counter c."""
     c = collections.Counter() if c is None else c
     try:
@@ -85,7 +85,7 @@ def count_file(path, c=None):
     return c
 
 
-def share(c):
+def share(c) -> float:
     """local.py calls / search calls for an UNKNOWN location (local search + grep/glob; a grep in one named file is not counted), 0.0 when none."""
     loc = sum(v for k, v in c.items() if k.startswith("local:"))
     tot = loc + c.get("grep", 0) + c.get("glob", 0)

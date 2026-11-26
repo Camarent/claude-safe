@@ -54,7 +54,7 @@ def _notes_lines(text, phase):
     return ("\n".join(hit) or text)[:NOTES_CAP]
 
 
-def brief_digest(request, context, cap=BRIEF_DIGEST_BYTES):
+def brief_digest(request, context, cap=BRIEF_DIGEST_BYTES) -> str:
     """-> at most CAP UTF-8 bytes for a fix architect's brief: the head of request.md, then the head of plan-context.md with what room is left."""
     head = "## request (head)\n" + request.strip() + "\n\n## plan context (head)\n"
     return (head + context.strip()).encode("utf-8")[:cap].decode("utf-8", errors="ignore")
@@ -71,7 +71,7 @@ def _plan_rows(fdir):
     return pf.parse_phase_rows(_read(os.path.join(fdir, PLAN_FILE)))
 
 
-def earlier_rows(fdir, phase):
+def earlier_rows(fdir, phase) -> list:
     """Plan.md rows before PHASE, in order."""
     rows = _plan_rows(fdir)
     return rows[: next((i for i, r in enumerate(rows) if r["dir"] == phase["dir"]), 0)]
@@ -102,7 +102,7 @@ def _open_fixes(audit_files):
     return [f for f in latest.values() if _verdict(f) == FIXES]
 
 
-def earlier_open_items(fdir, phase, workspace):
+def earlier_open_items(fdir, phase, workspace) -> list:
     """Open items of the phases before PHASE: FAIL reports, DEVIATION and DOCS-STALE lines, audits whose last round says FIXES (one line each, not capped; the digest caps them)."""
     out = []
     for r in earlier_rows(fdir, phase):
@@ -192,7 +192,7 @@ def _part(label, build):
         return [f"(digest part failed: {label}: {type(ex).__name__}: {str(ex)[:200]})"]
 
 
-def phase_digest(fdir, phase, workspace):
+def phase_digest(fdir, phase, workspace) -> list:
     """The digest of the phases before PHASE: final task states, deviations, open items (capped), merged work per repo (capped)."""
     rows = earlier_rows(fdir, phase)
     base, head = _phase_base_head(workspace, os.path.basename(os.path.abspath(fdir)))
@@ -218,7 +218,7 @@ def _phase_base_head(workspace, feature=""):
     return cfg["branch_release"], work_branch(cfg, feature)
 
 
-def phase_context(repo, feature_dir, phase, cfg=None, digest=None):
+def phase_context(repo, feature_dir, phase, cfg=None, digest=None) -> str:
     """Context file text for the architect that plans PHASE (a Plan.md row dict): goal, plan-notes decisions, earlier phases' digest, file digest. DIGEST(repo, text, cfg) -> lines is the model part (none: a one-line note). Never raises on Strata or index failure; failures are logged to stderr."""
     cfg = cfg or CTX_DEFAULTS
     workspace = os.path.dirname(os.path.dirname(os.path.abspath(feature_dir)))
@@ -254,7 +254,7 @@ def phase_context(repo, feature_dir, phase, cfg=None, digest=None):
     return "\n".join(lines) + "\n"
 
 
-def predicted_missing(paths, digest_lines, repo):
+def predicted_missing(paths, digest_lines, repo) -> list:
     """-> the Predicted paths that exist in REPO as files but that no digest line names, in plan order."""
     shown = "\n".join(digest_lines)
     return [p for p in paths if p not in shown and os.path.isfile(os.path.join(repo, p))]

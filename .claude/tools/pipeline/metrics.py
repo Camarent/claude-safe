@@ -7,7 +7,7 @@ from .configuration import BLOCKED, FAIL
 from .util import append_jsonl, now, read_jsonl
 
 
-def session_line(c, id, agent, model, u, verdict="", task="", reason=""):
+def session_line(c, id, agent, model, u, verdict="", task="", reason="") -> dict:
     """Record one session; `u` is a claude.usage() dict; an optional u["tools"] ({name: calls}) is stored as-is.
     A dispatch without a model runs on the agent file's default: that name is recorded, not null."""
     if not model and agent != "script":
@@ -47,12 +47,12 @@ def session_line(c, id, agent, model, u, verdict="", task="", reason=""):
     return rec
 
 
-def event(c, name, **fields):
+def event(c, name, **fields) -> None:
     """One free-form stat line (ev = NAME), e.g. the plan-context step; readers that look for ev == "session" skip it."""
     append_jsonl(c.metrics, {"ev": name, "ts": now(), "stage": c.stage, **fields})
 
 
-def wave_line(c, wall):
+def wave_line(c, wall) -> None:
     rec = {
         "ev": "wave",
         "ts": now(),
@@ -68,12 +68,12 @@ def wave_line(c, wall):
     c.sess = []
 
 
-def total_line(c):
+def total_line(c) -> None:
     ss = [r for r in read_jsonl(c.metrics) if r.get("ev") == "session"]
     append_jsonl(c.metrics, {"ev": "total", "ts": now(), "stage": c.stage, "waves": c.wave, "sessions": len(ss), **{k: sum(s[k] for s in ss) for k in SUMS}})
 
 
-def aggregate(rows):
+def aggregate(rows) -> dict:
     """-> {(model, agent): sums + sessions} over the session lines."""
     agg: defaultdict = defaultdict(lambda: dict.fromkeys(SUMS, 0) | {"sessions": 0})
     for r in rows:
@@ -85,7 +85,7 @@ def aggregate(rows):
     return dict(agg)
 
 
-def session_totals(path):
+def session_totals(path) -> tuple[int, float]:
     """-> (sessions, USD) over every `session` row of a metrics.jsonl, ops and script steps included."""
     ss = [r for r in read_jsonl(path) if r.get("ev") == "session"]
     return len(ss), sum(r.get("cost_usd") or 0 for r in ss)

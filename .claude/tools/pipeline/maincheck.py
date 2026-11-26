@@ -79,7 +79,7 @@ def _base_path(a_dir, stage, task):
     return os.path.join(os.path.dirname(root), MAIN_BASE_FILE)
 
 
-def snapshot(a_dir, stage, task):
+def snapshot(a_dir, stage, task) -> None:
     """Record the main checkout's dirty state when a dev starts; the first call wins (a later attempt must not absorb an earlier attempt's writes). Errors leave no baseline."""
     with contextlib.suppress(*ERRORS):
         path = _base_path(a_dir, stage, task)
@@ -120,7 +120,7 @@ def _revert_state(a_dir, stage, task, repo, cfg, files):
     return MAIN_UNSAVED_STATE.format(patch=patch or WORK_DIR)
 
 
-def read_writers(a_dir, stage):
+def read_writers(a_dir, stage) -> dict:
     """-> {path: job} of the guard log of STAGE (the first job denied a write to that path). A missing or unreadable log, or a bad line, gives no entry ({} for none)."""
     try:
         with open(os.path.join(os.path.abspath(a_dir), WORK_DIR, stage, GUARD_LOG_FILE), encoding="utf-8") as f:
@@ -152,7 +152,7 @@ def _listing(repo, changed, owner, started):
     )
 
 
-def check(a_dir, stage, task):
+def check(a_dir, stage, task) -> str:
     """-> "" or the MAIN-DIRT note naming the files that are new or changed in the main checkout since the snapshot. The dev's own tracked writes are saved to a patch and reverted; the rest is only named. A path the guard log attributes to another job is left to that job's check. No snapshot: no verdict."""
     try:
         path = _base_path(a_dir, stage, task)
@@ -176,6 +176,6 @@ def check(a_dir, stage, task):
     return note + " " + _revert_state(a_dir, stage, task, repo, cfg, mine)
 
 
-def dirt(note):
+def dirt(note) -> bool:
     """True when NOTE is a check() note about the main checkout (not a dev's own failure)."""
     return note.startswith(MAIN_DIRT_PREFIX)
