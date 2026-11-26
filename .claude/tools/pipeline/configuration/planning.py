@@ -165,6 +165,10 @@ DOCS_COUNT_PREFIX = "docs-count:"  # warning prefix of the docs-count rule (a ta
 DOCS_COUNT_RE = (
     r"(?i)line numbers?|path:line|count of|number of (files|lines|tests|functions|symbols)|\bN lines"  # a docs line that pins a count or a line number
 )
+DOCS_COUNT_MSG = "describe the behaviour instead; counts and line numbers belong to docs/INDEX.md (generated), which is not written by hand"  # tail of the docs-count error line
+DOCS_INDEX_PATH = "docs/INDEX.md"  # generated docs index: its counts are not hand-written (plan_docs_counts)
+HAND_DOC_DIRS = ("docs/", ".claude/practices/")  # a hand-written doc is a .md path under one of these folders (plan_docs_counts)
+HAND_DOC_NAMES = ("ORCHESTRATOR.md",)  # a hand-written doc by file name (plan_docs_counts)
 TESTCMD_WARN_PREFIX = "testcmd:"  # warning prefix of plan_testcmd.check_bare_test_runner; plan_check.errors_of never fails on it
 TESTCMD_HINT_KEY = "test_command_hint"  # pipeline.json: the project's real test command (what a `Test:` line should run instead of bare pytest); when unset a `gates` command that runs pytest through a wrapper is used
 BARE_RUNNER_RE = r"^(?:pytest|py\.test|(?:python[\d.]*)(?:\s+-\w+)*\s+-m\s+pytest)(?:\s|$)"  # a command that starts pytest with no wrapper
