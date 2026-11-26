@@ -499,14 +499,14 @@ def db_start_note(a) -> str:
 
 
 TOOLING_BLOCKED_NOTE = " A BLOCKED on a tooling failure names the cause: the tool, the command and the error line."
-CCN_RE = re.compile(r"\bCCN\b")
-CCN_NOTE = " Your task's Goal or Done mentions CCN: never run `cs-audit`; the gates run it."
+COMPLEXITY_RE = re.compile(r"\bCCN\b")
+COMPLEXITY_NOTE = " Your task's Goal or Done mentions CCN: never run `cs-audit`; the gates run it."
 
 
-def ccn_note(task_file) -> str:
+def complexity_note(task_file) -> str:
     """Dev brief line forbidding `cs-audit` when the task's Goal: or Done: line mentions CCN, else ''."""
     lines = read_text(task_file).splitlines()
-    return CCN_NOTE if any(CCN_RE.search(line) for line in lines if line.startswith(("Goal:", "Done:"))) else ""
+    return COMPLEXITY_NOTE if any(COMPLEXITY_RE.search(line) for line in lines if line.startswith(("Goal:", "Done:"))) else ""
 
 
 REVIEW_INDEX_NOTE = " The generated docs INDEX.md diff from wt.py commit is expected: never a finding, never out of scope."
@@ -557,7 +557,7 @@ def prompt_for(a, task, role, rework_file, rid) -> str:
             + gates_note(a)
             + db_start_note(a)
             + TOOLING_BLOCKED_NOTE
-            + ccn_note(t)
+            + complexity_note(t)
             + DEV_CITE_NOTE
             + dev_notes(t, rework_file)
             + affected_note(t, AFFECTED_DEV)
