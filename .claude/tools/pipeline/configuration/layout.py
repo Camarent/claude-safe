@@ -11,7 +11,14 @@ PUBLISH_KEY = "publish"  # the PROJECT_DEFAULTS key: {artifact_url: {"cwd", "bui
 PUBLISH_CWD, PUBLISH_BUILD, PUBLISH_PAGE, PUBLISH_FILES = "cwd", "build", "page", "files"  # keys of one publish entry
 PUBLISH_OUT = "{out}"  # placeholder in a `build` string: replaced by the stage scratch dir (absolute, shell-quoted)
 PUBLISH_NO_CHAIN = "&&"  # a `build` string must be one command: chaining is refused
+EXIT_OK = 0  # exit code of plan.py / wave.py when a run finishes
+EXIT_LIMIT = 3  # exit code of plan.py / wave.py when a run stops at a limit (max-waves and the like)
 EXIT_BLOCKED = 4  # exit code of plan.py / wave.py when a run stops blocked (back to the lead)
+EXIT_CODES = {
+    EXIT_OK: "done",
+    EXIT_LIMIT: "limit",
+    EXIT_BLOCKED: "blocked, back to lead",
+}  # exit code -> its meaning (the table the entry points and the lead read)
 REQUEST_FILE = "request.md"  # copy of the feature's request prompt, written into its folder at plan time (plan check reads its PUBLISH line)
 FETCH_FAIL_MARKS = (
     "Failed to consume the pack",
