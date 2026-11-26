@@ -120,6 +120,9 @@ PROJECT_DEFAULTS: dict = {
         "ffprobe",
     ],  # binaries a red-base failure names when its output has MISSING_BINARY_MARK (the red-base message adds a line listing them)
     "tool_settings": {},  # {key: value} overriding a named tool setting (configuration/literals.py `tool_setting`); env CS_<NAME> wins over it
+    "acceptance_timing_flag": None,  # flag appended to the project test command in the acceptance command lines (timing output goes to the stage reports folder); None = no flag
+    "pipeline_install_check": None,  # command the driver runs after each phase merge, before the next phase; a failure blocks the stage; None = no check
+    "ci_available": True,  # false where no CI runs for the repo: pr-ready and master-merged skip the CI waits and merge on green local gates, and say so
 }
 GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above

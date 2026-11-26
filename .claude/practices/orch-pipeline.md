@@ -118,6 +118,11 @@ Orchestrator behaviours (warnings-1 fixes):
 - `tools/pipeline/configuration/` is the single home for verdict words, role table (`ROLES`), limits, headless-session flags, environment variable names (`ENV_*`) and their defaults. Add new constants there, never as literals in other modules.
 - `branch_work` defaults to `stage/{feature}`; a fixed value in pipeline.json still wins (legacy, no PR steps); `branch_release` defaults to `master`.
 - Per-project values (repo folder, audit file name, `branch_work`/`branch_release`, `test_env`, `pr_checks_timeout`) live in `<workspace>/pipeline.json`; `configuration.project(dir)` overlays it on the defaults. `pr_checks_timeout` (seconds, default 1800) is how long the PR merge step waits for pending checks before it gives up (BLOCKED). A project without the file gets the defaults and autodetection. Test: `tools/tests/test_configuration.py`.
+- `limit_recheck_s` (tool setting, seconds, default 900; env `CS_LIMIT_RECHECK_S`): a usage-limit wait runs in slices of this length, and the session re-reads the clock after each slice.
+- `script_timeout_s` (tool setting, seconds, default 1800; env `CS_SCRIPT_TIMEOUT_S`): one no-model script step is killed after this; env `ORCH_SCRIPT_TIMEOUT` still wins over it.
+- `acceptance_timing_flag` (pipeline.json, default none): a flag appended to the project test command in the acceptance command lines; the timing output goes to the stage reports folder.
+- `pipeline_install_check` (pipeline.json, default none): a command the driver runs after each phase merge, before the next phase; a failure blocks the stage.
+- `ci_available` (pipeline.json, default `true`): `false` where no CI runs for the repo; `pr-ready` and `master-merged` then skip the CI waits and merge on green local gates, and say so.
 
 After any change to the stage sequence (`pipeline/phases.py`, a new script step, agent order): run `cs-wave run --stage S --dir D --dry-run` on a scratch project and read the printed sequence. It walks the stage on stub verdicts in a copy and prints one line per dispatch. Read it by eye; no test pins the sequence.
 

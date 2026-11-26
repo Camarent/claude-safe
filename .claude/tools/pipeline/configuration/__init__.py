@@ -354,6 +354,7 @@ from .limits import (  # noqa: F401  (re-export: the facade keeps every name imp
     LEAD_EV,
     LIMIT_FALLBACK_S,
     LIMIT_MARGIN_S,
+    LIMIT_RECHECK_S,
     LIMIT_TEXT_MAX,
     LIMIT_WAIT_MAX_S,
     LINK_BASE_FILE,

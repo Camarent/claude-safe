@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from .errors import ConfigError
+from .limits import LIMIT_RECHECK_S, SCRIPT_TIMEOUT_S
 from .project import project
 
 TOOL_SETTINGS_KEY = "tool_settings"  # pipeline.json key: {setting key: value}; PROJECT_DEFAULTS holds {}
@@ -85,6 +86,8 @@ _SETTINGS = {
     "LSP_LOCK_TIMEOUT_S": (LSP_LOCK_TIMEOUT_S, "lsp_lock_timeout_s", _positive, True),
     "GIT_REMOTE": (GIT_REMOTE, "git_remote", _remote, True),
     "PRICES_TABLE": (PRICES_TABLE, "prices", _prices, False),
+    "LIMIT_RECHECK_S": (LIMIT_RECHECK_S, "limit_recheck_s", _positive, True),
+    "SCRIPT_TIMEOUT_S": (SCRIPT_TIMEOUT_S, "script_timeout_s", _positive, True),
 }
 
 

@@ -320,6 +320,7 @@ DIGEST_TOTAL_RE = r"\((\d+) sessions, \$([\d.]+)\)"  # header of retro-digest.md
 LIMIT_TEXT_MAX = 300  # a usage-limit notice is a short line; longer text is an agent talking about limits, never a notice
 LIMIT_MARGIN_S = 120  # wait this long after the printed reset time before running the session again
 LIMIT_FALLBACK_S = 900  # no parsable reset time: wait this long, then try again
+LIMIT_RECHECK_S = 900  # a usage-limit wait runs in slices of this many seconds; the session re-reads the clock after each slice (tool setting limit_recheck_s)
 LIMIT_WAIT_MAX_S = 8 * 3600  # total waiting per session; beyond this the limit notice stays the result (the run then stops as before)
 QRUN_LOG_MAX_AGE_S = int(os.environ.get("QRUN_LOG_MAX_AGE_S", 7 * 24 * 3600))  # qrun-*.log older than this may be pruned by the next qrun run ...
 QRUN_LOG_MIN_KEEP = int(os.environ.get("QRUN_LOG_MIN_KEEP", 20))  # ... but only while at least this many newer logs remain (a minimum, no cap)
