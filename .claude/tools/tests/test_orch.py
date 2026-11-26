@@ -82,10 +82,19 @@ class OrchTest(unittest.TestCase):
         self.d = os.path.join(outer, "wt", "job")
         os.makedirs(f"{self.d}/.work/s/reports")
         shutil.copy(f"{outer}/.work/s/TASKS.md", f"{self.d}/.work/s/TASKS.md")
-        self.test_audit_report_materialized()
+        self._write_audit_reports()
+        self.assertTrue(os.path.exists(f"{self.d}/.work/s/audits/audit-arch.md"))
+        self.assertIn("findings", Path(f"{self.d}/.work/s/audits/audit-arch.md").read_text(encoding="utf-8"))
+        self.assertEqual(Path(f"{self.d}/.work/s/audits/audit-sec-2.md").read_text(encoding="utf-8"), "keep")
 
     def test_audit_report_materialized(self):
         self.addCleanup(shutil.rmtree, self.d, True)
+        self._write_audit_reports()
+        self.assertTrue(os.path.exists(f"{self.d}/.work/s/audits/audit-arch.md"))
+        self.assertIn("findings", Path(f"{self.d}/.work/s/audits/audit-arch.md").read_text(encoding="utf-8"))
+        self.assertEqual(Path(f"{self.d}/.work/s/audits/audit-sec-2.md").read_text(encoding="utf-8"), "keep")
+
+    def _write_audit_reports(self):
         log = f"{self.d}/.work/s/orch.jsonl"
         for i, task in (("x1", "audit-arch"), ("x2", "audit-sec-2")):
             with open(log, "a", encoding="utf-8") as f:
@@ -97,8 +106,6 @@ class OrchTest(unittest.TestCase):
         Path(f"{self.d}/.work/s/audits/audit-sec-2.md").write_text("keep", encoding="utf-8")
         self.rep("x1", "findings\nVERDICT: FIXES")
         self.rep("x2", "other\nVERDICT: CLEAN")
-        self.assertIn("findings", Path(f"{self.d}/.work/s/audits/audit-arch.md").read_text(encoding="utf-8"))
-        self.assertEqual(Path(f"{self.d}/.work/s/audits/audit-sec-2.md").read_text(encoding="utf-8"), "keep")
 
     def test_happy_path_two_tasks(self):
         a = self.nxt()

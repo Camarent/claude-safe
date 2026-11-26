@@ -64,11 +64,14 @@ class RulesTest(unittest.TestCase):
     def test_real_commands_are_not_prose(self):
         # the verdict never depends on the host PATH
         with mock.patch.dict(os.environ, {"PATH": ""}):
-            self._commands()
-        self._commands()
+            empty_path = self._commands()
+        normal = self._commands()
+        self.assertEqual([cmd for cmd, probs in normal.items() if probs], [])
+        self.assertEqual(empty_path, normal)
 
     def _commands(self):
-        for cmd in (
+        """Return {cmd: problems} for each real command line; no assert here, the test body decides."""
+        cmds = (
             "ls -la",
             "unknowntool run all",
             "python3 -I tools/check.py --all",
@@ -79,8 +82,8 @@ class RulesTest(unittest.TestCase):
             "npm run test all",
             "echo done",
             "xyzzy has passed",
-        ):
-            self.assertEqual(acceptance_problems(f"## Acceptance checklist\n- cmd: {cmd}\n"), [], cmd)
+        )
+        return {cmd: acceptance_problems(f"## Acceptance checklist\n- cmd: {cmd}\n") for cmd in cmds}
 
 
 class RunTest(unittest.TestCase):
