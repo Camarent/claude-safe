@@ -13,7 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import testrun
-from pipeline import gate_record, worktree
+from pipeline import gate_record, worktree_base
 from pipeline.classify import classify_test_run
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -122,12 +122,12 @@ class TestRun(unittest.TestCase):
         wtree = tracked_mkdtemp()
         os.makedirs(f"{d}/.wt/s")
         seen = []
-        orig = worktree.read_manifest
-        worktree.read_manifest = lambda *_: {"t1": {"root": wtree}}
+        orig = worktree_base.read_manifest
+        worktree_base.read_manifest = lambda *_: {"t1": {"root": wtree}}
         try:
             testrun.run("s", "t1", d, runner=lambda c, **k: seen.append(k["cwd"]) or subprocess.CompletedProcess(c, 0, "", ""))
         finally:
-            worktree.read_manifest = orig
+            worktree_base.read_manifest = orig
         self.assertEqual(seen, [wtree])
 
     def test_missing_command_or_module_is_blocked_not_red(self):

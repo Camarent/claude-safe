@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import wt
-from pipeline import claude, driver, steps, worktree, worktrees
+from pipeline import claude, driver, steps, worktree_merge, worktrees
 from pipeline.configuration import ENV_REVIEW_DIR
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -85,10 +85,10 @@ class ReviewResetTest(unittest.TestCase):
 
     def test_reset_fails_loudly_and_keeps_marker(self):
         wt.review_begin(self.t, "s", TASK)
-        with unittest.mock.patch.object(worktree, "_dirty", return_value=[" M f"]), self.assertRaisesRegex(RuntimeError, "failed"):
+        with unittest.mock.patch.object(worktree_merge, "_dirty", return_value=[" M f"]), self.assertRaisesRegex(RuntimeError, "failed"):
             wt.review_reset(self.t, "s", TASK)
         self.assertTrue(os.path.isfile(wt.review_marker(self.t, "s", TASK)))
-        with unittest.mock.patch.object(worktree, "_dirty", return_value=[" M f"]):
+        with unittest.mock.patch.object(worktree_merge, "_dirty", return_value=[" M f"]):
             self.assertIn("failed", worktrees.review_reset(self.a, TASK))
         wt.review_reset(self.t, "s", TASK)
 
