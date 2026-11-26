@@ -1,40 +1,52 @@
 # Architecture
 
 ## What it is
-claude-safe runs Claude Code in a throwaway Docker container. Only the folder you mount is reachable from the host (`README.md:3-4`).
+claude-safe runs Claude Code in a throwaway Docker container. Only the folder you mount is reachable from the host (`README.md:5-6`).
 The repo builds the base image and optional toolchain layers, provides host-side dev and release scripts, and carries the pipeline under `.claude/` (agents, tools, practices; not an index module, see `README.md` and `docs/decisions.md`).
 
 ## Modules
-- [scripts](modules/scripts.md) - host-side dev checks, pre-PR gate, VM provisioning, config sync, agent rendering.
-- [profiles](modules/profiles.md) - seven optional toolchain layers (`profiles/*.Dockerfile`) stacked on the base image.
+- [scripts](modules/scripts.md) - host-side dev checks, pre-PR gate, config install and sync, agent rendering.
+- [profiles](modules/profiles.md) - two optional toolchain layers (`profiles/*.Dockerfile`) stacked on the base image.
 
 ## Flow
-1. `Dockerfile` builds the base image (`FROM node:lts-trixie-slim`, `Dockerfile:5`).
-2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:167`, `run.sh:214`), then starts the container (`README.md:6-7`).
-3. Inside the container, `entrypoint.sh` is the entry point (`Dockerfile:180`).
+1. `Dockerfile` builds the base image (`FROM node:lts-trixie-slim`, `Dockerfile:6`).
+2. `run.sh` builds the profile chain: `claude-safe` -> `claude-safe:<p1>` -> ... (`run.sh:163`, `run.sh:211`), then starts the container (`README.md:27-29`).
+3. Inside the container, `entrypoint.sh` is the entry point (`Dockerfile:193`).
 4. Host side, `scripts/dev.sh` runs lint, format, mypy and the test suite (`ptest.py`); `scripts/image_test.sh` runs the same suite in the image; `scripts/release.sh` runs both plus gitleaks as a pre-PR gate.
-5. `scripts/provision-dev-vm.sh` installs the same toolset on a plain Ubuntu VM; `scripts/sync-claude-config.sh` runs it with `--only claude-config` to copy `.claude/` into `~/.claude`.
+5. `scripts/sync-claude-config.sh` runs `scripts/install-claude-config.sh` to copy `.claude/` into `~/.claude`: a dry run by default (no flag; it passes `--dry-run` to `install-claude-config.sh`), which only lists the files it would overwrite; `--apply` writes.
 6. `scripts/host_agents.py` renders `.claude/agents/*.md` for the host (dry run unless `--apply`).
 
 ## Entry points
-- `run.sh` - start a session. `--here` mounts `$PWD`; `--rebuild` rebuilds base and profiles (`README.md:6-8`).
+- `run.sh` - start a session. `--here` mounts `$PWD`; `--rebuild` rebuilds base and profiles (`README.md:27-29`).
 - `scripts/dev.sh` - subcommands listed in `modules/scripts.md`; dispatch at `scripts/dev.sh:18`.
 - `scripts/release.sh` - pre-PR gate; never merges or pushes (`scripts/release.sh:2-3`).
-- `scripts/provision-dev-vm.sh` - VM provisioning; `main` at `scripts/provision-dev-vm.sh:538`.
 - `scripts/host_agents.py` - agent rendering; `main` at `scripts/host_agents.py:114`.
+- `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode (opt-in); `main` at `scripts/pipeline_auto.py:44`.
 
 ## Build and test commands
-- Build images: `./run.sh --rebuild` (`README.md:8`).
+- Build images: `./run.sh --rebuild` (`README.md:29`).
 - Checks: `scripts/dev.sh check` (ruff, format, mypy); `scripts/dev.sh test` (parallel tests); `scripts/dev.sh cov` (coverage); `scripts/dev.sh sec`, `dead`, `ccn` (`scripts/dev.sh:3`).
 - Container suite: `scripts/image_test.sh [IMAGE]`.
 - Pre-PR gate: `scripts/release.sh`.
-- Setup: `scripts/dev.sh sync` needs `uv` and a system Python 3.11+ (`README.md:157`).
-- Tests of the pipeline and the provision script live in `.claude/tools/tests/`.
+- Setup: `scripts/dev.sh sync` needs `uv` and a system Python 3.11+ (`README.md:201`).
+- Tests of the pipeline live in `.claude/tools/tests/`.
+
+## Pipeline model route and tool settings
+- Model route: `.claude/tools/pipeline/e1.py:88` (`model_for`) decides every dev and reviewer model. Each dispatch starts on Haiku. Sonnet runs only when an E1 event holds (`.claude/tools/pipeline/e1.py:79`, `e1_event`): (a) the dev gate stayed red after the Haiku tries, (b) the dev reported ESCALATE, (c) a reviewer reported ESCALATE.
+- Tool settings: `.claude/tools/pipeline/configuration/literals.py:79` (`_SETTINGS`) holds the named settings (timeouts, origin remote, price table), each with a default. An env override `CS_<NAME>` (`.claude/tools/pipeline/configuration/literals.py:14`) or the `tool_settings` object in `pipeline.json` (`.claude/tools/pipeline/configuration/literals.py:13`) replaces the default. Read them with `tool_setting` (`.claude/tools/pipeline/configuration/literals.py:97`).
+
+## Pipeline module splits
+Five pipeline modules hold code moved out of older modules. Each old module re-exports the moved names, so old import paths keep working.
+- `.claude/tools/pipeline/worktree_base.py:25` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:21`).
+- `.claude/tools/pipeline/worktree_merge.py:35` (`_git_version`): git version and `merge-tree` checks, unmerged-file queries. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:78`).
+- `.claude/tools/pipeline/plan_check_task.py:38` (`_lint`): per-task plan checks (test refs, cites, commands, paths). `plan_check.py` re-exports them (`.claude/tools/pipeline/plan_check.py:58`).
+- `.claude/tools/pipeline/steps_history.py:9` (`history`): event history, retry and report queries. `steps.py` re-exports them (`.claude/tools/pipeline/steps.py:57`).
+- `.claude/tools/pipeline/pr_release.py:15` (`_release_level`): version bump, release tag and GitHub release of a stage branch. `pr_ops.py` re-exports them (`.claude/tools/pipeline/pr_ops.py:44`). Shared git and gh helpers sit in `.claude/tools/pipeline/pr_base.py`, which both import. `pr_release.py` imports only `pr_base` and `pr_mode`, never `pr_ops`, so there is no import cycle.
 
 ## Shared state
 - Tool caches and venv: `./.uv` in the checkout, or `DEV_UV_DIR` (`scripts/dev.sh:10`).
-- Pipeline stage state: `.work/` (not documented here).
-- Browser profile: `browser-profile/` on the host, mounted into the container (`README.md:20-21`).
+- Pipeline stage state is runtime data, kept in an ignored work folder, not in the repo.
+- Browser profile: `browser-profile/` on the host, mounted into the container (`README.md:43`).
 
 ## Docs
 - Per-module contracts: `docs/modules/<slug>.md`; index: `docs/INDEX.md` (generated by `cs-docs-index`).

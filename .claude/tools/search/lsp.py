@@ -21,6 +21,8 @@ import time
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
 # lsp.py also runs as a script (python -I search/lsp.py): the tools root is not on sys.path before the insert above
+from pipeline.configuration import tool_setting  # noqa: E402  # the tools root is on sys.path (inserted above)
+
 from search.lsp_client import (  # noqa: E402
     EXT,
     MARKERS,
@@ -112,7 +114,7 @@ def symbols(q, root, lang):
     for line in r.stdout.splitlines():
         try:
             t = json.loads(line)
-        except ValueError:
+        except ValueError:  # KEEP: rg prints one JSON object per line; a non-JSON line is skipped, not an error
             continue
         n = t.get("name", "")
         rank = 0 if n == q else 1 if n.lower().startswith(ql) else 2 if ql in n.lower() else None
@@ -156,14 +158,14 @@ def not_checked(f, lang, why):
     cmd = [sys.executable, "-m", "py_compile", f] if lang == "py" else ["node", "--check", f] if lang == "js" else None
     if cmd:
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=False)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=tool_setting("LSP_RUN_TIMEOUT_S"), check=False)
             msg = r.stderr.strip().splitlines() or [""]
             if r.returncode:
                 print(f"{f}  syntax error ({'node --check' if lang == 'js' else 'py_compile'}; {why}; type errors NOT CHECKED): {msg[-1][:150]}")
                 return 1
             print(f"syntax OK only ({why}); type/semantic errors NOT CHECKED")
             return 3
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):  # KEEP: checker missing or hung; the NOT CHECKED line below reports it
             pass
     print(f"NOT CHECKED: {why}")
     return 3
@@ -279,7 +281,7 @@ def _cmd_diag(c, a, f, lang, root):
         pulled = c.req("textDocument/diagnostic", {"textDocument": {"uri": uri(f)}}, 20) if lang in ("py", "js", "ts") else None
         if pulled and "items" in pulled:
             c.diags[uri(f)] = pulled["items"]
-    except (RuntimeError, TimeoutError):
+    except (RuntimeError, TimeoutError):  # KEEP: pull diagnostics is optional; the push settle below covers servers without it
         pass
     if (lang not in ("py", "js", "ts") or uri(f) not in c.diags) and not c.settle(15 if lang != "rs" else 60, uri(f)):
         return not_checked(f, lang, "language server sent no diagnostics")

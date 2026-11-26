@@ -1,0 +1,8 @@
+.claude/tools/pipeline/progress.py
+.claude/tools/pipeline/public_words.py
+.claude/tools/pipeline/requests.py
+.claude/tools/pipeline/scopeguard.py
+.claude/tools/pipeline/scratch.py
+.claude/tools/pipeline/serve_rule.py
+.claude/tools/pipeline/shellwords.py
+.claude/tools/pipeline/stage_recall.py

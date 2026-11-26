@@ -38,7 +38,7 @@ def _allowed(path, kinds, predicted, docs_dir):
     return "notes" in kinds and path.startswith(SCOPE_NOTES_DIR + "/")
 
 
-def unplanned(changed, predicted, text, kinds, docs_dir, generated=()):
+def unplanned(changed, predicted, text, kinds, docs_dir, generated=()) -> list[str]:
     """-> the CHANGED paths that are outside PREDICTED, not named in the task TEXT and not of an allowed kind (KINDS, see `scope_allow`). A path in GENERATED (a generated file, see generated.py) is no finding while a predicted source file changed: it is the generator's output."""
     source_changed = any(_predicted(p, predicted, "") for p in changed if p not in generated)
     return [
@@ -61,7 +61,7 @@ def _changed(a, task_id, rx=None):
     return out, gen
 
 
-def scope_note(a, task_id):
+def scope_note(a, task_id) -> str:
     """Reviewer brief sentence naming the files the job changed outside the task's predicted paths; '' when the guard is off, the job has no worktree or stayed in scope."""
     d = getattr(a, "dir", ".")
     cfg = project(d)

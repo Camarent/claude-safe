@@ -11,7 +11,7 @@ from .tasks import parse_tasks
 DEFAULT_EVERY = 25  # tasks without an audit before a middle phase is audited anyway (`audit_every_tasks` in pipeline.json)
 
 
-def audit_due(stage_folder, n_tasks, every=DEFAULT_EVERY, dir="."):
+def audit_due(stage_folder, n_tasks, every=DEFAULT_EVERY, dir=".") -> bool:
     """True for an ordinary stage and for the last phase. A middle phase: True when its tasks plus the tasks of earlier phases since the last audited phase reach `every`."""
     folder = os.path.abspath(stage_folder)
     parent = os.path.dirname(folder)

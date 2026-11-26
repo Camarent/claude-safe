@@ -4,11 +4,13 @@ import fnmatch
 import json
 import os
 import re
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from .configuration import UX_FLOW_ACTIONS, ux_flows
 
 
-def variables(tasks_text, given=()):
+def variables(tasks_text: str, given: Iterable[str] = ()) -> dict[str, str]:
     """-> the `UX-VARS: name=value ...` variables of a TASKS.md text, overridden by GIVEN `name=value` strings."""
     v: dict[str, str] = {}
     for m in re.finditer(r"^UX-VARS:\s*(.+)$", tasks_text, re.M):
@@ -22,23 +24,23 @@ def variables(tasks_text, given=()):
     return v
 
 
-def sub(s, v):
+def sub(s: str, v: Mapping[str, str]) -> str:
     """-> S with each `<name>` replaced from V (an unknown name stays)."""
     return re.sub(r"<(\w+)>", lambda m: v.get(m.group(1), m.group(0)), s)
 
 
-def flows_rel(cfg, v=None):
+def flows_rel(cfg: dict[str, Any], v: Mapping[str, str] | None = None) -> str:
     """-> the configured flows path (repo-relative) with its `<name>` placeholders filled from V (a per-course path such as `workspace/<course>/ux/flows.json`), '' when none is configured."""
     return sub(ux_flows(cfg), v or {})
 
 
-def path_problem(rel):
+def path_problem(rel: str) -> str:
     """-> a problem text when REL (the repo-relative flows path) is absolute or climbs out of the repo, else ''."""
     parts = rel.replace("\\", "/").split("/")
     return f"the path {rel!r} must be relative and stay inside the repo" if rel and (os.path.isabs(rel) or ".." in parts) else ""
 
 
-def flows_file(repo, cfg, v=None):
+def flows_file(repo: str, cfg: dict[str, Any], v: Mapping[str, str] | None = None) -> str:
     """-> absolute path of the configured flows file under REPO, '' when none is configured. The file may sit in a nested repo below REPO."""
     rel = flows_rel(cfg, v)
     return os.path.join(repo, rel) if rel else ""
@@ -62,7 +64,7 @@ def _flow_problems(i, f):
     return probs
 
 
-def read(path):
+def read(path: str) -> tuple[list[dict[str, Any]], list[str]]:
     """-> (flows, problems) of the flows file PATH: a missing or invalid file gives problems and no flows."""
     try:
         with open(path, encoding="utf-8") as fh:
@@ -79,7 +81,7 @@ def read(path):
     return ([] if probs else data), [f"{path}: {p}" for p in probs]
 
 
-def covering(flows, changed):
+def covering(flows: list[dict[str, Any]], changed: list[str]) -> tuple[list[str], list[str]]:
     """-> (names of the flows whose `covers` match a file of CHANGED, the changed files no flow covers)."""
     hit = [f["name"] for f in flows if any(fnmatch.fnmatch(c, g) for g in f.get("covers", []) for c in changed)]
     rest = [c for c in changed if not any(fnmatch.fnmatch(c, g) for f in flows for g in f.get("covers", []))]

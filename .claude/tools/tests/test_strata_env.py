@@ -66,8 +66,8 @@ class StrataEnvTests(unittest.TestCase):
                 self.assertNotEqual(os.environ.get("STRATA"), "0")
 
     def test_preflight_waits_when_strata_url_is_announced(self):
-        ups = iter([False, False, True])  # model-host's Strata is still loading, answers on the third probe
-        env = {"STRATA_URL": "http://model-host-strata:8080", "STRATA_PHASE_FILE": "/nonexistent", "STRATA_LOAD_WAIT": "30"}
+        ups = iter([False, False, True])  # model-server's Strata is still loading, answers on the third probe
+        env = {"STRATA_URL": "http://model-server-strata:8080", "STRATA_PHASE_FILE": "/nonexistent", "STRATA_LOAD_WAIT": "30"}
         with (
             mock.patch.dict(os.environ, env),
             mock.patch.object(strata, "strata_up", side_effect=lambda: next(ups)),

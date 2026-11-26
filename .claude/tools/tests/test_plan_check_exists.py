@@ -22,7 +22,7 @@ class CheckExistsTest(unittest.TestCase):
         self.d = os.path.join(self.root, ".work", "s")
         os.makedirs(self.d)
         # no `lp` in these tests: the regex search over Predicted paths is what is checked
-        patcher = mock.patch.object(plan_check.shutil, "which", return_value=None)
+        patcher = mock.patch.object(shutil, "which", return_value=None)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -63,7 +63,7 @@ class CheckCiteExistsTest(unittest.TestCase):
             f.write("".join(f"line {i}\n" for i in range(1, 30)) + "def helper_x():\n    pass\n")
         self.d = os.path.join(self.root, ".work", "s")
         os.makedirs(self.d)
-        patcher = mock.patch.object(plan_check.shutil, "which", return_value=None)
+        patcher = mock.patch.object(shutil, "which", return_value=None)
         patcher.start()
         self.addCleanup(patcher.stop)
 

@@ -79,7 +79,7 @@ def _scan(cwd, base, cfg):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def scan_diff(cwd, base, cfg=None):
+def scan_diff(cwd, base, cfg=None) -> list[str]:
     """Secret scan of the files changed vs base in the repo cwd -> `file:rule` lines: [] when clean or gitleaks is missing (a note on stderr).
     cfg: the project settings (pipeline.configuration.project); its secret_scan_config path, relative to cwd, selects the gitleaks rules."""
     if shutil.which(GITLEAKS_TOOL) is None:

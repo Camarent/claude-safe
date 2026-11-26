@@ -1,4 +1,4 @@
-"""plan check `docs-wave:` warning: a docs-only task beside a code task of its wave without a dependency (synthetic stage)."""
+"""plan check `docs-wave:` error: a docs-only task beside a code task of its wave without a dependency (synthetic stage)."""
 
 import os
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import plan_check, plan_rules
-from pipeline.configuration import DOCS_WAVE_WARN_PREFIX
+from pipeline.configuration import DOCS_WAVE_PREFIX
 from tests.support.tmpdirs import tracked_mkdtemp
 
 
@@ -41,13 +41,13 @@ class DocsWave(unittest.TestCase):
     def check(self, t):
         return plan_rules.check_docs_wave(self.d, next(e for e in self.ents if e["id"] == t), self.ents)
 
-    def test_a_docs_only_task_beside_a_code_task_without_a_dependency_is_flagged(self):
+    def test_a_docs_only_task_beside_a_code_task_without_a_dependency_is_an_error(self):
         got = self.check(DOCS_SAME_WAVE)
         self.assertEqual(len(got), 1)
-        self.assertTrue(got[0].startswith(f"{DOCS_WAVE_WARN_PREFIX} {DOCS_SAME_WAVE}"))
+        self.assertTrue(got[0].startswith(f"{DOCS_WAVE_PREFIX} {DOCS_SAME_WAVE}"))
         self.assertIn(CODE, got[0])
         self.assertIn("--depends 1", got[0])
-        self.assertEqual(plan_check.errors_of(got), [])  # a warning, never an error
+        self.assertEqual(plan_check.errors_of(got), got)  # an error: not filtered out as a warning
 
     def test_a_docs_task_that_depends_on_the_code_task_is_fine(self):
         self.assertEqual(self.check(DOCS_WITH_DEP), [])

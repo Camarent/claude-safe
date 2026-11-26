@@ -20,12 +20,8 @@
 # global git config + the privacy commit hooks (install.sh puts them in place); parked memory/skills archive
 !.claude/git/
 !.claude/parked/
-# container memory (notes the agents keep between sessions): tracked; the session logs next to it stay out
-!.claude/projects/
-.claude/projects/*
-!.claude/projects/-workspace/
-.claude/projects/-workspace/*
-!.claude/projects/-workspace/memory/
+# container memory (notes the agents keep between sessions) and session logs: never tracked
+.claude/projects/
 
 # Working files passed in/out of the container
 scratch/

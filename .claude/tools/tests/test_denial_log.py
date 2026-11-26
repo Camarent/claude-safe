@@ -20,6 +20,7 @@ class DenialLogTest(unittest.TestCase):
         # the shell may set PIPELINE_AGENT_KIND (an agent session does): every test starts without it; patch.dict restores the env
         self.enterContext(mock.patch.dict(os.environ))
         os.environ.pop(ENV_AGENT_KIND, None)
+        os.environ.pop(ENV_DENIAL_SESSION, None)  # an agent shell sets the session token too
 
     def read_lines(self):
         with open(self.log, encoding="utf-8") as f:

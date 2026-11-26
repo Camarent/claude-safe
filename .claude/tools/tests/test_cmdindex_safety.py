@@ -12,11 +12,11 @@ sys.path.insert(0, TOOLS)
 from pipeline import cmdindex as C  # noqa: E402
 from pipeline.configuration import HOME  # noqa: E402
 
-HOST_HOME = "/home/user/workspace/claude-safe/.claude"
+HOST_HOME = "/srv/user/workspace/claude-safe/.claude"
 ROOTS_INDEX = {
     "roots": {
         "claude": {"container": "/root/.claude", "host": "@home"},
-        "ws": {"container": "/workspace", "host": "/home/user/workspace"},
+        "ws": {"container": "/workspace", "host": "/srv/user/workspace"},
     },
     "commands": {},
     "prefix": "cs-",
@@ -27,7 +27,7 @@ class SwapTest(unittest.TestCase):
     def test_second_pair_does_not_rewrite_host_value(self):
         # host home holds "/workspace"; a second pass must not replace it again
         text, n = C.swap("run /root/.claude/tools/qrun.py in /workspace/proj", "host", ROOTS_INDEX, HOST_HOME)
-        self.assertEqual(text, f"run {HOST_HOME}/tools/qrun.py in /home/user/workspace/proj")
+        self.assertEqual(text, f"run {HOST_HOME}/tools/qrun.py in /srv/user/workspace/proj")
         self.assertEqual(n, 2)
 
 

@@ -61,7 +61,6 @@ TIMEOUT_FILES = (
     "ux_run.py",
     "pipeline/cli_feature.py",
     "pipeline/briefs.py",
-    "pipeline/ccn.py",
     "testrun.py",
     "audit/audit_run.py",
     "localmodel/localdev.py",

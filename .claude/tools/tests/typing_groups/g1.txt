@@ -1,0 +1,6 @@
+.claude/tools/pipeline/acceptance.py
+.claude/tools/pipeline/affected.py
+.claude/tools/pipeline/agents.py
+.claude/tools/pipeline/audit_phases.py
+.claude/tools/pipeline/branches.py
+.claude/tools/pipeline/ci_clean.py

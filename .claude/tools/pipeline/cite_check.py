@@ -35,7 +35,7 @@ def _prose(rows):
     return out
 
 
-def added_lines(diff_text):
+def added_lines(diff_text) -> list[tuple[str, int, str]]:
     """-> [(file, line number, text)] of the lines a `git diff` text adds: every added line of `*.md` files (check tells their fenced blocks apart from the whole file), and the comment tail of code lines."""
     out: list = []
     for file, rows in gitx.added_lines(diff_text).items():
@@ -50,7 +50,7 @@ def added_lines(diff_text):
     return out
 
 
-def cites(text):
+def cites(text) -> list[tuple[str, int | None, int | None, str]]:
     """-> [(path, line, end line or None, text before the cite)] for each `path:line` or `path:start-end` in one line of text; URLs are not cites."""
     text = CITE_URL_RE.sub(" ", text)
     return [(m[1], int(m[2]), int(m[3]) if m[3] else None, text[: m.start()]) for m in CITE_RE.finditer(text)]
@@ -145,7 +145,7 @@ def _cite_msg(worktree, where, path, line, end, before):
     return _symbol_msg(where, path, lines, line, before)
 
 
-def check(worktree, added, report_text):
+def check(worktree, added, report_text) -> list[str]:
     """-> [message] for the cites in the added lines and in the dev report text that do not hold: path outside the worktree, missing file, line past the end, or a symbol named before the cite that is not within CITE_WINDOW_LINES of it."""
     rows = [(CITE_REPORT_NAME, ln, text) for ln, text in _prose(enumerate(report_text.splitlines(), 1))]
     prose = {}

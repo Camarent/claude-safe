@@ -34,7 +34,7 @@ JOB_BRANCH_PREFIX = "job/"
 MERGE_TREE_MIN_GIT = (2, 38)  # `git merge-tree --write-tree` (worktree._unmerged) needs this git version
 
 
-def release_guess(repo, cfg):
+def release_guess(repo, cfg) -> tuple[str, bool]:
     """-> (release branch, True when it is only the last-resort default and may not exist) for REPO: cfg `branch_release` when set by the user; else origin/HEAD, `init.defaultBranch` (if it exists), the first existing of DEFAULT_BRANCH_CANDIDATES, the current branch; the last candidate outside a git repo."""
     if cfg.get("branch_release") and not cfg.get("_release_detected"):
         return cfg["branch_release"], False
@@ -56,7 +56,7 @@ def release_guess(repo, cfg):
     return DEFAULT_BRANCH_CANDIDATES[-1], True
 
 
-def release_branch(repo, cfg):
+def release_branch(repo, cfg) -> str:
     """-> the release branch of REPO (see release_guess)."""
     return release_guess(repo, cfg)[0]
 
@@ -97,7 +97,7 @@ def _git_state_sig(repo):
     return tuple(_stat_sig(p) for p in (os.path.join(gd, "HEAD"), *(os.path.join(cd, n) for n in GIT_STATE_NAMES)))
 
 
-def detected_release_branch(repo, cfg):
+def detected_release_branch(repo, cfg) -> str:
     """-> release_branch(REPO, cfg), memoized per process on the git state signature (see _git_state_sig) and cfg `branch_work`: a repo HEAD or branch change shows at once, git is not spawned again while nothing changed."""
     key = os.path.abspath(repo)
     sig = (cfg.get("branch_work"), _git_state_sig(key))
@@ -115,7 +115,7 @@ def _is_pipeline_branch(cfg, name):
     return name.startswith(JOB_BRANCH_PREFIX) or fnmatch.fnmatchcase(name, tpl.replace("{feature}", "*"))
 
 
-def work_branch(cfg, name):
+def work_branch(cfg, name) -> str:
     """-> the work branch for feature or stage `name`: cfg `branch_work` with `{feature}` filled in (a stage `<feature>/phases/<dir>` counts as its feature). A value without `{feature}` is returned unchanged."""
     tpl = cfg.get("branch_work") or PROJECT_DEFAULTS["branch_work"]
     return tpl.replace("{feature}", str(name).split("/phases/")[0])

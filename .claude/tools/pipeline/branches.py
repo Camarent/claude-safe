@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 import sys
 
 from . import gitx, worktree
@@ -22,7 +23,7 @@ from .configuration import (
 )
 
 
-def dirty_block(a):
+def dirty_block(a) -> str:
     """-> the 'blocked: ...' line when the main checkout holds uncommitted work and --allow-dirty is not given, else ''. Dry runs never block."""
     if getattr(a, "dry_run", False) or getattr(a, "allow_dirty", False):
         return ""
@@ -38,7 +39,7 @@ def _read_marker(path):
         return ""
 
 
-def red_base_block(a):
+def red_base_block(a) -> str:
     """-> the 'blocked: base is red: ...' text when a fresh start's base fails its gates, else ''. No override: the base is fixed first.
     Skipped: dry runs, the setting off, no gates, a resume (the work branch has work), and a HEAD whose gates already ran green (marker)."""
     if getattr(a, "dry_run", False):
@@ -103,7 +104,7 @@ def _missing_binaries(text, binaries):
     return [b for b in binaries if b in named]
 
 
-def released(a, name):
+def released(a, name) -> bool:
     """True when the stage's orch.jsonl holds a DONE `branch-cleanup` report: the stage branch is gone on purpose and must not be recreated."""
     from .util import read_jsonl
 
@@ -111,7 +112,7 @@ def released(a, name):
     return any(e.get("ev") == "report" and e.get("task") == "branch-cleanup" and e.get("verdict") == "DONE" for e in read_jsonl(log))
 
 
-def ensure_work_branch(a, name):
+def ensure_work_branch(a, name) -> str:
     """Put the main checkout on the work branch of feature or stage `name`: create it from `branch_release` when missing (HEAD when that is missing too), switch to it, reuse it on resume. Nested git repos (worktree.nested_repos) get the same branch.
     -> '' when done or not applicable (dry run, no git repo), else a 'blocked: ...' line."""
     if getattr(a, "dry_run", False) or released(a, name):
@@ -137,7 +138,7 @@ def _is_git(repo):
 def _switch_work(repo, release, want):
     """Create `want` in one repo from `release` (HEAD when missing), switch to it. -> '' or a 'blocked: ...' line."""
 
-    def git(*args):
+    def git(*args) -> subprocess.CompletedProcess:
         return gitx.run(repo, *args)
 
     cur = git("symbolic-ref", "--short", "-q", "HEAD").stdout.strip()

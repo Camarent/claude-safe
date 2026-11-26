@@ -112,5 +112,30 @@ class PlanCheckTest(FinalBase):
         self.assertTrue(any("gates_final `heavy`" in p for p in probs), probs)
 
 
+class RepoPipelineTest(unittest.TestCase):
+    """The repo's own pipeline.json: `cov` runs only in the final test."""
+
+    def setUp(self):
+        import json
+
+        root = os.path.dirname(os.path.dirname(TOOLS))
+        with open(os.path.join(root, "pipeline.json"), encoding="utf-8") as fh:
+            self.repo_cfg = json.load(fh)
+
+    def test_cov_is_a_final_gate_not_a_task_gate(self):
+        gates = [g["name"] for g in self.repo_cfg["gates"]]
+        final = {g["name"]: g["cmd"] for g in self.repo_cfg[FINAL_GATES_KEY]}
+        self.assertNotIn("cov", gates)
+        self.assertEqual(final.get("cov"), "scripts/dev.sh cov")
+        self.assertEqual(gates, ["check", "dead", "sec", "ccn"])
+
+    def test_cov_is_in_no_other_list_and_the_config_still_loads(self):
+        names = [g["name"] for g in self.repo_cfg.get(MERGE_GATES_KEY) or []]
+        self.assertNotIn("cov", names)
+        cfg = project(os.path.dirname(os.path.dirname(TOOLS)))
+        self.assertIn("cov", [g["name"] for g in final_gates_of(cfg)])
+        self.assertNotIn("cov", [g["name"] for g in gates_of(cfg)])
+
+
 if __name__ == "__main__":
     unittest.main()

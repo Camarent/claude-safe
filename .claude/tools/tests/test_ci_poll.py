@@ -10,7 +10,7 @@ import unittest.mock as mock
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import pr_ops
+from pipeline import pr_base, pr_ops
 from pipeline.configuration import CHECKS_TIMEOUT_S, CI_POLL_S
 
 
@@ -83,7 +83,7 @@ class MergeWaitsForCi(unittest.TestCase):
 
     def merge(self, table, cfg=None):
         run = scripted({**OPEN_PR, **table})
-        with mock.patch.object(pr_ops, "_run", run):
+        with mock.patch.object(pr_base, "_run", run):
             note = pr_ops._merge(self.d, self.d, cfg or {}, "s", "b", self.clock)
         return note, run
 
@@ -115,7 +115,7 @@ class MergeWaitsForCi(unittest.TestCase):
 
     def test_ready_blocks_on_failed_run_list(self):
         run = scripted({**OPEN_PR, "gh run list": R(1, "", "HTTP 503"), "gh pr ready": R(0)})
-        with mock.patch.object(pr_ops, "_run", run), self.assertRaisesRegex(pr_ops.Blocked, "gh run list failed"):
+        with mock.patch.object(pr_base, "_run", run), self.assertRaisesRegex(pr_ops.Blocked, "gh run list failed"):
             pr_ops._ready(self.d, {}, "b")
 
     def test_pending_checks_past_the_timeout_block(self):

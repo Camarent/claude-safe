@@ -153,7 +153,7 @@ def _add_worktrees(repo, dry):
     return [f"{PIPELINE_JSON}: {line}"]
 
 
-def prepare(repo, dry_run=False, add_worktrees=False):
+def prepare(repo: str, dry_run: bool = False, add_worktrees: bool = False) -> list[str]:
     """-> what was added, or with `dry_run` what would be (empty when everything was in place). RuntimeError when `repo` is no git repo."""
     added = _entries_in(repo, PIPELINE_EXCLUDES, "", dry_run)
     langs = _lang_ignores(repo)
@@ -168,7 +168,7 @@ def prepare(repo, dry_run=False, add_worktrees=False):
     return added
 
 
-def report(repo):
+def report(repo: str) -> list[str]:
     """-> problem lines nothing is written for: malformed audit-tools lines, no `worktrees` setting, gate tools missing."""
     out = malformed_audit_lines(repo)
     if worktrees_missing(repo):
@@ -196,7 +196,7 @@ def _guidelines_section_missing(repo):
     return [f"{CLAUDE_FILE}: no `{GUIDELINES_HEADING}` section: add one pointing at the guidelines for {', '.join(langs)} (this file is not edited here)"]
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=".")
     ap.add_argument("--dry-run", action="store_true", help="print what would be added; change nothing")

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import util, worktree
+from pipeline import util, worktree, worktree_merge
 from tests.support.tmpdirs import tracked_tmpdir
 
 SUBJECT = "feat(docs): regenerate index"
@@ -31,7 +31,7 @@ class CommitRegeneratesIndexTest(unittest.TestCase):
         git(self.d, "add", "-A")
         git(self.d, "commit", "-q", "-m", "init")
         # the job worktree is the repo itself: commit() takes the (a_dir, stage, task) layout from _parts
-        patch = mock.patch.object(worktree, "_parts", return_value=(None, "job/x", [("", self.d, self.d)]))
+        patch = mock.patch.object(worktree_merge, "_parts", return_value=(None, "job/x", [("", self.d, self.d)]))
         patch.start()
         self.addCleanup(patch.stop)
 

@@ -38,7 +38,7 @@ def _names(text):
     return [x for x in text.split("\0") if x]
 
 
-def merging(main):
+def merging(main) -> bool:
     """True while a merge or squash-merge is unfinished in the repo MAIN: its staged changes are not a dev's write."""
     for f in LINK_GIT_MERGE_FILES:
         path = git(main, "rev-parse", "--git-path", f, check=False).strip()
@@ -95,7 +95,7 @@ def _base(root):
     }
 
 
-def snapshot(a_dir, stage, task):
+def snapshot(a_dir, stage, task) -> None:
     """Record the state of the task's linked main repos when a dev starts. The first call keeps the tracked and untracked state for the job's life (a later attempt must not absorb an earlier attempt's writes); a later call only moves `head` up to the repo's current HEAD (another task's merge is not the dev's commit). Each repo on its own: one that git cannot answer for gets no baseline and is not guarded until the next call. A disk error leaves the old file."""
     with contextlib.suppress(*ERRORS):
         root, links = _linked(a_dir, stage, task)
@@ -183,7 +183,7 @@ def _target_line(root, path, n):
     return lines[n - 1] if 0 < n <= len(lines) else None
 
 
-def cite_notes(root):
+def cite_notes(root) -> list:
     """-> one note per `path:line` cite in the modified or new docs files of the job worktree ROOT whose quoted text is not on that line now (a stale line number after an edit). A git that cannot answer gives no note."""
     notes: list[str] = []
     try:
@@ -205,7 +205,7 @@ def cite_notes(root):
     return notes
 
 
-def check(a_dir, stage, task, add_repo_cmd):
+def check(a_dir, stage, task, add_repo_cmd) -> str:
     """-> "" when the dev wrote nothing through a link, else the FAIL note for the dev. ADD_REPO_CMD is the command that adds a nested repo's worktree; the repo is appended."""
     try:
         root, links = _linked(a_dir, stage, task)

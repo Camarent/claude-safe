@@ -1,0 +1,9 @@
+.claude/tools/pipeline/ux_flows.py
+.claude/tools/pipeline/verify_retry.py
+.claude/tools/pipeline/webskip.py
+.claude/tools/pipeline/worktree_merge.py
+.claude/tools/pipeline/worktrees.py
+.claude/tools/pipeline/preflight.py
+.claude/tools/pipeline/prepare_checks.py
+.claude/tools/pipeline/prepare_repo.py
+.claude/tools/pipeline/prices.py

@@ -5,8 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .configuration import TASK_FILES_WARN
-from .plan_files import is_mid_phase, paths_in
+from .plan_files import is_mid_phase
 from .util import read_text
 
 
@@ -34,14 +33,6 @@ def _task_row(line):
     }
 
 
-def _mark_oversized(rows, tasks_md):
-    """An oversized task (many predicted files) is too much for Haiku: it starts on Sonnet."""
-    for t, row in rows.items():
-        tf = os.path.join(os.path.dirname(tasks_md), t + ".md")
-        if os.path.exists(tf) and len(paths_in(read_text(tf))) > TASK_FILES_WARN:
-            row["owner_sonnet"] = True
-
-
 def _graph_order(rows, tasks_md):
     """{task id: None} in Graph order; sets the wave of each task the Graph names."""
     order: dict = {}
@@ -61,7 +52,7 @@ def _add_depends(row, line):
         row["depends"] += [t for t in re.findall(r"(?:task|ops)-\d+", dep.group(1)) if t not in row["depends"]]
 
 
-def parse_tasks(tasks_md):
+def parse_tasks(tasks_md) -> list[dict[str, Any]]:
     """-> ordered list of {id, owner_sonnet, review_sonnet} from the TASKS.md table (wave order if a Graph line exists)."""
     if not os.path.exists(tasks_md):
         return []  # brief-only stage: the architect writes TASKS.md later
@@ -80,7 +71,6 @@ def parse_tasks(tasks_md):
                 _add_depends(row, line)
     order = _graph_order(rows, tasks_md)
     top = max((rows[t]["wave"] for t in order), default=0)
-    _mark_oversized(rows, tasks_md)
     for t in rows:  # not in the Graph: one wave each, after the planned ones (sequential, as before)
         if t not in order:
             top += 1
@@ -89,7 +79,7 @@ def parse_tasks(tasks_md):
     return [rows[t] for t in order]
 
 
-def depends_problem(tasks):
+def depends_problem(tasks) -> str | None:
     """-> a message when the `Depends:` lines are unusable (unknown task, itself, a cycle, or a Graph wave that is not after its dependencies), else None."""
     by = {t["id"]: t for t in tasks}
     for t in tasks:
@@ -103,7 +93,7 @@ def depends_problem(tasks):
     return None
 
 
-def parse_flags(tasks_md):
+def parse_flags(tasks_md) -> dict[str, Any]:
     """`flags: ui docs no-merge no-test no-audit no-publish` anywhere in TASKS.md. Default: merge, test, audit, release on; ui, docs off."""
     f: dict[str, Any] = {
         "ui": False,

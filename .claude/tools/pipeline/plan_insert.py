@@ -136,7 +136,7 @@ def _plan(a, d, ents, before):
     return new, ren, old_wave
 
 
-def insert_task(a):
+def insert_task(a) -> tuple[int, list[str]]:
     """Apply `task --before`. -> (task count, plan check problems) of the result."""
     d = pf.stage_dir(a)
     if not os.path.exists(pf.tasks_path(d)):

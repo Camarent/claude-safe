@@ -1,4 +1,4 @@
-"""PLAN GAP with any separator goes to Sonnet; a lead retry after a dev ESCALATE starts on Sonnet (history() hides the pre-retry events)."""
+"""PLAN GAP with any separator goes to Sonnet; a lead retry after a dev ESCALATE starts on Sonnet (E1(b) on the pre-retry events, history() hides them)."""
 
 import os
 import sys
@@ -41,7 +41,7 @@ class LeadRetryTest(_SeqBase):
     def test_after_dev_escalate_sonnet_with_why(self):
         r = self.nxt([dev("a1"), self.rep("ESCALATE"), self.retry()])
         self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
-        self.assertEqual(r["why"], steps.RETRY_ESCALATE_WHY)
+        self.assertTrue(r["why"].startswith("E1(b)"))  # the E1(b) reason from e1.model_for, read from the events before the retry
         print("dry-run: dev a1 haiku ESCALATE -> lead retry ->", r["action"], r["agent"], r["model"], "|", r["why"])
 
     def test_after_judge_fail_ask_still_sonnet(self):
@@ -57,7 +57,7 @@ class LeadRetryTest(_SeqBase):
         for evs in ([dev("a1"), self.rep("DONE"), self.rep("FAIL", "reviewer", "a2")], [dev("a1"), self.rep("BLOCKED")]):
             r = self.nxt([*evs, self.retry()])
             self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))
-            self.assertNotEqual(r.get("why"), steps.RETRY_ESCALATE_WHY)
+            self.assertIsNone(r.get("why"))  # no E1 event before the retry: no why
 
     def test_auto_retry_unchanged(self):
         # the auto retry keeps Haiku; a lead retry after a dev ESCALATE with a reason is the E1(b) Sonnet move

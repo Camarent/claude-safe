@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import wt
-from pipeline import claude, driver, steps, worktree, worktrees
+from pipeline import claude, driver, steps, worktree_merge, worktrees
 from pipeline.configuration import ENV_REVIEW_DIR
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -85,10 +85,10 @@ class ReviewResetTest(unittest.TestCase):
 
     def test_reset_fails_loudly_and_keeps_marker(self):
         wt.review_begin(self.t, "s", TASK)
-        with unittest.mock.patch.object(worktree, "_dirty", return_value=[" M f"]), self.assertRaisesRegex(RuntimeError, "failed"):
+        with unittest.mock.patch.object(worktree_merge, "_dirty", return_value=[" M f"]), self.assertRaisesRegex(RuntimeError, "failed"):
             wt.review_reset(self.t, "s", TASK)
         self.assertTrue(os.path.isfile(wt.review_marker(self.t, "s", TASK)))
-        with unittest.mock.patch.object(worktree, "_dirty", return_value=[" M f"]):
+        with unittest.mock.patch.object(worktree_merge, "_dirty", return_value=[" M f"]):
             self.assertIn("failed", worktrees.review_reset(self.a, TASK))
         wt.review_reset(self.t, "s", TASK)
 
@@ -171,15 +171,14 @@ class ReviewResetTest(unittest.TestCase):
         self.assertRegex(text, r"(?m)^tools: .*\bEdit\b")
 
     def test_dirty_goes_back_to_dev_then_reviewer_then_cap(self):
-        task = {"id": TASK, "owner_sonnet": False, "review_sonnet": False}
-        s = SimpleNamespace(reviewer_sonnet=False)
+        task = {"id": TASK}
         open(f"{self.job}/f", "w").write("d")
         with unittest.mock.patch.dict(os.environ, {steps.ENV_DRY_NO_CCN: "1"}):
-            d = steps._disp_reviewer(self.a, task, "a1", s, [])
+            d = steps._disp_reviewer(self.a, task, "a1", [])
             self.assertEqual(d["agent"], "dev")
             self.assertIn("f", open(d["prompt"].split("fix the findings in ")[1].split(" first")[0]).read())
             sh("-C", self.job, "checkout", "--", "f")
-            self.assertEqual(steps._disp_reviewer(self.a, task, "a2", s, [])["agent"], "reviewer")
+            self.assertEqual(steps._disp_reviewer(self.a, task, "a2", [])["agent"], "reviewer")
             open(f"{self.job}/f", "w").write("d")
             done = {"ev": "report", "role": "dev", "verdict": "DONE", "id": "a0", "file": "x"}
             disp = {"ev": "dispatch", "role": "dev", "model": "haiku", "id": "a0"}
@@ -190,6 +189,7 @@ class ReviewResetTest(unittest.TestCase):
                 unittest.mock.patch.object(steps, "qualityrun_on", return_value=False),
             ):
                 r = steps.next_step(self.a, task, mine, "a9")
+            assert r is not None
             self.assertEqual(r["action"], "ask_main", r)
 
 

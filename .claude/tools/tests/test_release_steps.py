@@ -11,7 +11,7 @@ from typing import Any
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import pr_ops, tasks
+from pipeline import pr_base, pr_ops, tasks
 from tests.support.tmpdirs import tracked_mkdtemp
 
 _GIT_ROUTE: Any
@@ -20,7 +20,7 @@ _GIT_ROUTE: Any
 def setUpModule():
     """git calls of pr_ops go through gitx; the fakes below stand in for pr_ops._run, so route gitx.run there (as ["git", ...])."""
     global _GIT_ROUTE
-    _GIT_ROUTE = mock.patch.object(pr_ops.gitx, "run", lambda repo, *a, timeout=60: pr_ops._run(["git", *a], repo, timeout))
+    _GIT_ROUTE = mock.patch.object(pr_ops.gitx, "run", lambda repo, *a, timeout=60: pr_base._run(["git", *a], repo, timeout))
     _GIT_ROUTE.start()
 
 
@@ -215,7 +215,7 @@ class ReleaseReal(RepoCase):
 
     def gh(self, table=None, push_rc=0, push_err="", wt_rc=0):
         self.calls: list = []
-        real = pr_ops._run
+        real = pr_base._run
 
         def run(args, cwd=None, timeout=120):
             line = " ".join(args)
@@ -230,7 +230,7 @@ class ReleaseReal(RepoCase):
                 return R(wt_rc, "", "wt failed" if wt_rc else "")
             return R(push_rc, "", push_err) if "push" in args else R(0)
 
-        p = mock.patch.object(pr_ops, "_run", side_effect=run)
+        p = mock.patch.object(pr_base, "_run", side_effect=run)
         p.start()
         self.addCleanup(p.stop)
 
@@ -510,7 +510,7 @@ class StaleRelease(RepoCase):
         self.git("reset", "-q", "--hard", "origin/master")  # stage adds nothing to origin/master
         calls = []
 
-        real = pr_ops._run
+        real = pr_base._run
 
         def run(args, cwd=None, timeout=120):
             if args[0] != "gh":
@@ -518,7 +518,7 @@ class StaleRelease(RepoCase):
             calls.append(" ".join(args))
             return R(0, "[]") if args[:3] == ["gh", "pr", "list"] else R(0, "https://x/1")
 
-        with mock.patch.object(pr_ops, "_run", side_effect=run):
+        with mock.patch.object(pr_base, "_run", side_effect=run):
             note = pr_ops._open_pr(self.d, self.d, self.cfg, "s", "stage/s")
         self.assertIn("no commit beyond the release branch", note)
         self.assertFalse([c for c in calls if c.startswith("gh pr create")])

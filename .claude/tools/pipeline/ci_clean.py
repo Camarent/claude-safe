@@ -7,7 +7,7 @@ from . import gitx
 UNTRACKED_ARGS = ("ls-files", "--others", "--exclude-standard", "-z")  # untracked, not ignored, NUL-separated (exact names)
 
 
-def snapshot(repo):
+def snapshot(repo) -> set[str]:
     """-> set of untracked paths (repo-relative, forward slashes) in REPO right now."""
     r = gitx.run(repo, *UNTRACKED_ARGS)
     if r.returncode:
@@ -23,7 +23,7 @@ def _inside(root, path):
     return real.startswith(root + os.sep)
 
 
-def remove_new(repo, before):
+def remove_new(repo, before) -> list[str]:
     """Delete the untracked files in REPO that are absent from BEFORE (a snapshot()). -> sorted list of removed paths. Paths that escape REPO are skipped; directories left empty by a removal are pruned."""
     root = os.path.realpath(repo)
     now = snapshot(repo)

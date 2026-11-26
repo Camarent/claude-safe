@@ -6,7 +6,7 @@ import re
 import sys
 
 sys.path[:0] = [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]  # -I drops the script dir
-from pipeline.util import first_json_obj  # noqa: E402
+from pipeline.util import first_json_obj, swallowed  # noqa: E402 - after the sys.path insert on line 8
 from search.strata import messages, strata_model, strata_up, wait_strata  # noqa: E402
 
 from localmodel.prompts import JSON_ONLY  # noqa: E402
@@ -62,7 +62,8 @@ def snippet(root, c, n=None):
     try:
         with open(os.path.join(root, c["path"]), errors="replace") as f:
             return "\n".join(f.read().split("\n")[c["start"] - 1 : c["start"] - 1 + n])
-    except OSError:
+    except OSError as ex:
+        swallowed("askmodel.snippet", ex)  # unreadable excerpt: the judge sees an empty one
         return ""
 
 

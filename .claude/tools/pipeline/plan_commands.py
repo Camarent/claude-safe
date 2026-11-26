@@ -57,7 +57,7 @@ def _exists(path, dirs, produced):
     return any(os.path.exists(os.path.join(d, path)) for d in dirs)
 
 
-def repo_dirs(repo):
+def repo_dirs(repo) -> set[str]:
     """-> the directories (CMD_SUGGEST_DEPTH parts deep at most) of the git-tracked files of REPO; set() when REPO is no git work tree."""
     try:
         r = gitx.run(repo, "ls-files", "-z")
@@ -96,7 +96,7 @@ def _bare_word_finding(label, a, repo):
 
 
 def _arg_findings(label, args, repo, dirs, produced, local, script):
-    """-> findings for the arguments of one command. A path-like argument must exist: a problem when SCRIPT (the command runs a local file), else only a warning. A bare word that names one repo directory gets a warning, only for a LOCAL executable (`./tool`) and never right after an option (`-p dojo-core` names a package, not a path)."""
+    """-> findings for the arguments of one command. A path-like argument must exist: a problem when SCRIPT (the command runs a local file), else only a warning. A bare word that names one repo directory gets a warning, only for a LOCAL executable (`./tool`) and never right after an option (`-p sample-lib` names a package, not a path)."""
     out = []
     for i, a in enumerate(args):
         if _skip_arg(args, i):
@@ -119,7 +119,7 @@ def _skip_arg(args, i):
 
 
 def _bare_candidate(args, i):
-    """-> True when argument I is a bare word that may name a repo directory: not an option value (`-p dojo-core`)."""
+    """-> True when argument I is a bare word that may name a repo directory: not an option value (`-p sample-lib`)."""
     return not (i and args[i - 1].startswith("-")) and bool(BARE_WORD_RE.match(args[i]))
 
 
@@ -140,7 +140,7 @@ def _segment_findings(label, words, repo, dirs, produced):
     return out + _arg_findings(label, words[1:], repo, dirs, produced, local="/" in exe, script=script)
 
 
-def command_findings(label, cmd, repo, produced=(), nested=()):
+def command_findings(label, cmd, repo, produced=(), nested=()) -> list[str]:
     """-> problems (and `cmd:` warnings) for one shell command CMD of LABEL, run in REPO. PRODUCED: paths the plan makes; NESTED: nested repo dirs the task edits (their files count as found). A leading `cd x` moves the base to x."""
     dirs = [repo, *nested]
     out = []

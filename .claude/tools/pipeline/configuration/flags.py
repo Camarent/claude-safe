@@ -98,7 +98,10 @@ AGENT_TUNING_FLAGS = (  # per-session token trim: no slash commands, only the ru
 # agents that call Skill: disabling slash commands would break it, so claude.py strips AGENT_TUNING_FLAGS for them
 TUNING_EXEMPT_AGENTS = ("publisher", "pl-publisher")
 # the tuning flags come BEFORE `--allowedTools`: that option takes every following word, and the Bash allow patterns that callers append must stay inside its list
-BASE_FLAGS = "--permission-mode acceptEdits " + " ".join(AGENT_TUNING_FLAGS) + " --allowedTools Read Edit Write Grep Glob"
+PERMISSION_MODE_FLAG = "--permission-mode"  # claude option that sets the permission mode
+PERMISSION_MODE_DEFAULT = "acceptEdits"  # headless agents: edits go through, other actions follow the allowlist
+PERMISSION_MODE_AUTO = "auto"  # scripts/pipeline_auto.py: claude decides per action (opt-in, no allowlist prompt)
+BASE_FLAGS = f"{PERMISSION_MODE_FLAG} {PERMISSION_MODE_DEFAULT} " + " ".join(AGENT_TUNING_FLAGS) + " --allowedTools Read Edit Write Grep Glob"
 PROJECT_FILE = "pipeline.json"  # per-project settings file name
 TEST_RUNNERS = (  # cmd_guard.py: regexes of command heads that count as a test run; pipeline.json `test_runners` replaces it
     QRUN_PATTERN,
@@ -114,25 +117,25 @@ TEST_RUNNERS = (  # cmd_guard.py: regexes of command heads that count as a test 
 )
 
 
-def claude_flags(cfg=None):
+def claude_flags(cfg=None) -> str:
     """-> the headless `claude -p` flag string: BASE_FLAGS, the Bash allowlist (cfg `bash_allow` or BASH_ALLOW), OTHER_ALLOW."""
     allow = tuple((cfg or {}).get("bash_allow") or BASH_ALLOW) + serve_allow(cfg)
     return f"{BASE_FLAGS} " + " ".join(f"'Bash({a})'" for a in allow) + f" {OTHER_ALLOW}"
 
 
-def scratch_allow(scratch, cfg=None):
+def scratch_allow(scratch, cfg=None) -> tuple[str, ...]:
     """-> `Bash` patterns that let an agent run python script files from its own SCRATCH dir (`python3 -I <scratch>/x.py args`); () without a scratch dir or when cfg `bash_allow` replaces the allowlist. unzip/tar -x into scratch are not expressible safely (a `*` argument could add a second -d/-C), so they stay denied."""
     if not scratch or (cfg or {}).get("bash_allow"):
         return ()
     return (f"python3 -I {scratch.rstrip('/')}/*",)
 
 
-def serve_allow(cfg=None):
+def serve_allow(cfg=None) -> tuple[str, ...]:
     """-> `Bash` patterns of the localhost serve: cfg `serve_allow` or SERVE_ALLOW."""
     return tuple((cfg or {}).get("serve_allow") or SERVE_ALLOW)
 
 
-def ui_paths(cfg=None):
+def ui_paths(cfg=None) -> tuple[str, ...]:
     """-> globs of the files whose change makes the final UI check mandatory: cfg `ui_paths` or UI_PATHS."""
     return tuple((cfg or {}).get("ui_paths") or UI_PATHS)
 
@@ -156,7 +159,7 @@ WEBTEST_MODEL = "sonnet"  # model of the final browser check: multi-step flows a
 UX_FLOW_ACTIONS = ("click", "type", "press", "wait", "eval")  # action keys of one flow step (ux_shots.js runAction)
 
 
-def ux_flows(cfg=None):
+def ux_flows(cfg=None) -> str:
     """-> the `ux_flows` path of cfg (repo-relative), '' when none is configured."""
     return str((cfg or {}).get(UX_FLOWS_KEY) or "")
 
@@ -173,7 +176,7 @@ WEBTEST_SKIP_LINE = (
 )
 
 
-def webtest_tools_missing(cfg=None):
+def webtest_tools_missing(cfg=None) -> list[str]:
     """-> the tool-name prefixes the browser check needs that headless sessions do not have, [] when it can run. The code cannot see the session's tools, so the owner states it: `webtest_tools_available` false means none are there; `webtest_requires_tools` [] switches the check off."""
     cfg = cfg or {}
     req = cfg.get(WEBTEST_REQUIRES_KEY, WEBTEST_TOOL_PREFIXES)
@@ -181,12 +184,12 @@ def webtest_tools_missing(cfg=None):
     return [] if cfg.get(WEBTEST_AVAILABLE_KEY, True) is not False else need
 
 
-def webtest_model(cfg=None):
+def webtest_model(cfg=None) -> str:
     """-> model of the final browser check: cfg `webtest_model` or WEBTEST_MODEL."""
     return str((cfg or {}).get(WEBTEST_MODEL_KEY) or WEBTEST_MODEL)
 
 
-def test_runners(cfg=None):
+def test_runners(cfg=None) -> tuple[str, ...]:
     """-> regex strings for test-run command heads: cfg `test_runners` or TEST_RUNNERS."""
     return tuple((cfg or {}).get("test_runners") or TEST_RUNNERS)
 
@@ -194,7 +197,7 @@ def test_runners(cfg=None):
 DEFAULT_FLAGS = claude_flags()
 
 
-def ops_flags(d=None):
+def ops_flags(d=None) -> list[str]:
     """ops only: the rm pattern for cleanup under <run dir>/.work/<stage>/ (default: the process cwd)."""
     return [f"Bash(rm {d or os.getcwd()}/.work/*)"]
 

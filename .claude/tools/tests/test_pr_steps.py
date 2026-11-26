@@ -16,7 +16,8 @@ from unittest import mock
 os.environ["PIPELINE_NO_LEADS"] = "1"
 os.environ.setdefault("ORCH_NO_INDEX", "1")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import cli_orch, graph, phases, pr_mode, pr_ops
+import pr_steps
+from pipeline import cli_orch, graph, phases, pr_base, pr_mode, pr_ops
 from tests.support.gitrepo import git
 
 _INDEX_PATCH = mock.patch.object(graph, "run_index", return_value=0)
@@ -139,6 +140,13 @@ class RunTest(Base):
         self.assertEqual(v, "BLOCKED")
         self.assertIn("unit", text)
         self.assertNotIn("lint", text)
+
+
+class MainExitCodeTest(unittest.TestCase):
+    def test_non_done_verdict_exits_1_and_done_exits_0(self):
+        for verdict, code in (("BLOCKED", 1), ("DONE", 0)):
+            with self.subTest(verdict=verdict), mock.patch.object(pr_steps, "run", return_value=(verdict, "text")), redirect_stdout(io.StringIO()):
+                self.assertEqual(pr_steps.main(["open", "--dir", "d", "--stage", "s", "--name", "x"]), code)
 
 
 class MergeTest(Base):
@@ -347,7 +355,7 @@ class NoChangeStageTest(unittest.TestCase):
             git(d, "checkout", "-q", "-b", "stage/s")
             cfg = {"branch_release": "master", "release_script": "no-such-script.sh"}
             self.assertIn("no version bump", pr_ops._version_bump(d, d, cfg, "s", "stage/s"))
-            with mock.patch.object(pr_ops, "_view", return_value=""):
+            with mock.patch.object(pr_base, "_view", return_value=""):
                 self.assertIn("nothing to merge", pr_ops._merge(d, d, cfg, "s", "stage/s"))
 
     def test_stage_branch_with_a_commit_still_reaches_the_release_script(self):

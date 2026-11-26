@@ -5,6 +5,7 @@ import re
 import shlex
 import subprocess
 
+from pipeline.configuration import tool_setting
 from pipeline.shellwords import short_flag
 
 ALLOW = {"head", "tail", "grep", "egrep", "sed", "ls", "cat", "wc", "sort", "uniq", "find", "echo", "cut", "jq", "git", "lp"}
@@ -181,11 +182,13 @@ def check(cmd):
     return None
 
 
-def run(cmd, cwd, timeout=60):
-    """Output of CMD run in CWD with an empty environment; the check() reason when refused."""
+def run(cmd, cwd, timeout=None):
+    """Output of CMD run in CWD with an empty environment; the check() reason when refused. TIMEOUT None: the SAFESHELL_TIMEOUT_S tool setting."""
     why = check(cmd)
     if why:
         return "error: " + why
+    if timeout is None:
+        timeout = tool_setting("SAFESHELL_TIMEOUT_S")
     try:
         p = subprocess.run(
             ["bash", "-c", cmd],

@@ -2,7 +2,7 @@
 set -uo pipefail
 
 # Root phase: only what needs root (claude update, X socket dir, ownership). Then re-exec as the
-# unprivileged `node` user, remapped to the host uid/gid so files in the mounts are never root-owned.
+# non-root `node` user, remapped to the host uid/gid so files in the mounts are never root-owned.
 # HOME stays /root (every tool and rule refers to /root/.claude); it is owned by node, not by root.
 if [[ "$(id -u)" == "0" ]]; then
     hostUid="${HOST_UID:-1000}"; hostGid="${HOST_GID:-1000}"
@@ -25,67 +25,6 @@ if [[ "$(id -u)" == "0" ]]; then
         [[ -d "$d" ]] && find "$d" -xdev -user root -exec chown -h "$hostUid:$hostGid" {} + 2>/dev/null
     done
     [[ -f /root/.claude.json ]] && chown "$hostUid:$hostGid" /root/.claude.json
-    # --cluster: own dockerd (the container is privileged) and a one-node Slurm. Both need root; logs in /tmp.
-    if [[ "${CLUSTER:-0}" == "1" ]]; then
-        # cgroup v2 in a privileged container: move our processes to a leaf so dockerd/kind can manage the tree.
-        if [[ -f /sys/fs/cgroup/cgroup.controllers ]]; then
-            mkdir -p /sys/fs/cgroup/init
-            for pid in $(cat /sys/fs/cgroup/cgroup.procs); do echo "$pid" > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || [[ ! -d /proc/$pid ]] || echo -e "\033[33mcgroup: could not move pid $pid to /sys/fs/cgroup/init\033[0m"; done
-            sed -e 's/ *\([^ ]\+\)/ +\1/g' -e 's/^ //' /sys/fs/cgroup/cgroup.controllers > /sys/fs/cgroup/cgroup.subtree_control \
-                || echo -e "\033[33mcgroup: could not enable controllers in subtree_control (dockerd/kind may fail)\033[0m"
-        else
-            echo -e "\033[33mcgroup v2 not found: dockerd/kind may fail on a cgroup v1 host.\033[0m"
-        fi
-        dockerd >/tmp/dockerd.log 2>&1 &
-        for _ in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 0.5; done
-        if docker info >/dev/null 2>&1; then
-            chgrp "$hostGid" /var/run/docker.sock && chmod 660 /var/run/docker.sock
-            if setpriv --reuid=node --regid=node --init-groups docker info >/dev/null 2>&1; then
-                echo -e "\033[32mDocker daemon ready (own dockerd, logs /tmp/dockerd.log).\033[0m"
-            else
-                echo -e "\033[33mDocker daemon runs but user node cannot use the socket (/var/run/docker.sock).\033[0m"
-            fi
-        else
-            echo -e "\033[33mDocker daemon did not start (see /tmp/dockerd.log).\033[0m"
-        fi
-        if command -v slurmctld >/dev/null; then
-            mkdir -p /var/spool/slurmd /var/spool/slurmctld /var/log/slurm /run/munge /etc/slurm
-            [[ -s /etc/munge/munge.key ]] || { mungekey --create >/dev/null 2>&1 || dd if=/dev/urandom of=/etc/munge/munge.key bs=1 count=1024 2>/dev/null; }
-            chown -R munge:munge /etc/munge /var/lib/munge /var/log/munge /run/munge 2>/dev/null; chmod 400 /etc/munge/munge.key
-            su -s /bin/sh munge -c munged
-            nodeLine=$(slurmd -C 2>/dev/null | sed -n 's/^\(NodeName=[^ ]*\) .*\(CPUs=.*RealMemory=[0-9]*\).*/\1 \2/p' | head -n1)   # detected topology, so the node is never INVAL
-            cat > /etc/slurm/slurm.conf <<SLURM
-ClusterName=local
-SlurmctldHost=$(hostname)
-MpiDefault=none
-ProctrackType=proctrack/linuxproc
-TaskPlugin=task/none
-ReturnToService=2
-SlurmctldPidFile=/run/slurmctld.pid
-SlurmdPidFile=/run/slurmd.pid
-SlurmdSpoolDir=/var/spool/slurmd
-StateSaveLocation=/var/spool/slurmctld
-SlurmctldLogFile=/var/log/slurm/slurmctld.log
-SlurmdLogFile=/var/log/slurm/slurmd.log
-SchedulerType=sched/backfill
-SelectType=select/cons_tres
-SelectTypeParameters=CR_Core
-$nodeLine State=UNKNOWN
-PartitionName=main Nodes=ALL Default=YES MaxTime=INFINITE State=UP
-SLURM
-            printf 'CgroupPlugin=disabled\nIgnoreSystemd=yes\n' > /etc/slurm/cgroup.conf   # no systemd in the container
-            slurmctld >/tmp/slurmctld.out 2>&1; slurmd >/tmp/slurmd.out 2>&1
-            # Wait for the node to register and turn idle; anything else is reported with the reason, never hidden.
-            slurmState=""
-            for _ in $(seq 1 30); do slurmState=$(sinfo -h -o %t 2>/dev/null | head -n1); [[ "$slurmState" == "idle" ]] && break; sleep 0.5; done
-            chmod -R a+rX /var/log/slurm; chmod a+r /var/log/slurm/*.log 2>/dev/null
-            if [[ "$slurmState" == "idle" ]]; then
-                echo -e "\033[32mSlurm one-node cluster ready (sinfo, sbatch; logs /var/log/slurm).\033[0m"
-            else
-                echo -e "\033[33mSlurm NOT ready (node state '${slurmState:-none}', nodeLine '${nodeLine:-empty}'). See /tmp/slurmctld.out, /tmp/slurmd.out, /var/log/slurm; sinfo -R.\033[0m"
-            fi
-        fi
-    fi
     exec setpriv --reuid=node --regid=node --init-groups env HOME=/root USER=node "$0" "$@"
 fi
 

@@ -12,7 +12,7 @@ from unittest import mock
 os.environ["PIPELINE_NO_LEADS"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ops_steps
-from pipeline import phases, pr_ops, webskip
+from pipeline import phases, pr_base, pr_ops, webskip
 from pipeline.configuration import WEBTEST_SKIP_MARK, webtest_tools_missing
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -34,9 +34,9 @@ class SkipStepTest(unittest.TestCase):
         self.d = tracked_mkdtemp()
         self.work = Path(self.d, ".work", "s")
         self.work.mkdir(parents=True)
-        (self.work / "task-1.md").write_text("Predicted paths: web/a.js\n", encoding="utf-8")
+        (self.work / "unit-a.md").write_text("Predicted paths: web/a.js\n", encoding="utf-8")
         self.a = SimpleNamespace(stage="s", dir=self.d, feature=None)
-        self.tasks = [{"id": "task-1", "wave": 1}]
+        self.tasks = [{"id": "unit-a", "wave": 1}]
 
     def steps(self, cfg):
         return [s for g in phases._web_test_phases(self.a, cfg, self.tasks, []) for s in g]
@@ -49,7 +49,7 @@ class SkipStepTest(unittest.TestCase):
         self.assertEqual([s["agent"] for s in steps], ["script"])
         self.assertEqual(steps[0]["id"], "final-webtest")
         self.assertIn("ops_steps.py webskip", steps[0]["prompt"])
-        self.assertIn("task-1", steps[0]["prompt"])
+        self.assertIn("unit-a", steps[0]["prompt"])
         self.assertEqual(steps[0]["ok"], {"DONE"})
 
 
@@ -67,12 +67,12 @@ class SkipNoteTest(unittest.TestCase):
         return rc, out.getvalue()
 
     def test_webskip_prints_done_and_the_unverified_web_line(self):
-        rc, out = self.run_cmd("--ids", "task-1, task-2")
+        rc, out = self.run_cmd("--ids", "unit-a, unit-b")
         self.assertEqual(rc, 0)
         lines = out.splitlines()
         self.assertEqual(lines[0], "VERDICT: DONE")
         self.assertTrue(lines[1].startswith(WEBTEST_SKIP_MARK + ": skipped: no browser tools (mcp__chrome-devtools)"))
-        self.assertIn("task-1, task-2", lines[1])
+        self.assertIn("unit-a, unit-b", lines[1])
 
     def test_digest_and_pr_note_carry_the_line(self):
         (self.root / "reports" / "report-final-webtest-r1.md").write_text("VERDICT: DONE\n" + WEBTEST_SKIP_MARK + ": skipped: x\n", encoding="utf-8")
@@ -94,7 +94,7 @@ class ReadyBodyTest(unittest.TestCase):
             calls.append(cmd)
             return SimpleNamespace(returncode=0, stdout="Body.", stderr="")
 
-        with mock.patch.object(pr_ops, "_run", side_effect=fake):
+        with mock.patch.object(pr_base, "_run", side_effect=fake):
             pr_ops.append_body("/r", "br", "UNVERIFIED-WEB: skipped")
         edit = next(c for c in calls if c[:3] == ["gh", "pr", "edit"])
         self.assertIn("Body.\n\nUNVERIFIED-WEB: skipped", edit)

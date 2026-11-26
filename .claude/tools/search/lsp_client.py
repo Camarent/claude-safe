@@ -9,6 +9,8 @@ import time
 from typing import IO, cast
 from urllib.parse import quote, unquote, urlparse
 
+from pipeline.util import swallowed
+
 SERVERS = {
     "py": (["pyright-langserver", "--stdio"], "python"),
     "js": (["tsc", "--lsp", "--stdio"], "javascript"),
@@ -94,7 +96,7 @@ class Client:
                     },
                 },
             )
-        except BaseException:  # a refused or silent initialize must not leave the server running
+        except BaseException:  # KEEP: not a swallow; a refused or silent initialize must not leave the server running, then re-raise
             self.p.kill()
             self.p.wait()
             raise
@@ -272,6 +274,6 @@ class Client:
         try:
             self.req("shutdown", None, 5)
             self.note("exit", None)
-        except Exception:  # nosec B110  # fail open on purpose
-            pass
+        except Exception as ex:  # fail open on purpose; swallowed() logs it
+            swallowed("lsp_client.close", ex)
         self.p.kill()

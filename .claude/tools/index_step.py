@@ -13,8 +13,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
-from pipeline.configuration import INDEX_TIMEOUT_S, VERDICT_PREFIX
-from pipeline.util import add_common_args, script_timeout
+from pipeline.configuration import INDEX_TIMEOUT_S, VERDICT_PREFIX, tool_setting
+from pipeline.util import add_common_args, script_timeout, swallowed
 
 LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "search", "local.py")
 
@@ -55,7 +55,7 @@ def vacuum_bloated(db):
     try:
         if os.path.getsize(db) < VACUUM_MIN_BYTES:
             return ""
-        con = sqlite3.connect(db, timeout=5)
+        con = sqlite3.connect(db, timeout=tool_setting("INDEX_DB_TIMEOUT_S"))
         try:
             free, total = con.execute("pragma freelist_count").fetchone()[0], con.execute("pragma page_count").fetchone()[0]
             if not total or free / total < VACUUM_FREE_SHARE:
@@ -65,7 +65,8 @@ def vacuum_bloated(db):
         finally:
             con.close()
         return f"{db}: vacuumed, saved {(before - os.path.getsize(db)) // (1024 * 1024)} MB"
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as e:
+        swallowed("index_step.vacuum_bloated", e)  # best effort: a busy or unreadable DB is left alone
         return ""
 
 

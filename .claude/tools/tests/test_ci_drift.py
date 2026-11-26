@@ -65,7 +65,7 @@ class CiOnlyLinesTest(unittest.TestCase):
 
     def test_decoy_line_is_still_reported(self):
         # Not never-local: no GitHub var, no secret, and a shell setting followed by a separator is a real command.
-        decoys = ["./dojo build", "cd web && pytest tests", "set -e; ./scripts/deploy", "export X=1 && npm test", "./dojo test $MY_RUNNER_X"]
+        decoys = ["./sample-lib build", "cd web && pytest tests", "set -e; ./scripts/deploy", "export X=1 && npm test", "./sample-lib test $MY_RUNNER_X"]
         ci = "jobs:\n  t:\n    steps:\n" + "".join(f"      - run: {c}\n" for c in decoys)
         d = make({"gates": G}, ci)
         self.assertEqual(ci_commands(d, {"gates": G}), decoys)

@@ -16,7 +16,7 @@ def _is_bare(cmd):
     return bool(re.match(BARE_RUNNER_RE, cmd.strip()))
 
 
-def test_command_hint(cfg):
+def test_command_hint(cfg) -> str | None:
     """-> the project's named test command: setting `test_command_hint`, else the first gate command that runs pytest behind a wrapper; None when there is none."""
     hint = cfg.get(TESTCMD_HINT_KEY)
     if isinstance(hint, str) and hint.strip():
@@ -32,7 +32,7 @@ def test_command_hint(cfg):
     return None
 
 
-def check_bare_test_runner(d, tid, workspace):
+def check_bare_test_runner(d, tid, workspace) -> list[str]:
     """`testcmd:` warning (never fails a check) for one task: its `Test:` line runs bare `pytest` / `python -m pytest` while the project names another test command (it needs an environment the job worktree lacks)."""
     m = TEST_LINE_RE.search(read_text(os.path.join(d, tid + ".md")))
     if not m:
@@ -64,7 +64,7 @@ def _test_bans(cfg):
     return out
 
 
-def check_test_ban(d, tid, workspace):
+def check_test_ban(d, tid, workspace) -> list[str]:
     """`testban:` error for one task: a `Test:` command part (wrapper words stripped) matches a `test_ban` pattern of the project; the error names the `use` text."""
     m = TEST_LINE_RE.search(read_text(os.path.join(d, tid + ".md")))
     if not m:

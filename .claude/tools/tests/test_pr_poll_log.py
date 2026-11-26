@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import pr_ops
+from pipeline import pr_base, pr_ops
 from pipeline.configuration import CI_POLL_S
 
 PIPELINE_DIR = Path(__file__).resolve().parents[1] / "pipeline"
@@ -116,7 +116,7 @@ class MergeGateLogsEachPoll(unittest.TestCase):
             "gh pr merge b": R(0),
         }
         run = Scripted(table)
-        with mock.patch.object(pr_ops, "_run", run), mock.patch.object(pr_ops, "_say") as say:
+        with mock.patch.object(pr_base, "_run", run), mock.patch.object(pr_ops, "_say") as say:
             note = pr_ops._merge(self.d, self.d, {}, "s", "b", self.clock)
         self.assertEqual(note, "PR squash-merged: chore(s): s")
         self.assertEqual(

@@ -34,7 +34,7 @@ from .plan_run import run
 from .util import default_dir, jprint, read_text, write_text
 
 
-def cmd_plan_init(a):
+def cmd_plan_init(a) -> int:
     pf.init_plan(a)
     return 0
 
@@ -61,7 +61,8 @@ def _resolve_deps(a, phases, before):
     prev = []  # the phase before `before` (none when first)
     if before is not None and phases.index(before):
         prev = [phases[phases.index(before) - 1]["dir"]]
-    return pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else prev)
+    after = pf.phase_ref(phases, a.after) if a.after else None  # None when --after names no phase
+    return pf.csv(a.depends) or ([after["dir"]] if after else prev)
 
 
 def _check_overlap(a, phases, paths, deps, before):
@@ -99,7 +100,7 @@ def _place_phase(a, phases, new):
     return [*phases, new]
 
 
-def cmd_phase(a):
+def cmd_phase(a) -> int:
     phases, paths = pf.read_phases(a), pf.csv(a.paths)
     before = _validate_phase_args(a, phases)
     deps = _resolve_deps(a, phases, before)
@@ -111,11 +112,11 @@ def cmd_phase(a):
     return 0
 
 
-def cmd_phase_done(a):
+def cmd_phase_done(a) -> int:
     return mark_phase_done(a, a.name)
 
 
-def mark_phase_done(a, name):
+def mark_phase_done(a, name) -> int:
     phases = pf.read_phases(a)
     p = pf.phase_ref(phases, name)
     if not p:
@@ -125,7 +126,7 @@ def mark_phase_done(a, name):
     return 0
 
 
-def cmd_next_phase(a):
+def cmd_next_phase(a) -> int:
     phases = pf.read_phases(a)
     p = pf.next_open_phase(phases)
     jprint(
@@ -134,7 +135,7 @@ def cmd_next_phase(a):
     return 0
 
 
-def cmd_stage_init(a):
+def cmd_stage_init(a) -> int:
     d = pf.stage_dir(a)
     os.makedirs(d, exist_ok=True)
     pf.init_stage(d, a.stage, a.goal, a.flags, a.pr_title if pr_mode.has_origin(a) else "")  # no origin = no PR = no title
@@ -147,7 +148,7 @@ def _insert(a):
     return 2 if plan_check.errors_of(probs) else 0
 
 
-def cmd_task(a):
+def cmd_task(a) -> int:
     if a.before:
         return _insert(a)
     if not a.id:
@@ -232,7 +233,7 @@ def _restore(d, snap):
                 f.write(data)
 
 
-def cmd_batch(a):
+def cmd_batch(a) -> int:
     """`batch --stage S --file tasks.json`: add every task of the JSON list through `cs-plan task`. All entries are parsed first; a bad entry adds none. A task that fails later rolls the stage dir back, so none is added."""
     try:
         text = read_text(a.file, None)  # None for a missing file
@@ -329,7 +330,7 @@ def _after_depends(d, ents, e, moved, had_deps, asked):
         print("\n".join(_depends_report(d, ents, e, moved, had_deps)))
 
 
-def cmd_edit_task(a):
+def cmd_edit_task(a) -> int:
     d = pf.stage_dir(a)
     tid = f"task-{int(a.id)}"
     f = os.path.join(d, tid + ".md")
@@ -357,7 +358,7 @@ def _report_check(d, n, probs):
     return 2 if plan_check.errors_of(probs) else 0
 
 
-def cmd_check(a):
+def cmd_check(a) -> int:
     if bool(a.stage) == bool(a.feature):
         raise pf.PlanError("check needs exactly one of --stage / --feature")
     d = pf.stage_dir(a) if a.stage else pf.feature_dir(a)
@@ -365,7 +366,7 @@ def cmd_check(a):
     return _report_check(d, n, probs)
 
 
-def cmd_amend(a):
+def cmd_amend(a) -> int:
     if not os.path.exists(pf.plan_path(a)):
         raise pf.PlanError("Plan.md missing: run plan-init first")
     amend_phase(a, pf.read_phases(a))
@@ -374,14 +375,14 @@ def cmd_amend(a):
     return _report_check(d, n, probs)
 
 
-def cmd_dryrun(a):
+def cmd_dryrun(a) -> int:
     d = pf.stage_dir(a)
     n, probs = plan_dryrun.dryrun_stage(d, plan_check.repo_of(d))
     print("\n".join(probs) if probs else f"OK {n} dry runs")
     return 2 if probs else 0
 
 
-def cmd_testrun(a):
+def cmd_testrun(a) -> int:
     d = pf.stage_dir(a)
     n, probs = plan_testrun.testrun_stage(d, plan_check.repo_of(d))
     print("\n".join(probs) if probs else f"OK {n} test lines")
@@ -395,7 +396,7 @@ def _blocked(a, msg):
     return EXIT_BLOCKED
 
 
-def cmd_run(a):
+def cmd_run(a) -> int:
     _preflight_model()
     if msg := dirty_block(a):
         return _blocked(a, msg)
@@ -410,11 +411,11 @@ def _preflight_model():
     preflight()
 
 
-def build():
+def build() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="cs-plan", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    def add(cmd, fn, **args):
+    def add(cmd, fn, **args) -> None:
         p = sub.add_parser(cmd)
         p.add_argument("--dir", default=default_dir())
         for k, v in args.items():
@@ -473,7 +474,7 @@ def build():
     return ap
 
 
-def main(argv=None):
+def main(argv=None) -> int:
     a = build().parse_args(argv)
     try:
         return a.fn(a)

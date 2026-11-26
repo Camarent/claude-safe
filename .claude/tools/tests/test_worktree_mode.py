@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import worktree
+from pipeline import worktree, worktree_merge
 from tests.support.tmpdirs import tracked_tmpdir
 
 STAGE = "stage-x"
@@ -33,10 +33,10 @@ class CommitAppliesBriefModeTest(unittest.TestCase):
         Path(self.d, "README").write_text("init")
         git(self.d, "add", "-A")
         git(self.d, "commit", "-q", "-m", "init")
-        patch = mock.patch.object(worktree, "_parts", return_value=(None, "job/x", [("", self.d, self.d)]))
+        patch = mock.patch.object(worktree_merge, "_parts", return_value=(None, "job/x", [("", self.d, self.d)]))
         patch.start()
         self.addCleanup(patch.stop)
-        regen = mock.patch.object(worktree, "_regen_docs_index")
+        regen = mock.patch.object(worktree_merge, "_regen_docs_index")
         regen.start()
         self.addCleanup(regen.stop)
 

@@ -97,7 +97,7 @@ class PhaseHarness(_Mixin):
         self.d = tracked_mkdtemp()
         os.makedirs(f"{self.d}/.work/s/reports")
         Path(f"{self.d}/pipeline.json").write_text(
-            '{"test_env": {"DOJO_KIT_ROOT": "."}, "branch_work": "dev", "qualityrun": false, "testrun": false}', encoding="utf-8"
+            '{"test_env": {"SAMPLE_LIB_ROOT": "."}, "branch_work": "dev", "qualityrun": false, "testrun": false}', encoding="utf-8"
         )
         Path(f"{self.d}/AUDIT.md").write_text(
             "```ux\nserve: x\nurl: http://127.0.0.1:1/\n```\n", encoding="utf-8"
@@ -167,7 +167,7 @@ class PhaseHarness(_Mixin):
         self.base()
         self.run_batch(["merger"], "DONE")
         t = self.run_batch(["tester", "web-tester"], "PASS", "PASS")
-        self.assertIn("DOJO_KIT_ROOT", t[0]["prompt"])
+        self.assertIn("SAMPLE_LIB_ROOT", t[0]["prompt"])
         self.run_batch(["docs-writer"], "DONE")
         self.run_batch(["script"], "DONE")  # plan-vs-changes: recall for every tested stage
         self.run_batch(["script"], "DONE")

@@ -31,13 +31,15 @@ from pipeline.configuration import (
     PUBLIC_FORBIDDEN_WORDS_KEY,
     PUBLIC_WORDS_BASELINE_DEFAULT,
     PUBLIC_WORDS_BASELINE_KEY,
+    PUBLIC_WORDS_SKIP_FILES_DEFAULT,
+    PUBLIC_WORDS_SKIP_FILES_KEY,
     VERDICT_PREFIX,
     project,
     release_branch,
     repo_dir,
 )
 from pipeline.stagedir import resolve_stage
-from pipeline.util import add_common_args, read_jsonl, read_text, work_path
+from pipeline.util import add_common_args, read_jsonl, read_text, swallowed, work_path, write_text
 from pipeline.worktree import nested_repos
 
 KEEP_REPORT_RE = re.compile(r"^\s*(?:VERDICT\s*:\s*)?(BLOCKED|FAIL|ESCALATE)\b")  # the retro reads these reports
@@ -142,8 +144,7 @@ def digest(d, stage):
     out += [f"- {r.get('task') or r.get('id')} {r.get('verdict')}: {r.get('reason', '')}" for r in bad[:TOP_SESSIONS]]
     out += webskip.skips(d, stage)  # a skipped browser check stays visible in the retro
     f = work_path(stage_dir(d, stage), "retro-digest.md", create=True)
-    with open(f, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(out) + "\n")
+    write_text(f, "\n".join(out) + "\n")
     return True, out
 
 
@@ -153,7 +154,7 @@ def _is_public(repo):
         with open(os.path.join(repo, "CLAUDE.md"), encoding="utf-8", errors="replace") as fh:
             if any(PUBLIC_MARK_RE.search(line) for line in fh):
                 return True
-    except OSError:
+    except OSError:  # no readable CLAUDE.md: no public mark here, so gh decides
         pass
     try:
         r = subprocess.run(list(GH_VISIBILITY_ARGS), cwd=repo, capture_output=True, text=True, timeout=GIT_QUICK_TIMEOUT_S, check=False)
@@ -161,7 +162,8 @@ def _is_public(repo):
             return None
         private = json.loads(r.stdout or "{}").get("isPrivate")
         return None if private is None else private is False
-    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
+    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError) as e:
+        swallowed("ops_steps._is_public", e)  # None: public_words_gate fails closed on an unknown visibility
         return None
 
 
@@ -185,7 +187,8 @@ def public_words_gate(d):
         return True, []
     baseline_rel = project(d).get(PUBLIC_WORDS_BASELINE_KEY, PUBLIC_WORDS_BASELINE_DEFAULT)
     try:
-        found = public_words.records(repo, words)
+        skip = project(d).get(PUBLIC_WORDS_SKIP_FILES_KEY, PUBLIC_WORDS_SKIP_FILES_DEFAULT)
+        found = public_words.records(repo, words, skip)
         baseline = public_words.read_baseline(os.path.join(repo, baseline_rel))
     except public_words.ScanError as e:
         return False, [str(e)]

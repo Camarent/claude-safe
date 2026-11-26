@@ -1,9 +1,49 @@
 [project]
 name = "claude-safe-pipeline"
-version = "0.0.0"
+version = "0.1.0"
 description = "Agent pipeline tools. Stdlib only at runtime; the dev group holds the checks."
+license = "MIT"
+authors = [{ name = "Camarent" }]
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Camarent/claude-safe"
+Repository = "https://github.com/Camarent/claude-safe"
+Issues = "https://github.com/Camarent/claude-safe/issues"
+
+# One entry per cs-* wrapper in .claude/bin whose target defines a top-level main.
+# package = false below: the supported install is the .claude/bin wrappers on PATH; these document the mains.
+[project.scripts]
+cs-agent-cost = "retro.agent_cost:main"
+cs-audit = "audit.audit_run:main"
+cs-audit-report = "audit.audit_report:main"
+cs-cmd-guard = "cmd_guard:main"
+cs-commit = "commit:main"
+cs-context-eval = "localmodel.context_eval:main"
+cs-docs-index = "docs_index:main"
+cs-final-check = "audit.final_check:main"
+cs-index-step = "index_step:main"
+cs-lead-cost = "retro.lead_cost:main"
+cs-ledger = "retro.ledger:main"
+cs-localdev = "localmodel.localdev:main"
+cs-merge-wave = "merge_wave:main"
+cs-model-guard = "model_guard:main"
+cs-ops = "ops_steps:main"
+cs-pr = "pr_steps:main"
+cs-prepare-repo = "pipeline.prepare_repo:main"
+cs-ptest = "ptest:main"
+cs-qrun = "qrun:main"
+cs-qualityrun = "audit.qualityrun:main"
+cs-retro = "retro.retro_numbers:main"
+cs-review-guard = "review_guard:main"
+cs-scans = "audit.scans:main"
+cs-servectl = "servectl:main"
+cs-testrun = "testrun:main"
+cs-ux-run = "ux_run:main"
+cs-write-guard = "write_guard:main"
+cs-wt = "wt:main"
 
 [dependency-groups]
 # Same audit tools as the container image (Dockerfile, /opt/uv-tools) plus lint, types and tests.
@@ -46,6 +86,12 @@ explicit_package_bases = true
 [[tool.mypy.overrides]]
 module = ["audit.*", "localmodel.*", "pipeline.*", "search.*", "retro.*", "brieflint", "cmd_guard", "codenames", "commit", "docs_index", "index_step", "local", "merge_wave", "model_guard", "ops_steps", "orch", "plan", "pr_steps", "ptest", "qrun", "review_guard", "sync_caveman", "testrun", "ux_run", "wave", "wt", "xtools", "tests.*"]
 check_untyped_defs = true
+
+# fully typed pipeline modules: every public def has parameter and return annotations (docs/decisions.md)
+[[tool.mypy.overrides]]
+module = ["pipeline", "pipeline.agents", "pipeline.configuration", "pipeline.configuration.ci_poll", "pipeline.configuration.cite_check", "pipeline.configuration.cleanup", "pipeline.configuration.defaults", "pipeline.configuration.env", "pipeline.configuration.errors", "pipeline.configuration.layout", "pipeline.configuration.limits", "pipeline.configuration.planning", "pipeline.configuration.pr_gates", "pipeline.configuration.public", "pipeline.configuration.qrun", "pipeline.configuration.serve", "pipeline.configuration.tuning", "pipeline.configuration.verdicts", "pipeline.plan_review", "pipeline.run", "pipeline.steps_docfix", "pipeline.verify_retry", "pipeline.webskip", "pipeline.worktrees"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 
 # tests monkeypatch on purpose: `lambda: seen.append(x) or y` and `obj.method = fake` are idiomatic there
 [[tool.mypy.overrides]]

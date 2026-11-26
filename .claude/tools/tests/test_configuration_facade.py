@@ -1,11 +1,13 @@
 """pipeline.configuration is a package; its facade must keep every key name importable (callers import them by name)."""
 
 import importlib
+import json
 import os
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tests.support.tmpdirs import tracked_mkdtemp
 
 KEY_NAMES = (
     "HOME",
@@ -34,7 +36,6 @@ KEY_NAMES = (
     "WORK_DIR",
     "TASKS_FILE",
     "SESSION_TIMEOUT_S",
-    "TASK_FILES_WARN",
     "TASK_FILES_FAIL",
     "DEFAULT_WORKSPACE",
     "ConfigError",
@@ -74,6 +75,14 @@ class ConfigurationFacadeTest(unittest.TestCase):
     def test_home_is_the_pipeline_folder(self):
         c = importlib.import_module("pipeline.configuration")
         self.assertEqual(c.TOOLS_DIR, c.HOME + "/tools")
+
+    def test_removed_review_ccn_key_in_pipeline_json_does_not_raise(self):
+        # the review_ccn route is gone; an old pipeline.json that still sets the key must load (unknown keys are kept, none raise)
+        c = importlib.import_module("pipeline.configuration")
+        d = tracked_mkdtemp()
+        with open(os.path.join(d, "pipeline.json"), "w", encoding="utf-8") as f:
+            json.dump({"review_ccn": 7}, f)
+        self.assertEqual(c.project(d)["review_ccn"], 7)
 
 
 if __name__ == "__main__":

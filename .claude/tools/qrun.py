@@ -35,7 +35,7 @@ from pipeline.configuration import (
     QRUN_TMP_PREFIX,
 )
 from pipeline.scratch import dead_owner_dirs
-from pipeline.util import script_timeout
+from pipeline.util import script_timeout, write_text
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 NODE_KEY = re.compile(r"^(?:ℹ|#)\s+(tests|suites|pass|fail|cancelled|skipped|todo)\s+(\d+)\s*$")
@@ -405,8 +405,7 @@ def _run_in(cmd, log, scratch, extra_env, wait):
         finally:
             signal.signal(signal.SIGTERM, old)
     text = ANSI.sub("", raw.decode("utf-8", "replace"))
-    with open(log, "w", encoding="utf-8") as f:
-        f.write(text)
+    write_text(log, text)
     return text.splitlines(), rc
 
 

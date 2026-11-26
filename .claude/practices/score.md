@@ -35,7 +35,7 @@ Baseline mean: about 3.3/10 (harsher than the owner's 5). Target 7-8/10 means ro
 ## Fix groups (one dev each, ordered by gain)
 - G1 review path: pre-review FAIL is not a dev try; pre-review never reviews a half-cut diff: over `PREREVIEW_DIFF_CHARS` (`.claude/tools/pipeline/configuration/limits.py:25`) it is skipped (the job diff for reviewers is cut at `JOB_DIFF_MAX_CHARS`, `.claude/tools/pipeline/configuration/limits.py:203`), a FAIL needs a file:line quote, skip the gate when the rework added no commit; reviewer may edit tests that the change breaks by design; ESCALATE with zero findings = PASS; scout tasks that write under `.work` (empty diff) get a real verdict; a session with no VERDICT line is a clean retry.
 - G2 gates and merge: run all wave gates without stopping at the first red (`.claude/tools/audit/final_check.py`: `run_all` :153 runs each command through `_run_one` :112, which calls `_run_once` :126; groups come from `_units` :138); a red merge gets a fix-gate dev before the lead (`_fix_gate` in `.claude/tools/pipeline/graph.py:214`); a warning from the stage's own new rule is not a gate failure; detect an already-merged task before a re-merge; `_record_scope` extra vs edited (`.claude/tools/pipeline/worktree.py:782`); keep a longer push error tail (`.claude/tools/pipeline/pr_ops.py:88`); `orch.py retry` runs the Done check first (item 77).
-- G3 briefs and plan: brief lint for `grep -c` exit 1, untracked predicted files, bad `jq` paths; protected insert-only gates named in briefs; task size cap (warn 15 files, fail 25); same-file tasks never share a wave; plan context step stays in budget and recalls more files.
+- G3 briefs and plan: brief lint for `grep -c` exit 1, untracked predicted files, bad `jq` paths; protected insert-only gates named in briefs; task size cap (fail 25 files); same-file tasks never share a wave; plan context step stays in budget and recalls more files.
 - G4 cost, cleanup and lead load: log lead-spawned agents and a lead-session line in metrics and the retro; `cleanup` step without `ENV.md`; stage-branch handling after release; `orch.py retry|skip` resolves `.work` from the stage root; Opus sec-audit only when the diff touches security paths (default on); asks do not stop independent tasks.
 - Then the structure items of the backlog (section C) and the Opus/Sonnet review round.
 
@@ -45,7 +45,7 @@ Not re-scored: a score needs a new real stage. What is verified (tests, review, 
 |---|---|---|---|
 | 1 Active share | manual/ask step no longer stops independent tasks; red merge gets fix-gate devs before the lead | unit tests, dry-run snapshots | real idle time (needs a stage) |
 | 2 Reliability | gates run to the end, gate_warn_ok, already-merged check, retry done-check, brief lint, size cap | unit tests, 6 area reviews + Opus arch/sec audits, release.sh | BLOCKED/FAIL rate per task |
-| 3 First-try rate | brief lint, protected-gate warning, oversized task starts on Sonnet | tests | tries per task |
+| 3 First-try rate | brief lint, protected-gate warning | tests | tries per task |
 | 4 Review waste | pre-review not a dev try, quote must exist in the diff, chunked review, ESCALATE 0/0/0 rule (security ESCALATE kept) | tests, reviewers | pre-review FAIL count |
 | 5 Lead load | asks batched, cleanup script, stage_root, Revert subjects | tests | asks per task |
 | 6 Plan context | explorer budget 240 s, error-run stop, seeding from lp/git (60 s deadline) | fixture tests only (no Strata run) | recall % and step time |

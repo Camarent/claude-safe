@@ -12,20 +12,20 @@ from tests.support.tmpdirs import tracked_mkdtemp
 class TestEnvRoot(unittest.TestCase):
     def test_worktree_is_root(self):
         t = os.path.realpath(tracked_mkdtemp())
-        json.dump({"repo": "kit", "test_env": {"DOJO_KIT_ROOT": "."}}, open(f"{t}/pipeline.json", "w"))
-        wt = f"{t}/.wt/s/task-1/kit/sub"
+        json.dump({"repo": "kit", "test_env": {"SAMPLE_LIB_ROOT": "."}}, open(f"{t}/pipeline.json", "w"))
+        wt = f"{t}/.wt/s/task-alpha/kit/sub"
         os.makedirs(wt)
         os.makedirs(f"{t}/kit")
-        old, saved = os.getcwd(), os.environ.pop("DOJO_KIT_ROOT", None)
+        old, saved = os.getcwd(), os.environ.pop("SAMPLE_LIB_ROOT", None)
         try:
             os.chdir(f"{t}/kit")
-            self.assertEqual(qrun._test_env()["DOJO_KIT_ROOT"], f"{t}/kit")
+            self.assertEqual(qrun._test_env()["SAMPLE_LIB_ROOT"], f"{t}/kit")
             os.chdir(wt)
-            self.assertEqual(qrun._test_env()["DOJO_KIT_ROOT"], f"{t}/.wt/s/task-1/kit")
+            self.assertEqual(qrun._test_env()["SAMPLE_LIB_ROOT"], f"{t}/.wt/s/task-alpha/kit")
         finally:
             os.chdir(old)
             if saved is not None:
-                os.environ["DOJO_KIT_ROOT"] = saved
+                os.environ["SAMPLE_LIB_ROOT"] = saved
 
 
 class TestBytecodeEnv(unittest.TestCase):
@@ -46,12 +46,13 @@ class TestSubreaper(unittest.TestCase):
         saved = sys.modules.get("ctypes")
         sys.modules["ctypes"] = None  # type: ignore[assignment]  # import ctypes -> ImportError
         try:
-            qrun._become_subreaper()
+            self.assertIsNone(qrun._become_subreaper())  # ImportError is suppressed: no raise, no return value
         finally:
             if saved is not None:
                 sys.modules["ctypes"] = saved
             else:
                 del sys.modules["ctypes"]
+        self.assertIs(sys.modules.get("ctypes"), saved)  # sys.modules restored
 
 
 if __name__ == "__main__":

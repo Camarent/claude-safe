@@ -5,7 +5,7 @@ from . import plan_files as pf
 AMEND_NOTE_PREFIX = "Amended: "
 
 
-def amend_phase(a, phases):
+def amend_phase(a, phases) -> dict:
     """Apply the amend options of `a` to the phase named `a.phase` and rewrite Plan.md. Refuses an unknown phase, a done phase and an unknown depends."""
     p = pf.phase_ref(phases, a.phase)
     if p is None:

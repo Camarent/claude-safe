@@ -28,7 +28,7 @@ Install location: outside every project tree (`uv tool install`, `cargo install 
 | clangd | 1:19.0-63 | C++ language server (nav diag) | `apt-get install -y clangd=1:19.0-63` | Apache-2.0 WITH LLVM-exception | none | ACCEPT 2026-10-29 (owner, no sec-auditor run; baked into the cpp profile) |
 | clang-tidy | 1:19.0-63 | C++ lint | `apt-get install -y clang-tidy=1:19.0-63` | Apache-2.0 WITH LLVM-exception | none | ACCEPT 2026-10-29 (owner, no sec-auditor run; baked into the cpp profile) |
 | cppcheck | 2.17.1-2 | C++ static analysis | `apt-get install -y cppcheck=2.17.1-2` | GPL-3.0 | none | ACCEPT 2026-10-29 (owner, no sec-auditor run; baked into the cpp profile) |
-| mypy | 2.4.1 | Python types (kata) | `uv tool install mypy==2.4.1` | MIT | none | ACCEPT 2026-11-11 (owner, no sec-auditor run; baked into base) |
+| mypy | 2.4.1 | Python types (project code) | `uv tool install mypy==2.4.1` | MIT | none | ACCEPT 2026-11-11 (owner, no sec-auditor run; baked into base) |
 | huggingface_hub[cli] | 2.4.0 | `hf` model downloads | `uv tool install "huggingface_hub[cli]==2.4.0"` | Apache-2.0 | HF Hub | ACCEPT 2026-11-11 (owner, no sec-auditor run; baked into base) |
 | esbuild | 0.28.2 | bundle TS clients | `npm i -g esbuild@0.28.2` | MIT | none | ACCEPT 2026-11-11 (owner, no sec-auditor run; baked into base) |
 | web-ext | 10.8.0 | run/lint Firefox extension | `npm i -g web-ext@10.8.0` | MPL-2.0 | none | ACCEPT 2026-11-11 (owner, no sec-auditor run; baked into base) |

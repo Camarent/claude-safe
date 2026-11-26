@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import pr_ops
+from pipeline import pr_base, pr_ops
 from tests.support.gitrepo import git
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -60,14 +60,14 @@ class Sweep(unittest.TestCase):
         git(self.d, "commit", "-q", "--allow-empty", "-m", "seed")
 
     def sweep(self, table):
-        real = pr_ops._run
+        real = pr_base._run
 
         def run(args, cwd=None, timeout=120):
             if args[0] == "gh":
                 return table(args)
             return real(args, cwd, timeout)
 
-        with mock.patch.object(pr_ops, "_run", side_effect=run):
+        with mock.patch.object(pr_base, "_run", side_effect=run):
             return pr_ops._sweep(self.d, {})
 
     def test_list_failure_blocks(self):

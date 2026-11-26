@@ -118,11 +118,14 @@ class Base(unittest.TestCase):
         self.addCleanup(lambda: (ask_code._emb.clear(), ask_code._emb.update(saved)))
         ask_code.LAST.clear()
         self.ctags_calls = []
-        r = mock.patch.object(ask_code.subprocess, "run", side_effect=self._ctags)
+        real_run = ask_code.subprocess.run
+        r = mock.patch.object(ask_code.subprocess, "run", side_effect=lambda cmd, **kw: self._ctags(cmd, real_run, **kw))
         r.start()
         self.addCleanup(r.stop)
 
-    def _ctags(self, cmd, **kw):
+    def _ctags(self, cmd, real_run, **kw):
+        if cmd[0] != "ctags":  # other callers (git branch lookup) get the real subprocess
+            return real_run(cmd, **kw)
         self.ctags_calls.append(kw.get("input", ""))
         return types.SimpleNamespace(stdout=CTAGS.replace("{root}", self.root))
 

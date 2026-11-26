@@ -12,7 +12,6 @@ from .verdicts import MODEL_HAIKU, MODEL_SONNET
 MAX_ROUNDS = 2  # failed review rounds before the lead is asked
 MAX_TRIES = 4  # runs of one role (dev, reviewer) per task, any model; a fifth goes to the lead
 REVIEW_EXTRA_ROUNDS = 1  # extra dev rounds after the last failed review round (MAX_ROUNDS), each with the verbatim findings; 0 = the lead is asked at once
-REVIEW_EXTRA_OPUS_AFTER = 2  # the extra dev round runs on Opus once this many Sonnet devs ran on the task
 EXTRA_ROUND_WHY = "extra review round: the dev reworks the verbatim text of every failed review"  # dispatch reason of an extra dev round (counted from the log)
 REVIEW_SKIP_RC = 3  # `lp review` exit code for "skipped: diff too big"; callers treat it as no review, never as FAIL
 LOCAL_CONTEXT_TOKENS = 131072  # the Strata launch `--max-context`: one request must fit it
@@ -126,7 +125,7 @@ SESSION_TIMEOUT_S = 1800.0  # one headless session (env WAVE_TIMEOUT overrides)
 GIT_LONG_TIMEOUT_S = 120  # one git call that may merge or check out (pipeline/worktree.py)
 GIT_SAFE_DIR = "*"  # the one safe.directory value, as git -c args and as env below
 GIT_SAFE_DIR_ARGS = ("-c", f"safe.directory={GIT_SAFE_DIR}")  # repos may be owned by another uid (GIT_SAFE_ENV is the same setting for the environment)
-GIT_TIMEOUT_S = 60  # one git call of the pipeline (pipeline/ccn.py, plan_check.py, pr_mode.py, qualityrun.py use it)
+GIT_TIMEOUT_S = 60  # one git call of the pipeline (plan_check.py, pr_mode.py, qualityrun.py use it)
 CODESRV_REPLY_TIMEOUT_S = float(
     os.environ.get("CODESRV_REPLY_TIMEOUT", "300")
 )  # local.py find|index waits this long for the warm server, then restarts it once and falls back to in-process
@@ -152,7 +151,6 @@ GATE_TIMEOUT_S = AGENT_TOOL_TIMEOUT_S - 60  # qrun and testrun kill a gate after
 MUTATION_GATE_TIMEOUT_S = 300  # qrun kills one gate run of a reviewer mutation check (ENV_GATE_KIND=mutation) after this: a mutation run is one test, not the full gate; never above GATE_TIMEOUT_S
 GIT_NETWORK_TIMEOUT_S = 300  # one git push / fetch (pipeline/pr_ops.py)
 GIT_QUICK_TIMEOUT_S = 30  # one cheap git read (configuration.gitbranch._git_out, audit_run rev-parse)
-LIZARD_TIMEOUT_S = 120  # one `lizard --csv` run of pipeline/ccn.py
 LOCAL_FIND_TIMEOUT_S = 120  # one `local.py find` call of the brief builder
 ACCEPTANCE_STEP = "acceptance"  # driver step id: runs the Plan.md `- cmd:` lines in a fresh worktree of the stage branch (pipeline/acceptance.py)
 ACCEPTANCE_REVIEW_FILE = "manual-review.md"  # written by the acceptance reviewer agent to .work/<stage>/: one `MANUAL n: ...` line per item

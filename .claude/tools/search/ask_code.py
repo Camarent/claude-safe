@@ -25,7 +25,7 @@ from itertools import zip_longest
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline.configuration import HOME, WORK_DIR
+from pipeline.configuration import HOME, WORK_DIR, tool_setting
 from pipeline.util import swallowed
 
 SKIP_DIRS = {
@@ -259,11 +259,12 @@ def vcache(root=None):
         os.makedirs(d, exist_ok=True)
         if os.path.basename(d) == ".code-index" and not os.path.exists(os.path.join(d, ".gitignore")):
             Path(d, ".gitignore").write_text("*\n", encoding="utf-8")  # never committed
-        c = sqlite3.connect(path, timeout=60)
+        c = sqlite3.connect(path, timeout=tool_setting("ASK_DB_TIMEOUT_S"))
         c.execute("pragma journal_mode=wal")
         c.execute("create table if not exists vec(h text primary key, v blob)")
         return c
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as ex:
+        swallowed("ask_code.vcache", ex)  # cache is optional: the caller runs without it
         return None
 
 
@@ -383,7 +384,7 @@ def _scan_files(con, root, known):
         try:
             with open(os.path.join(root, rel), "rb") as fh:
                 shas[rel] = hashlib.sha1(fh.read(), usedforsecurity=False).hexdigest()
-        except OSError:
+        except OSError:  # file removed or unreadable mid-scan: nothing to index, skip it
             continue
         if k and k[2] == shas[rel]:  # touched or checked out again, content identical: no re-parse
             con.execute("update files set mtime=?, size=? where path=?", (*now[rel], rel))
@@ -420,7 +421,7 @@ def _store_symbols(con, root, changed):
     for line in r.stdout.splitlines():
         try:
             t = json.loads(line)
-        except ValueError:
+        except ValueError:  # one malformed ctags line: skip that tag only
             continue
         if t["name"].startswith("Anonymous"):
             continue  # ctags names every callback; they only fragment chunks and pollute the vocabulary
@@ -436,7 +437,8 @@ def _store_chunks(con, root, rel, symlines):
     try:
         with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:
             lines = fh.read().split("\n")
-    except OSError:
+    except OSError as ex:
+        swallowed("ask_code.store_chunks", ex)  # the file stays unindexed; the scan goes on
         return False
     pathwords = " ".join(words(rel))
     for a, b in spans_for(lines, symlines.get(rel)):
@@ -606,7 +608,7 @@ def query(root, text, k=3):
         try:
             with open(os.path.join(root, c["path"]), encoding="utf-8", errors="replace") as fh:
                 lines = fh.read().splitlines()
-        except OSError:
+        except OSError:  # file removed or unreadable since indexing: no lines to show, skip the chunk
             continue
         end = min(c["end"], len(lines))
         if any(o["path"] == c["path"] and abs(o["start"] - c["start"]) < CHUNK for o in out):

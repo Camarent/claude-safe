@@ -27,6 +27,13 @@ Always: a tool you write that can run longer than a minute prints a flushed prog
 
 
 
+Denied command forms (the hook denies these; use the allowed form):
+- cwd is the job worktree; run plain `git <args>`, never `cd` before git.
+- `cs-qrun -- <cmd>` alone in one Bash call: no pipe, no `;`, no `cd`.
+- Tests take env only through the documented flag, never a `VAR=x` prefix.
+- Read a range with the Read tool (offset/limit); `sed -n 'A,Bp' file` is one range per call.
+- No shell variable assignment before a command; write absolute paths.
+
 Bash rules: One Bash command per call. `git -C <dir>` never `cd <dir>`. No `;`, `&&`, `|` chains outside the qrun form. Model set on every Agent call.
 
 Tests: run every test/build/check command as `cs-qrun -- <command>` (one OK line, or only failing pieces; full log at the printed path). Never `| tail`/`| head` on tests; exit 3 = skipped or empty = not green. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test), e.g. `cs-qrun -- pytest && ls out`. A SKIPPED or exit 3 on a Test line is a failure, never DONE: reply BLOCKED with the `DB start:` command from the brief.

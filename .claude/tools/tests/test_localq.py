@@ -60,9 +60,14 @@ class T(unittest.TestCase):
             pass
 
     def test_unopenable_lock_file_does_not_crash(self):  # a root-owned lock left by the container: no lock, no crash
-        os.makedirs(os.path.join(localq.DIR, "call0.lock"))  # a directory at the lock path: open() fails like a foreign-owned file
+        blocker = os.path.join(localq.DIR, "call0.lock")
+        os.makedirs(blocker)  # a directory at the lock path: open() fails like a foreign-owned file
+        ran = []
         with localq.slot("call"):
-            pass
+            ran.append(True)  # the body runs: the unopenable slot is skipped, not fatal
+            self.assertTrue(os.path.exists(os.path.join(localq.DIR, "call1.lock")))  # the free slot was taken
+        self.assertEqual(ran, [True])
+        self.assertTrue(os.path.isdir(blocker))  # the foreign entry is left alone
 
     def test_status_lists_slots(self):
         with localq.slot("call"):

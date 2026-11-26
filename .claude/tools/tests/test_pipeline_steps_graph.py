@@ -78,7 +78,7 @@ class NextStepTest(unittest.TestCase):
 
     def test_no_events_starts_the_dev(self):
         self.assertEqual(self.who(self.nxt([])), ("dispatch", "dev", "haiku"))
-        self.assertEqual(self.who(self.nxt([], {**TASK, "owner_sonnet": True})), ("dispatch", "dev", "sonnet"))
+        self.assertEqual(self.who(self.nxt([], {**TASK, "owner_sonnet": True})), ("dispatch", "dev", "haiku"))  # the flag picks no model any more
 
     def test_unreported_dispatch_asks_the_lead(self):
         r = self.nxt([dispatch("a1", "dev")])
@@ -91,7 +91,7 @@ class NextStepTest(unittest.TestCase):
     def test_dev_done_goes_to_reviewer_or_prereview(self):
         mine = [dispatch("a1", "dev"), dev_rep("a1", "DONE")]
         self.assertEqual(self.who(self.nxt(mine)), ("dispatch", "reviewer", "haiku"))
-        self.assertEqual(self.who(self.nxt(mine, {**TASK, "review_sonnet": True})), ("dispatch", "reviewer", "sonnet"))
+        self.assertEqual(self.who(self.nxt(mine, {**TASK, "review_sonnet": True})), ("dispatch", "reviewer", "haiku"))  # the flag picks no model any more
         self.cfg(prereview=True)
         r = self.nxt(mine)
         self.assertEqual((r["agent"], r["model"], r["why"]), ("script", None, "local pre-review (lp review); FAIL goes back to the dev"))
@@ -206,7 +206,7 @@ class NextStepTest(unittest.TestCase):
         self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))
         self.assertIn("Rework: fix the findings in pre.md first.", r["prompt"])
         r = self.nxt([*base, fail], {**TASK, "owner_sonnet": True})
-        self.assertEqual(self.who(r), ("dispatch", "dev", "sonnet"))
+        self.assertEqual(self.who(r), ("dispatch", "dev", "haiku"))  # the flag picks no model; one red gate is no E1(a)
         ok = ev("report", id="a2", role="script", verdict="DONE", file="pre.md")
         self.assertEqual(self.who(self.nxt([*base, ok])), ("dispatch", "reviewer", "haiku"))
 
@@ -323,6 +323,7 @@ class RunPhaseTest(unittest.TestCase):
 
     def test_dispatch_numbers_follow_n(self):
         r = steps.run_phase(self.a, [], [self.st("x"), self.st("y")], 4)
+        assert r is not None
         self.assertEqual(r["action"], "dispatch")
         self.assertEqual([d["id"] for d in r["dispatches"]], ["a5", "a6"])
         self.assertEqual(
@@ -344,6 +345,7 @@ class RunPhaseTest(unittest.TestCase):
             {"ev": "report", "task": "tools-check", "verdict": "FAIL", "file": "t.md"},
         ]
         r = steps.run_phase(self.a, evs, [self.st("x"), self.st("y"), self.st("tools-check")], 1)
+        assert r is not None
         lines = r["message"].split("\n")
         self.assertEqual(r["action"], "ask_main")
         self.assertEqual(lines[0], "x (ops) was dispatched but never reported; fix the cause, then `orch.py retry --stage s --step x` (or `skip`)")
@@ -357,6 +359,7 @@ class RunPhaseTest(unittest.TestCase):
     def test_dispatch_wins_over_asks(self):
         evs = [{"ev": "dispatch", "task": "x", "id": "a1"}]
         r = steps.run_phase(self.a, evs, [self.st("x"), self.st("y")], 1)
+        assert r is not None
         self.assertEqual(r["action"], "dispatch")
         self.assertEqual([d["task"] for d in r["dispatches"]], ["y"])
 

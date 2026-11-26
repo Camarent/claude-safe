@@ -475,8 +475,8 @@ def segment_verdict(seg, cwd, root, exported=False):
 
 def chain_verdict(cmd, cwd, root, exported=False):
     """-> (deny reason or '', cwd after CMD). Each `sh -c` body is judged on its own; each segment moves the cwd for the next."""
-    for body in cmd_guard.SHELL_C.findall(cmd_guard.strip_heredocs(cmd)):
-        why = bash_verdict(body[1], cwd, root)
+    for body in cmd_guard.shell_c_bodies(cmd):
+        why = bash_verdict(body, cwd, root)
         if why:
             return why, cwd
     exported = exported or bool(GIT_EXPORT.search(cmd))  # `export GIT_DIR=..;` on an earlier segment moves every later git

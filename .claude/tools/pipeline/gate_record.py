@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import time
 import uuid
+from datetime import UTC, datetime
 
 from .gitx import try_run
 
@@ -25,7 +26,7 @@ def _git(cwd, *args, env=None):
     return r.stdout.strip() if r and r.returncode == 0 else None
 
 
-def tree_hash(cwd):
+def tree_hash(cwd) -> str | None:
     """Tree sha of the working tree at cwd (tracked + untracked, ignored excluded) -> str, or None (not a repo, any git error)."""
     tmp = tempfile.mkdtemp(prefix="gate-tree-")
     try:
@@ -37,7 +38,7 @@ def tree_hash(cwd):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def cmd_key(argv):
+def cmd_key(argv) -> list[str]:
     """argv of a gate command -> the list that identifies it: a leading cs-qrun/qrun.py and a leading `--` are dropped."""
     args = list(argv)
     if args and os.path.basename(args[0]) in QRUN_NAMES:
@@ -57,10 +58,16 @@ def _head(cwd):
     return _git(cwd, "rev-parse", "HEAD")
 
 
+def skip_note(cwd, rec) -> str:
+    """Text of a skipped gate line for the green record REC: its tree, the record log path and the pass time (UTC, ISO)."""
+    at = datetime.fromtimestamp(rec["ts"], UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"identical passed tree {rec['tree']}, record {os.path.abspath(_log_path(cwd) or RECORD_FILE)} passed at {at}"
+
+
 _TREE_NOW = object()  # record(tree=...) default: hash the tree at the call
 
 
-def record(cwd, argv, rc, now=None, tree=_TREE_NOW):
+def record(cwd, argv, rc, now=None, tree=_TREE_NOW) -> None:
     """Append {run, cmd, tree, base, rc, ts} for this gate run; writes nothing when there is no tree or no log path.
     tree: the tree hash taken before the run (a test may write files during it); default: taken now."""
     if tree is _TREE_NOW:
@@ -92,7 +99,7 @@ def _entries(path):
     return out
 
 
-def find_passed(cwd, argv, tree=None, base=None):
+def find_passed(cwd, argv, tree=None, base=None) -> dict | None:
     """Latest record with rc 0 for the same command on the same tree (and base, when given) -> dict, else None."""
     try:
         tree = tree_hash(cwd) if tree is None else tree

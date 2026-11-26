@@ -1,11 +1,34 @@
 # claude-safe
 
+## What it is
+
 Claude Code in a throwaway Docker container. Nothing on the host is reachable
 except the folder you explicitly mount.
 
+It also holds an agent pipeline (`.claude/`) that plans and runs coding tasks
+with Claude Code, one task per job, each job in its own git worktree. The
+pipeline is optional: the container works without it.
+
+Who it is for: developers who want Claude Code to run commands and edit files
+without touching the rest of their machine.
+
+## Requirements
+
+- Docker (the host runs the images; `run.sh` needs it).
+- bash and git.
+- An Anthropic account to log in to Claude Code.
+- Disk: enough for the Docker image layers. The size is not measured here; check
+  with `docker system df` after `./run.sh --rebuild`.
+
+## Quick start
+
+    git clone https://github.com/Camarent/claude-safe
+    cd claude-safe
     ./run.sh            # mount scratch/ only
     ./run.sh --here     # mount $PWD
     ./run.sh --rebuild  # rebuild base + all profile images first
+
+Log in to your Anthropic account when Claude Code asks on first run.
 
 ## Browsing
 
@@ -74,10 +97,6 @@ gitleaks, claude-code. Heavier toolchains are separate layers in `profiles/`
 |---|---|
 | `cpp`    | g++, clang, clangd, clang-tidy, cppcheck, cmake, make, bear |
 | `rust`   | gcc, rustup (stable), clippy, rust-analyzer, `wasm32-unknown-unknown`, wasm-pack, cargo-audit, cargo-deny, cargo-machete, cargo-llvm-cov, ruff |
-| `office` | LibreOffice, pandoc, typst, tesseract (eng+fra), poppler, Office fonts |
-| `audio`  | ffmpeg, yt-dlp, faster-whisper (`/opt/audio-venv`; models download on first use) |
-| `cluster` | docker (own dockerd), act, kubectl, kind, helm, one-node Slurm + munge (+0.6 GB); added by `--with cluster` |
-| `postgres` | PostgreSQL 17 (`initdb`, `pg_ctl`, `postgres`, `psql` on PATH, service not started), pgvector, `/opt/pg-venv` with FastAPI, uvicorn, SQLAlchemy, psycopg[binary], httpx |
 
     claude-safe --with rust
     claude-safe --here --with rust,cpp
@@ -95,7 +114,12 @@ Rust lives in `/opt/rustup` + `/opt/cargo`; pin wasm-pack with
 Extra tools beyond the image are listed, vetted and pinned in `.claude/EXTRA-TOOLS.md`.
 When you bump a baked-in tool there, bump its `ARG` in the Dockerfile too.
 
-## Users and ownership
+## Sandbox
+
+Modes: `./run.sh` mounts only `scratch/`; `--here` mounts the folder you run it
+from; `--rebuild` rebuilds the images. Mounts are read-write. Network access is on.
+
+### Users and ownership
 
 The container starts as root only long enough to update Claude Code, install vetted `apt`
 rows from `EXTRA-TOOLS.md` and re-own leftovers, then drops to the unprivileged `node` user
@@ -103,36 +127,54 @@ mapped to your host uid/gid (`HOME` stays `/root`, owned by that user). Files cr
 mounted folders belong to you on the host. Chrome runs with `--no-sandbox` because the
 container does not allow user namespaces.
 
-Dev reports: `cmd_report` takes a dev's report from its job worktree (`.work/<stage>/reports/report-<id>.md`) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
+Dev reports: `cmd_report` takes a dev's report from the dev's job worktree (its `reports/report-<id>.md` file) when the main report has no `VERDICT:` line. Chosen over an absolute report path plus a guard allowlist: the guard (maincheck) blames any write to the main checkout, and a dev may still write a relative path, so the fallback covers both. A main report that has a VERDICT line is never overwritten.
 
-## Local cluster (`--with cluster`)
+### Risks
 
-`./run.sh --here --with cluster` adds the `cluster` profile and starts, as root in the entrypoint, an own `dockerd`
-(docker-in-docker; the host Docker socket is NOT mounted) and a one-node Slurm (`munged`, `slurmctld`, `slurmd`,
-node detected with `slurmd -C`). The container runs `--privileged`, which loosens isolation: use it only for this work.
-Images pulled by Docker/kind/act are kept in the volume `claude-safe-docker` (`docker volume rm` to reset).
-kind needs about 2-4 GB RAM, so stop the local model first (`modelctl use none` in model-host) unless you have enough RAM. Checked: `docker run`, `sbatch -W`/`srun`, `kind create cluster`.
-Logs: `/tmp/dockerd.log`, `/var/log/slurm/`.
+The container runs as root with network access. Host tokens are not forwarded by default: pass `--with-gh-token` to forward the host's GH_TOKEN (or GITHUB_TOKEN), and `--with-cloudflare-token` to forward CLOUDFLARE_API_TOKEN. Each flag forwards only its own token, for the session only.
+The privileged cluster mode no longer exists.
 
-## Local models (model-host)
+## Safety
 
-Ollama and Strata no longer live in this image. They run from the separate project
-[model-host](https://github.com/Camarent/model-host) (a Compose project with its own `modelctl`, `~/workspace/model-host` by
-default, or `MODEL_HOST_DIR`). Start an engine there (`bin/modelctl up` for Ollama, `bin/modelctl use strata` for Strata); one engine
-holds the GPU at a time.
+Read this before you run the pipeline unattended.
 
-`run.sh` connects by itself, nothing to flag: when the Docker network `model-net` exists, the container joins it, and for each engine
-running at that moment it sets `OLLAMA_URL=http://model-host-ollama:11434` and `STRATA_URL=http://model-host-strata:8080` plus
-`STRATA_KEY` (read from model-host's generated `secrets/strata.key`). Without model-host the container starts as before.
-Start the engines first: an engine started after the container has no variables in it (restart the container). A Strata that is still
-loading when the container starts is waited for by the pipeline preflight (`STRATA_LOAD_WAIT`, default 90 s). The container sits on the
-shared network `model-net`, so other containers there can reach Ollama, which has no login.
+- Default mode: tool calls outside the allowlist ask for permission.
+- Auto mode (opt-in): `python3 -I scripts/pipeline_auto.py feature --feature F` or
+  `python3 -I scripts/pipeline_auto.py run --stage S` starts a stage in auto permission mode.
+  Claude decides each action; the allowlist prompt is gone. The script keeps the other
+  default flags and then runs `cs-wave`. Use it only on a stage you have read.
+- Container: it starts as root only for the setup steps (see Users and ownership above),
+  then runs as the `node` user. It has network access.
+- Mounts: the folders you mount are read-write, including `./.claude` when you mount the
+  project. A session can change pipeline files there.
+- Tokens: the session gets no host token by default. `--with-gh-token` forwards `GH_TOKEN`
+  or `GITHUB_TOKEN`; `--with-cloudflare-token` forwards `CLOUDFLARE_API_TOKEN`. A forwarded
+  token can be read and used by anything in the session, including auto mode. Pass a flag
+  only when the stage needs it, and use a token with the smallest scope you can.
+- Sync: `scripts/sync-claude-config.sh` is a dry run by default. It lists what it would
+  overwrite in `~/.claude`. Add `--apply` only after you read the list.
+- Images: the base image pins its Node base by digest (`FROM ...@sha256:`). Extra tools are
+  pinned in `.claude/EXTRA-TOOLS.md`.
 
-The pipeline can no longer start Strata (it has no access to the host): `preflight()` in `.claude/tools/search/strata.py` skips the
-local-model steps when it does not answer. `--with strata` and `--with ollama` are gone and say where to go.
-All model files (GGUF sources, Strata data) live inside model-host (`models/`); claude-safe keeps none.
+## Pipeline
 
-## Development workflow
+`.claude/` holds the pipeline: agents (`.claude/agents`), practices
+(`.claude/practices`), tools (`.claude/tools`) and the `cs-*` wrappers
+(`.claude/bin`). The package has no runtime dependencies: it is stdlib Python
+behind shell wrappers, and the package metadata in `pyproject.toml` is for
+reference, not for installing.
+
+Install: put `.claude/bin` on your PATH. Each `cs-<tool>` wrapper runs one tool
+from `.claude/tools`; a wrapper whose target is missing prints the path and exits 2.
+
+Invented names, in plain words:
+
+- `cs-*` wrappers: the command-line entry points, one per tool, in `.claude/bin`.
+- `codenames.py`: a helper in `.claude/tools` that pulls identifiers and file paths out of `lp` hit lines.
+- retro (`.claude/tools/retro`): the modules that record what a run cost and what it taught (`cs-retro`, `cs-ledger`, `cs-lead-cost`, `cs-agent-cost`).
+- strata: the local model the pipeline asks for cheap reads (summaries, related files). When it is down, the step is skipped and logged, not failed.
+
+### Development workflow
 
 `master` is the only long-lived branch. Work happens on a short-lived branch, goes through a pull request, and is
 squash-merged once the GitHub `ci` workflow (`.github/workflows/ci.yml`: ruff, mypy, tests with coverage floor,
@@ -144,24 +186,26 @@ Deferred (decided, not done):
 - Devs using `lp nav` more: the audit finds file rereads too rarely to be worth the push; revisit after phases 1 to 3.
 - Removing the local-model gate judge step when the model is down: it costs 0 s and only adds log noise; not worth a code path.
 
-## Pipeline hardening notes
+### Pipeline hardening notes
 
 Decisions of the pipeline-hardening stage, one section per problem: `docs/decisions.md`.
 
-- Sync `~/.claude` from one ref: `scripts/sync-claude-config.sh [REF]` (REF defaults to HEAD). It refuses while a wave driver runs, works in a detached worktree, and never passes `host_agents.py --apply`.
+- Sync `~/.claude` from one ref: `scripts/sync-claude-config.sh [REF]` (REF defaults to HEAD). It is a dry run by default: it lists the `~/.claude` files that would be overwritten and writes nothing. `scripts/sync-claude-config.sh --apply [REF]` writes them; replaced files are saved in `~/.claude/.provision-backup/<UTC time>/`. It refuses while a wave driver runs, works in a detached worktree, and never passes `host_agents.py --apply`.
 - Retry without a new dev run: `orch.py retry --verify` runs the task's Test lines and Done checks on the existing job commit and writes the report. Red records nothing.
 - Cleanup step (finish phase): removes merged or gone job worktrees and run temp dirs. Preview with `python3 -I .claude/tools/pipeline/cleanup.py --dry-run`; it changes nothing.
 - Public-words baseline: the pipeline.json key `public_words_baseline` (default `docs/public-words-baseline.txt`, repo-relative) lists accepted public-words hits, one per line. A hit key is `file TAB word TAB line text stripped`, with no line number, so the key stays the same when lines above the hit move. Blank lines and `#` lines are ignored; a missing file is an empty baseline. A key listed once covers every identical line. The generator is `.claude/tools/public_words_baseline.py`: `--write` rewrites the file from the current hits, `--dry-run` prints how many lines would change, `--check` exits 1 when a hit is not in the baseline, `--words a,b` overrides the configured words.
 - Public-words gate: on a public repo, a hit whose key is not in the baseline fails the gate. The output prints `file:line: word` and `add to <baseline>: <key line>` for each new hit; add that key line to the baseline file. A baseline entry with no hit is reported as `stale: <key>` and does not fail the gate.
 
-## Setting up a new machine
+### Setting up a new machine
 
 1. Clone the repo, then `scripts/dev.sh sync` (needs `uv` and a system Python 3.11+).
-2. Docker host (the PC with a GPU): `./run.sh --rebuild`, add `--with cluster` as needed; the local models come from model-host.
-3. No-container host (a VM): install the toolchains directly with `scripts/provision-dev-vm.sh` (`--list` shows the steps, `--dry-run`
-   shows what would change without sudo). The
-   `cluster` profile is PC-only: it needs a privileged container.
+2. Docker host: `./run.sh --rebuild`.
+3. Install `.claude` into `~/.claude` with `scripts/sync-claude-config.sh --apply` (run it without `--apply` first to see what would be overwritten).
 4. Per-machine values stay out of git: host paths come from `~` or `$HOME` in `.claude/paths.json`, tokens from the
    environment or an untracked `~/.config/secrets.env` (`chmod 600`), never from the repo.
 5. Privacy blocklist: copy `.claude/git/privacy.gitconfig.example` to `.claude/git/privacy.gitconfig` (untracked) and set
    your own regex; optionally add the same regex as repo secret `PRIVACY_BLOCKLIST` for the CI `privacy` job.
+
+## License
+
+MIT. See `LICENSE` (Copyright (c) 2026 Camarent).

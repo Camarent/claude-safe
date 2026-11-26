@@ -11,7 +11,7 @@ from contextlib import redirect_stderr
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import gitx, worktree
+from pipeline import gitx, worktree, worktree_base, worktree_merge
 from pipeline.configuration import JOB_BRANCH_PREFIX
 
 
@@ -46,7 +46,7 @@ class BranchFileTest(unittest.TestCase):
         os.makedirs(os.path.dirname(root))
         with open(os.path.join(os.path.dirname(root), ".branch"), "w", encoding="utf-8"):
             pass  # empty: a torn write
-        with mock.patch.object(worktree, "project", return_value={}), mock.patch.object(worktree, "repo_dir", return_value=os.path.join(d, "repo")):
+        with mock.patch.object(worktree_base, "project", return_value={}), mock.patch.object(worktree_base, "repo_dir", return_value=os.path.join(d, "repo")):
             _cfg, _repo, _root, branch = worktree.layout(d, "s", "t1")
         self.assertEqual(branch, f"{JOB_BRANCH_PREFIX}s-t1")
 
@@ -66,8 +66,8 @@ class CrashAndVersionTest(unittest.TestCase):
     def _patches(self):
         cfg: dict = {}
         return [
-            mock.patch.object(worktree, "project", return_value=cfg),
-            mock.patch.object(worktree, "repo_dir", return_value=self.repo),
+            mock.patch.object(worktree_base, "project", return_value=cfg),
+            mock.patch.object(worktree_base, "repo_dir", return_value=self.repo),
             mock.patch.object(worktree, "work_branch", return_value=gitx.out(self.repo, "rev-parse", "--abbrev-ref", "HEAD")),
         ]
 
@@ -80,6 +80,7 @@ class CrashAndVersionTest(unittest.TestCase):
             worktree.create(self.d, "s", "t1")
         info = worktree.live_job(self.d, "s", "t1")
         self.assertIsNotNone(info)
+        assert info is not None  # narrows live_job's Optional for mypy
         self.assertEqual(set(info), {"branch", "root", "base", "repos"})
         self.assertTrue(os.path.isdir(info["root"]))
         again = worktree.create(self.d, "s", "t1")  # a retry completes the entry
@@ -100,18 +101,18 @@ class CrashAndVersionTest(unittest.TestCase):
 
     def test_old_git_gives_a_clear_error(self):
         out = subprocess.CompletedProcess([], 0, stdout="git version 2.30.1\n", stderr="")
-        with mock.patch.object(worktree, "_GIT_VERSION", []), mock.patch.object(worktree.subprocess, "run", return_value=out) as run:
+        with mock.patch.object(worktree_merge, "_GIT_VERSION", []), mock.patch.object(worktree.subprocess, "run", return_value=out) as run:
             for _ in range(2):
                 with self.assertRaisesRegex(RuntimeError, r"git >= 2\.38 needed"):
                     worktree._need_merge_tree()
             self.assertEqual(run.call_count, 1)  # read once
         out = subprocess.CompletedProcess([], 0, stdout="git version 2.43.0\n", stderr="")
-        with mock.patch.object(worktree, "_GIT_VERSION", []), mock.patch.object(worktree.subprocess, "run", return_value=out):
+        with mock.patch.object(worktree_merge, "_GIT_VERSION", []), mock.patch.object(worktree.subprocess, "run", return_value=out):
             worktree._need_merge_tree()
 
     def test_save_patch_failure_leaves_one_stderr_line(self):
         err = io.StringIO()
-        with mock.patch.object(worktree, "_base_branch", side_effect=RuntimeError("bad")), redirect_stderr(err):
+        with mock.patch.object(worktree_merge, "_base_branch", side_effect=RuntimeError("bad")), redirect_stderr(err):
             worktree._save_patch(self.d, "s", "t1", "", self.repo, "b", "w")
         self.assertIn("swallowed in worktree._save_patch: RuntimeError: bad", err.getvalue())
 

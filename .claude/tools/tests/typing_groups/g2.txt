@@ -1,0 +1,5 @@
+.claude/tools/pipeline/ci_drift.py
+.claude/tools/pipeline/cite_check.py
+.claude/tools/pipeline/classify.py
+.claude/tools/pipeline/claude.py
+.claude/tools/pipeline/cleanup.py

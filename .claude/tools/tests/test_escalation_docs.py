@@ -41,6 +41,19 @@ PHRASES = {
 }
 
 
+AGENT_DOCS = [
+    os.path.join(".claude", "agents", "dev.md"),
+    os.path.join(".claude", "agents", "reviewer.md"),
+]
+DENIAL_PHRASES = (
+    "cwd is the job worktree; run plain `git <args>`, never `cd` before git.",
+    "`cs-qrun -- <cmd>` alone in one Bash call: no pipe, no `;`, no `cd`.",
+    "Tests take env only through the documented flag, never a `VAR=x` prefix.",
+    "Read a range with the Read tool (offset/limit); `sed -n 'A,Bp' file` is one range per call.",
+    "No shell variable assignment before a command; write absolute paths.",
+)
+
+
 def missing_phrases(text):
     """-> the rule ids (E1-E4) whose phrase is not in TEXT word for word."""
     return [rule for rule, phrase in PHRASES.items() if phrase not in text]
@@ -49,6 +62,18 @@ def missing_phrases(text):
 def _read(rel):
     with open(os.path.join(REPO, rel), encoding="utf-8") as f:
         return f.read()
+
+
+class DenialFormsDocsTest(unittest.TestCase):
+    def test_each_agent_doc_states_the_five_denial_rules(self):
+        for rel in AGENT_DOCS:
+            text = _read(rel)
+            for phrase in DENIAL_PHRASES:
+                with self.subTest(doc=rel, phrase=phrase):
+                    self.assertIn(phrase, text)
+
+    def test_reviewer_doc_has_no_review_ccn_route(self):
+        self.assertNotIn("review_ccn", _read(os.path.join(".claude", "agents", "reviewer.md")))
 
 
 class EscalationDocsTest(unittest.TestCase):
@@ -68,6 +93,40 @@ class EscalationDocsTest(unittest.TestCase):
         mutated = text.replace(PHRASES["E1"], PHRASES["E1"].replace("two Haiku tries", "three Haiku tries"))
         self.assertNotEqual(mutated, text)
         self.assertEqual(missing_phrases(mutated), ["E1"])
+
+
+ORCHESTRATOR = os.path.join(".claude", "ORCHESTRATOR.md")
+DECISIONS = os.path.join("docs", "decisions.md")
+MODEL_LOG_LINE = "The driver (`pipeline/e1.py` `model_for`) logs each Sonnet dev or reviewer dispatch as `E1(a|b|c)`."
+REMOVED_ROUTE_WORDS = ("review_ccn", "15 predicted", "escalates by the ccn gate")
+
+
+def _section(text, heading):
+    """-> the text from HEADING up to the next level-2 heading (or the end)."""
+    start = text.index(heading)
+    end = text.find("\n## ", start + len(heading))
+    return text[start:] if end < 0 else text[start:end]
+
+
+class ModelRouteDocsTest(unittest.TestCase):
+    def test_models_section_names_the_e1_driver_and_log_line(self):
+        section = _section(_read(ORCHESTRATOR), "## Models: Haiku first")
+        self.assertIn(MODEL_LOG_LINE, section)
+
+    def test_orchestrator_states_the_reviewer_escalation_route(self):
+        self.assertIn("escalates only by E1(c), its own ESCALATE, and a Sonnet reviewer stays Sonnet.", _read(ORCHESTRATOR))
+
+    def test_no_doc_keeps_the_removed_ccn_or_extra_round_route(self):
+        for rel in (ORCHESTRATOR, os.path.join(".claude", "practices", "orch-pipeline.md"), DECISIONS):
+            text = _read(rel)
+            for word in REMOVED_ROUTE_WORDS:
+                with self.subTest(doc=rel, word=word):
+                    self.assertNotIn(word, text)
+
+    def test_decisions_entry_pins_heading_and_next_dispatch_rule(self):
+        text = _read(DECISIONS)
+        self.assertIn("## E1 dispatch and old logs", text)
+        self.assertIn("gets Haiku at its next dispatch", text)
 
 
 if __name__ == "__main__":

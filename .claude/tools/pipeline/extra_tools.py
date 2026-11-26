@@ -10,6 +10,7 @@ A newer version is a new tool for sec-auditor: vet it, bump the row, then `check
 import argparse
 import contextlib
 import os
+import pwd
 import re
 import subprocess
 
@@ -21,7 +22,7 @@ TABLE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abs
 JS = "/opt/jstools"
 
 
-def rows(text):
+def rows(text) -> list[tuple[str, str, str]]:
     """-> [(name, version, kind)] of Accepted rows; kind from the Install column."""
     out = []
     for line in text.split("## Recommended")[0].splitlines():
@@ -37,7 +38,7 @@ def rows(text):
 def _has_version_token(out, ver):
     """True when `ver` (optionally `v`-prefixed) stands alone in `out`: no word character or dot before or after."""
 
-    def edge(ch):
+    def edge(ch) -> bool:
         return bool(ch) and (ch.isalnum() or ch in "_.")
 
     start = out.find(ver)
@@ -51,7 +52,7 @@ def _has_version_token(out, ver):
     return False
 
 
-def version_cmd(name, kind):
+def version_cmd(name, kind) -> list[str]:
     if kind == "apt":
         return ["dpkg-query", "-W", "-f", "${Version}", name]
     if kind == "uv":  # baked into the image: /usr/local/bin; installed by tools-check: ~/.local/bin
@@ -62,7 +63,7 @@ def version_cmd(name, kind):
     return [f"{JS}/node_modules/.bin/{name}", "--version"]
 
 
-def install_cmd(name, ver, kind):
+def install_cmd(name, ver, kind) -> list[str]:
     if kind == "apt":
         return ["apt-get", "install", "-y", "--no-install-recommends", f"{name}={ver}"]
     if kind == "uv":
@@ -72,7 +73,7 @@ def install_cmd(name, ver, kind):
     return ["npm", "i", "--prefix", JS, "--ignore-scripts", f"{name}@{ver}"]
 
 
-def run(cmd, timeout=LONG_CMD_TIMEOUT_S):
+def run(cmd, timeout=LONG_CMD_TIMEOUT_S) -> tuple[int, str]:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return r.returncode, (r.stdout + r.stderr).strip()
@@ -80,7 +81,7 @@ def run(cmd, timeout=LONG_CMD_TIMEOUT_S):
         return 127, str(e)
 
 
-def version_cmds(name, kind):
+def version_cmds(name, kind) -> list[list[str]]:
     """Every place the pinned version may live. A uv tool baked into the image can be older than an owner bump that tools-check installed under ~/.local/bin."""
     cmds = [version_cmd(name, kind)]
     if kind == "uv":
@@ -90,7 +91,7 @@ def version_cmds(name, kind):
     return cmds
 
 
-def has(name, ver, kind):
+def has(name, ver, kind) -> bool:
     for cmd in version_cmds(name, kind):
         rc, out = run(cmd, 60)
         if rc == 0 and (out == ver if kind == "apt" else _has_version_token(out, ver)):
@@ -98,7 +99,7 @@ def has(name, ver, kind):
     return False
 
 
-def check(rs, install):
+def check(rs, install) -> tuple[list[str], list[str], list[str]]:
     ok, done, bad = [], [], []
     for n, v, k in rs:
         if has(n, v, k):
@@ -122,7 +123,7 @@ ESLINT = """export default [{ignores: ["**/vendor/**", "**/node_modules/**"]}, {
 """
 
 
-def ensure_proj(project):
+def ensure_proj(project) -> None:
     """eslint and knip scaffold /opt/jstools/proj (lost with the container): symlinks to the project's web/ and tools/, flat config from practices/js.md."""
     d = f"{JS}/proj"
     os.makedirs(d, exist_ok=True)
@@ -140,26 +141,34 @@ def ensure_proj(project):
 
 
 WRAPPER = "/usr/local/bin/chrome-nonroot"
-WRAPPER_TEXT = """#!/bin/sh
+
+
+def wrapper_text(home) -> str:
+    """The chrome wrapper script for the `browser` user whose home directory is HOME."""
+    return f"""#!/bin/sh
 # Chrome as the unprivileged user `browser` (the MCP server runs as root). Used as chrome-devtools-mcp --executablePath.
-exec runuser -u browser -- env HOME=/home/browser XDG_CONFIG_HOME=/home/browser/.config /usr/bin/google-chrome --disable-breakpad "$@"
+exec runuser -u browser -- env HOME={home} XDG_CONFIG_HOME={home}/.config /usr/bin/google-chrome --disable-breakpad "$@"
 """
 
 
-def ensure_browser_user():
+def ensure_browser_user() -> None:
     """Container rebuilds lose the `browser` user and its wrapper: recreate them (root only; the user namespace sandbox stays off)."""
     if os.geteuid() != 0:
         return
     if run(["id", "browser"])[0] != 0:
         run(["useradd", "-m", "-s", "/usr/sbin/nologin", "browser"])
-    os.makedirs("/home/browser/chrome-profile", exist_ok=True)
-    run(["chown", "-R", "browser:browser", "/home/browser"])
+    try:
+        home = pwd.getpwnam("browser").pw_dir
+    except KeyError:  # useradd failed (no permission or space): no user, no home, nothing to set up
+        return
+    os.makedirs(os.path.join(home, "chrome-profile"), exist_ok=True)
+    run(["chown", "-R", "browser:browser", home])
     if not os.path.exists(WRAPPER):
-        write_text(WRAPPER, WRAPPER_TEXT)
+        write_text(WRAPPER, wrapper_text(home))
         os.chmod(WRAPPER, 0o755)  # nosec B103  # wrapper script must be executable
 
 
-def browser_ok():
+def browser_ok() -> bool:
     """headless web-tester / ux-reviewer need the chrome-devtools MCP server; `claude mcp list` shows it as Connected."""
     rc, out = run(["claude", "mcp", "list"], 120)
     line = next((row for row in out.splitlines() if row.startswith("chrome-devtools:")), "")
@@ -172,7 +181,7 @@ def browser_ok():
     return rc == 0
 
 
-def outdated(rs):
+def outdated(rs) -> None:
     cmds = {
         "uv": lambda n: ["uv", "pip", "index", "versions", n],
         "cargo": lambda n: ["cargo", "search", n, "--limit", "1"],
@@ -188,13 +197,13 @@ def outdated(rs):
         )
 
 
-def split_needed(bad, needed_text):
+def split_needed(bad, needed_text) -> tuple[list[str], list[str]]:
     """-> (really failed, warnings). A tool that did not install only fails the check when the project's AUDIT.md names it; `bad` items are `name version`."""
     need = (needed_text or "").lower()
     return [b for b in bad if b.split()[0].lower() in need], [b for b in bad if b.split()[0].lower() not in need]
 
 
-def audit_tools_note(path):
+def audit_tools_note(path) -> str:
     """A warning line when the project's AUDIT.md is missing or has no `audit-tools` block (auditors then run without measurements), plus a starter block drafted from the repo's marker files. "" otherwise."""
     if os.path.exists(path) and "```audit-tools" in read_text(path):
         return ""
@@ -229,7 +238,7 @@ def _parser():
     return p
 
 
-def main(argv=None):
+def main(argv=None) -> None:
     a = _parser().parse_args(argv)
     rs = rows(read_text(TABLE))
     if a.cmd == "outdated":
@@ -237,7 +246,8 @@ def main(argv=None):
     if a.kinds:
         rs = [r for r in rs if r[2] in a.kinds.split(",")]
     ok, done, bad = check(rs, a.install)
-    warn, note = [], ""
+    warn: list[str] = []
+    note = ""
     if a.needed_by is not None:
         bad, warn = split_needed(bad, read_text(a.needed_by) if os.path.exists(a.needed_by) else "")
         note = audit_tools_note(a.needed_by)

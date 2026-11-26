@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import gitx, worktree
+from pipeline import gitx, worktree, worktree_merge
 
 GIT = ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
 
@@ -48,6 +48,7 @@ class RefreshTest(unittest.TestCase):
         patches = [
             mock.patch.object(worktree, "live_job", return_value=info),
             mock.patch.object(worktree, "layout", return_value=({}, self.repo, self.wt, "job")),
+            mock.patch.object(worktree_merge, "layout", return_value=({}, self.repo, self.wt, "job")),
         ]
         for patcher in patches:
             patcher.start()
@@ -104,7 +105,7 @@ class RefreshTest(unittest.TestCase):
         _git(self.repo, "add", "-A")
         _git(self.repo, "commit", "-q", "-m", "squash of the job")
         head = gitx.out(self.wt, "rev-parse", "HEAD")
-        with mock.patch.object(worktree, "work_branch", return_value=self.base):
+        with mock.patch.object(worktree, "work_branch", return_value=self.base), mock.patch.object(worktree_merge, "work_branch", return_value=self.base):
             res = worktree.refresh(self.d, "s", "t")
         self.assertEqual(res["rebased"], [])
         self.assertEqual(gitx.out(self.wt, "rev-parse", "HEAD"), head)

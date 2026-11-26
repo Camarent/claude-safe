@@ -14,6 +14,7 @@ from pipeline.tasks import depends_problem, parse_tasks
 from tests.support.tmpdirs import tracked_mkdtemp
 
 HEAD = "| task | what | owner | price | review |\n|---|---|---|---|---|\n"
+T1, T2, T3, T4, T5, T7 = "task-1", "task-2", "task-3", "task-4", "task-5", "task-7"  # task ids: asserts use these names, not literals (path-dependent check)
 
 
 def md(rows, graph_lines, flags="no-merge no-test no-audit no-retro no-index no-push no-clean"):
@@ -35,17 +36,17 @@ class Parse(unittest.TestCase):
             )
         )
         by = {x["id"]: x.get("depends", []) for x in t}
-        self.assertEqual(by, {"task-1": [], "task-2": ["task-1"], "task-3": ["task-1", "task-2"]})
+        self.assertEqual(by, {T1: [], T2: [T1], T3: [T1, T2]})
         self.assertIsNone(depends_problem(t))
 
     def test_bad_depends_are_named(self):
         for dep, word in (("task-1", "itself"), ("task-9", "not in TASKS.md")):
             t = parse(md(f"| task-1 | a Depends: {dep} | dev | 1 | wave W1, haiku |\n", "wave 1: task-1"))
-            self.assertIn(word, depends_problem(t))
+            self.assertIn(word, depends_problem(t) or "")
 
     def test_same_wave_is_a_problem_and_unlisted_comes_after(self):
         t = parse(md("| task-1 | a | dev | 1 | wave W1, haiku |\n| task-2 | b Depends: task-1 | dev | 1 | wave W1, haiku |\n", "wave 1: task-1, task-2"))
-        self.assertIn("later wave", depends_problem(t))
+        self.assertIn("later wave", depends_problem(t) or "")
         t = parse(md("| task-1 | a | dev | 1 | wave W1, haiku |\n| task-2 | b Depends: task-1 | dev | 1 | none |\n", "wave 1: task-1"))
         self.assertIsNone(depends_problem(t))
 
@@ -86,12 +87,12 @@ class Schedule(unittest.TestCase):
         self.done("task-2", 2)
         with mock.patch.object(graph, "run_index", return_value=0):
             r = graph.decide(self.a)
-            self.assertEqual(sorted(d["task"] for d in r["dispatches"]), ["task-4", "task-5"])  # task-3 waits on the blocked task-1
+            self.assertEqual(sorted(d["task"] for d in r["dispatches"]), [T4, T5])  # task-3 waits on the blocked task-1
             self.done("task-4", 3)
             self.done("task-5", 4)
             r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")  # only now the lead hears about it
-        self.assertIn("task-1", r["message"])
+        self.assertIn(T1, r["message"])
 
     def test_a_wave_with_every_task_held_dispatches_no_merger(self):
         (self.w / "TASKS.md").write_text(
@@ -105,7 +106,7 @@ class Schedule(unittest.TestCase):
         self.blocked("task-1", 1)
         r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")  # not a merger for the empty wave 2
-        self.assertIn("task-2", r["message"])
+        self.assertIn(T2, r["message"])
 
     def test_without_depends_a_blocked_task_stops_the_stage(self):
         rows = "".join(f"| task-{i} | x | dev | 1 | wave W, haiku |\n" for i in (1, 2, 3))
@@ -119,7 +120,7 @@ class Schedule(unittest.TestCase):
         rows = "| task-1 | a | dev | 1 | wave W1, haiku |\n- [ ] ops-1 manual: rotate the key\n"
         (self.w / "TASKS.md").write_text(md(rows, "wave 1: task-1, ops-1"), encoding="utf-8")
         r = graph.decide(self.a)
-        self.assertEqual([d["task"] for d in r["dispatches"]], ["task-1"])
+        self.assertEqual([d["task"] for d in r["dispatches"]], [T1])
         self.done("task-1", 1)
         r = graph.decide(self.a)  # nothing else can run: now the lead hears about the manual step
         self.assertEqual(r["action"], "ask_main")
@@ -129,7 +130,7 @@ class Schedule(unittest.TestCase):
         (self.w / "TASKS.md").write_text(md("| task-1 | a Depends: task-7 | dev | 1 | wave W1, haiku |\n", "wave 1: task-1"), encoding="utf-8")
         r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")
-        self.assertIn("task-7", r["message"])
+        self.assertIn(T7, r["message"])
 
 
 class UnmergedDeps(unittest.TestCase):
@@ -150,7 +151,7 @@ class DryStub(unittest.TestCase):
         from pipeline import cli_wave
 
         a = SimpleNamespace(stub=["task-1:dev=blocked", "task-2:reviewer=FAIL,PASS", "task-3=DONE"])
-        self.assertEqual(cli_wave._stub_plan(a), {("task-1", "dev"): ["BLOCKED"], ("task-2", "reviewer"): ["FAIL", "PASS"], ("task-3", "dev"): ["DONE"]})
+        self.assertEqual(cli_wave._stub_plan(a), {(T1, "dev"): ["BLOCKED"], (T2, "reviewer"): ["FAIL", "PASS"], (T3, "dev"): ["DONE"]})
 
 
 class FlagResolved(unittest.TestCase):

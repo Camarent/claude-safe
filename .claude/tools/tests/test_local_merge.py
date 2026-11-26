@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import test_pr_steps as tps
-from pipeline import pr_mode, pr_ops
+from pipeline import pr_base, pr_mode, pr_ops
 from tests.support.gitrepo import git
 
 
@@ -71,9 +71,9 @@ class LocalMergeTest(unittest.TestCase):
     def test_failed_commit_leaves_the_tree_on_the_original_branch(self):
         git(self.d, "switch", "-q", "stage/f")
         bad = SimpleNamespace(returncode=1, stdout="", stderr="hook said no")
-        real = pr_ops._run
+        real = pr_base._run
         fake = lambda args, cwd, timeout=120: bad if any("commit.py" in x for x in args) else real(args, cwd, timeout)  # noqa: E731
-        with unittest.mock.patch.object(pr_ops, "_run", fake), self.assertRaises(pr_ops.Blocked):
+        with unittest.mock.patch.object(pr_base, "_run", fake), self.assertRaises(pr_ops.Blocked):
             pr_ops._local_merge_repo(self.d, {}, "stage/f", "f", self.d)
         self.assertEqual(git(self.d, "branch", "--show-current"), "stage/f")
 

@@ -6,7 +6,7 @@ from .plan_rules import _transitive_deps
 PARALLEL_WARN_PREFIX = "parallel: "  # a warning line: never fails a check (errors_of)
 
 
-def parallel_candidates(d, ents):
+def parallel_candidates(d, ents) -> list[str]:
     """-> one `parallel:` warning per pair of tasks in different waves, with Predicted paths that do not overlap (plan_files.wave_conflict) and neither of which depends on the other, directly or through others. Same-wave pairs are not listed: they already share a wave. A task with no Predicted paths is not listed: it claims no path to be disjoint from."""
     modes = {e["id"]: task_path_modes(d, e["id"]) for e in ents}
     held = {e["id"]: _transitive_deps(ents, e["id"]) for e in ents}

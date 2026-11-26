@@ -7,7 +7,7 @@ dockerfilePath="$scriptDir"
 claudeDockerDir="$scriptDir/.claude"
 browserProfileDir="$scriptDir/browser-profile"
 
-# Add folders you always trust here, e.g. "/home/you/projects"
+# Add folders you always trust here, e.g. "~/projects"
 trustedPaths=(
 )
 
@@ -33,19 +33,23 @@ snipOff=false
 ponytailOn=false
 gpuOn=false
 noSecrets=false
+withGhToken=false
+withCloudflareToken=false
 claudeArgs=()
 compactWindow=""
-clusterOn=false
 runCmd=""
 publishPorts=()
 usage() {
     local f p desc
     cat <<HELP
-Usage: claude-safe [--here] [--with PROFILES] [--rebuild] [--compact N] [--no-snip] [--ponytail] [--no-secrets] [--help] [-- CLAUDE_ARGS...]
+Usage: claude-safe [--here] [--with PROFILES] [--rebuild] [--compact N] [--no-snip] [--ponytail] [--no-secrets] [--with-gh-token] [--with-cloudflare-token] [--help] [-- CLAUDE_ARGS...]
 
   --here           mount the current folder (default: empty scratch dir)
   --cmd STRING     run STRING with bash instead of the agent TUI 
   --no-secrets     don't pass GH/Cloudflare tokens or mount the browser profile
+  --with-gh-token  forward the host's GH_TOKEN (or GITHUB_TOKEN) into the session; off by default
+  --with-cloudflare-token
+                   forward the host's CLOUDFLARE_API_TOKEN into the session; off by default
   --                everything after is passed to claude (e.g. -- -p "prompt");
                    without a terminal the container runs non-interactively
   --with a,b       add toolchain profiles on top of the base image, plus the run features below
@@ -65,15 +69,10 @@ HELP
     done
     cat <<HELP
   gpu      (feature, no image) pass all NVIDIA GPUs into the container (needs nvidia-container-toolkit)
-  cluster  also: PRIVILEGED container with its own dockerd and one-node Slurm (Docker-in-Docker; images in volume claude-safe-docker)
-
-Local model servers (Ollama, Strata) are not part of this image: they run from the model-host project (MODEL_HOST_DIR, default ../model-host).
-When its Docker network model-net exists, the container joins it and gets OLLAMA_URL / STRATA_URL for the engines that are running.
 
 Examples:
   claude-safe --here --with rust
   claude-safe --here --with rust,cpp
-  claude-safe --here --with rust,cluster
 HELP
 }
 
@@ -97,6 +96,8 @@ while [[ $# -gt 0 ]]; do
         --no-snip) snipOff=true; shift ;;
         --ponytail) ponytailOn=true; shift ;;
         --no-secrets) noSecrets=true; shift ;;
+        --with-gh-token) withGhToken=true; shift ;;
+        --with-cloudflare-token) withCloudflareToken=true; shift ;;
         --) shift; claudeArgs=("$@"); break ;;
         *)
             echo -e "\033[31mUnknown argument '$1'.\033[0m"; usage; exit 1
@@ -104,15 +105,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Run features chosen through --with: `gpu` has no image, `cluster` has one and also changes how the container runs.
+# Run features chosen through --with: `gpu` has no image.
 imageProfiles=()
 for p in "${profiles[@]}"; do
     case "$p" in
         gpu) gpuOn=true ;;
-        strata|ollama)
-            echo -e "\033[31m'--with $p' is gone: local model servers moved to the model-host project (modelctl use $p). Start them there; this container connects by itself.\033[0m"
-            exit 1 ;;
-        cluster) clusterOn=true; imageProfiles+=("$p") ;;
         *) imageProfiles+=("$p") ;;
     esac
 done
@@ -276,32 +273,27 @@ else
     echo -e "\033[33mAnother session holds the browser profile — this one uses a temporary profile (no saved logins).\033[0m"
 fi
 
-# Pass a GitHub token through for the session only (gh reads GH_TOKEN natively,
-# no `gh auth login` or on-disk config needed) — nothing persists after --rm.
-# Falls back to the host's own `gh` login so you don't have to set GH_TOKEN by hand.
-ghToken="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-if [[ -z "$ghToken" ]] && command -v gh >/dev/null 2>&1; then
-    ghToken="$(gh auth token 2>/dev/null || true)"
-fi
-
+# Tokens are opt-in: no token reaches the container unless its flag is given.
+# --with-gh-token forwards the host's GH_TOKEN (or GITHUB_TOKEN) for the session
+# only (gh reads GH_TOKEN natively) — nothing persists after --rm.
 ghTokenArgs=()
-if [[ -n "$ghToken" ]]; then
-    export GH_TOKEN="$ghToken"  # docker reads the value from this env; "-e NAME=value" would show it in ps and docker inspect
-    ghTokenArgs=(-e GH_TOKEN)
+if [[ "$withGhToken" == true ]]; then
+    ghToken="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+    if [[ -n "$ghToken" ]]; then
+        export GH_TOKEN="$ghToken"  # docker reads the value from this env; "-e NAME=value" would show it in ps and docker inspect
+        ghTokenArgs=(-e GH_TOKEN)
+    else
+        echo "claude-safe: --with-gh-token given but GH_TOKEN and GITHUB_TOKEN are empty; no GitHub token forwarded" >&2
+    fi
 fi
 
-# Cloudflare API token (wrangler and the API read CLOUDFLARE_API_TOKEN natively).
-# Taken from the host environment, else from a file kept outside this repo.
-cfToken="${CLOUDFLARE_API_TOKEN:-}"
-cfTokenFile="$HOME/.config/claude-safe/cloudflare-token"
-if [[ -z "$cfToken" && -f "$cfTokenFile" ]]; then
-    cfToken="$(<"$cfTokenFile")"
-fi
-
+# --with-cloudflare-token forwards the host's CLOUDFLARE_API_TOKEN (wrangler and the API read it natively).
 cfTokenArgs=()
-if [[ -n "$cfToken" ]]; then
-    export CLOUDFLARE_API_TOKEN="$cfToken"
+if [[ "$withCloudflareToken" == true && -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+    export CLOUDFLARE_API_TOKEN  # docker reads the value from this env; "-e NAME=value" would show it in ps and docker inspect
     cfTokenArgs=(-e CLOUDFLARE_API_TOKEN)
+elif [[ "$withCloudflareToken" == true ]]; then
+    echo "claude-safe: --with-cloudflare-token given but CLOUDFLARE_API_TOKEN is empty; no Cloudflare token forwarded" >&2
 fi
 
 # Second Claude account for the pipeline's headless `claude -p` sessions only
@@ -351,38 +343,9 @@ if [[ "$gpuOn" == true ]]; then
     gpuArgs=(--gpus all)
 fi
 
-# cluster: the container runs its own dockerd (docker-in-docker), which needs --privileged. The host
-# Docker socket is NOT mounted. /var/lib/docker is a named volume so kind/act images survive restarts.
-clusterArgs=()
-if [[ "$clusterOn" == true ]]; then
-    clusterArgs=(--privileged -e CLUSTER=1 -v claude-safe-docker:/var/lib/docker)
-    echo -e "\033[33mcluster: container is privileged (own Docker + Slurm inside).\033[0m"
-fi
-
 # Per-mode mounts.
 shmSize="1g"
 homeArgs=(-v "$claudeDockerDir:/root/.claude" -v "$claudeDockerDir/.claude.json:/root/.claude.json")
-# Local model servers run from the separate model-host project (Ollama, Strata). Nothing to start here: when its Docker
-# network exists the container joins it, and each engine that is running right now is announced through OLLAMA_URL /
-# STRATA_URL (STRATA_KEY from model-host's generated key file). Without model-host the container starts as before.
-modelHostDir="${MODEL_HOST_DIR:-$scriptDir/../model-host}"
-modelNetArgs=()
-if docker network inspect model-net >/dev/null 2>&1; then
-    modelNetArgs=(--network model-net)
-    engineUp() { [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == true ]]; }
-    if engineUp model-host-ollama; then
-        modelNetArgs+=(-e "OLLAMA_URL=http://model-host-ollama:11434")
-        echo -e "\033[32mmodel-host: Ollama is up (OLLAMA_URL=http://model-host-ollama:11434).\033[0m"
-    fi
-    if engineUp model-host-strata; then
-        if [[ -s "$modelHostDir/secrets/strata.key" ]]; then
-            modelNetArgs+=(-e "STRATA_URL=http://model-host-strata:8080" -e "STRATA_KEY=$(cat "$modelHostDir/secrets/strata.key")" -e ORCH_LEAD=1)
-            echo -e "\033[32mmodel-host: Strata is up (STRATA_URL=http://model-host-strata:8080).\033[0m"
-        else
-            echo -e "\033[33mmodel-host: Strata is running but $modelHostDir/secrets/strata.key is missing or empty (set MODEL_HOST_DIR); Strata is not connected.\033[0m"
-        fi
-    fi
-fi
 echo -e "\033[32mStarting sandboxed Claude...\033[0m"
 
 ttyArgs=(-i)
@@ -405,8 +368,6 @@ docker run "${ttyArgs[@]}" --rm --init \
     "${compactArgs[@]}" \
     "${gpuArgs[@]}" \
     "${publishPorts[@]}" \
-    "${clusterArgs[@]}" \
-    "${modelNetArgs[@]}" \
     "${homeArgs[@]}" \
     "${browserProfileArgs[@]}" \
     -v "$scriptDir/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro" \

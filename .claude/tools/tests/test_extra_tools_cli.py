@@ -155,20 +155,45 @@ class Scaffolds(unittest.TestCase):
             calls.append(cmd[0])
             return (1, "") if cmd[0] == "id" else (0, "")
 
+        made = []
         with tempfile.TemporaryDirectory() as d:
             wrapper = os.path.join(d, "chrome-nonroot")
-            real_makedirs = os.makedirs
+            browser = mock.Mock(pw_dir=os.path.join(d, "browser"))
             with (
                 mock.patch.object(x.os, "geteuid", return_value=0),
                 mock.patch.object(x, "run", fake_run),
+                mock.patch.object(x.pwd, "getpwnam", return_value=browser),
                 mock.patch.object(x, "WRAPPER", wrapper),
-                mock.patch.object(x.os, "makedirs", lambda p, **k: real_makedirs(os.path.join(d, "mk"), **k)),
+                mock.patch.object(x.os, "makedirs", lambda p, **k: made.append(p)),
             ):
                 x.ensure_browser_user()
             self.assertEqual(calls, ["id", "useradd", "chown"])
+            profile = os.path.join(browser.pw_dir, "chrome-profile")
+            self.assertIn(profile, made)
             with open(wrapper) as f:
-                self.assertEqual(f.read(), x.WRAPPER_TEXT)
+                text = f.read()
+            self.assertIn(f"HOME={browser.pw_dir} ", text)
+            self.assertIn(f"XDG_CONFIG_HOME={browser.pw_dir}/.config ", text)
             self.assertTrue(os.access(wrapper, os.X_OK))
+
+    def test_ensure_browser_user_skips_wrapper_when_user_lookup_fails(self):
+        calls = []
+
+        def fake_run(cmd, timeout=900):
+            calls.append(cmd[0])
+            return (1, "") if cmd[0] == "id" else (1, "useradd: Permission denied")
+
+        with tempfile.TemporaryDirectory() as d:
+            wrapper = os.path.join(d, "chrome-nonroot")
+            with (
+                mock.patch.object(x.os, "geteuid", return_value=0),
+                mock.patch.object(x, "run", fake_run),
+                mock.patch.object(x.pwd, "getpwnam", side_effect=KeyError("browser")),
+                mock.patch.object(x, "WRAPPER", wrapper),
+            ):
+                x.ensure_browser_user()
+            self.assertEqual(calls, ["id", "useradd"])
+            self.assertFalse(os.path.exists(wrapper))
 
 
 class Browser(unittest.TestCase):

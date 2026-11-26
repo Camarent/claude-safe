@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shlex
+from collections.abc import Iterator
 from pathlib import Path
 
 from docs_index import module_headings, slug
@@ -72,19 +73,19 @@ from .steps import history, last_verdict, ops_as_script, step
 from .util import paths
 
 
-def test_env_hint(cfg):
+def test_env_hint(cfg) -> str:
     """Instruction text for the env vars the project's test commands need ("" when none)."""
     env = cfg.get("test_env") or {}
     return "qrun sets " + " ".join(f"{k}" for k in env) + " itself (no prefix, no export), " if env else ""
 
 
-def gate_text(cfg, merge=False):
+def gate_text(cfg, merge=False) -> str:
     """-> the test commands for a prompt: the gates as `name: cmd` (with MERGE the `gates_merge` ones too), or a generic phrase without gates."""
     gates = [*gates_of(cfg), *merge_gates_of(cfg)] if merge else cfg.get("gates") or []
     return "; ".join(f"{g['name']}: `{g['cmd']}`" for g in gates) if gates else "the project test command"
 
 
-def merge_prompt(a, what, parts):
+def merge_prompt(a, what, parts) -> str:
     cfg = project(a.dir)
     return (
         f"Stage {a.stage}: squash-merge {what} into `{_wb(a, cfg)}` per {PRACTICES_DIR}/branches.md. Where each branch/worktree is: {'; '.join(parts)}. A task that lists several repos has one job branch in each: merge the branch in EVERY listed repo into that repo's `{_wb(a, cfg)}` (the nested repo too, one squash commit per repo), then run the tests; only after they are green run each merged task's `wt.py remove` command from its part. On FAIL leave the worktrees untouched. Commit subject: reuse each job branch's own subject (`git log -1 --format=%s <branch>`; the commit hook wants `<type>(<area>): <what>`). Test command: {gate_text(cfg, merge=True)} via qrun. `wt.py remove` refuses while a branch is unmerged: never use --force. "
@@ -147,7 +148,7 @@ class _Final:
             self.last_phase and flags["release"] and bool(cfg.get("release_script")) and pr_mode.cleanup_active(a)
         )  # a git repo with a derived stage branch and a project release hook
 
-    def script(self, sid, verb, why):
+    def script(self, sid, verb, why) -> dict:
         """A script step that runs `pr_mode.cmd(..., verb)`."""
         return step(sid, "script", None, pr_mode.cmd(self.a, self.name, verb), {DONE}, None, why)
 
@@ -359,7 +360,7 @@ def _cleanup_step(c):
 _FINAL_BUILDERS = (_bump_and_ready, _acceptance, _local_merge, _merge_release_cleanup, _push_master, _publish_steps, _cleanup_step)
 
 
-def final_phases(a, flags, tasks, evs):
+def final_phases(a, flags, tasks, evs) -> Iterator[list[dict]]:
     """Audit phases, then the post-publish steps (flag `index`; `UI: yes` + `PUBLISH:` line)."""
     cfg = project(a.dir)
     yield from audit_phases(a, flags, tasks, evs)
@@ -592,7 +593,7 @@ def _index_modules_note(a, cfg):
     )
 
 
-def audit_phases(a, flags, tasks, evs):
+def audit_phases(a, flags, tasks, evs) -> Iterator[list[dict]]:
     cfg = project(a.dir)
     """Lazy: a later phase is built only after the earlier one is satisfied, so it can read the earlier verdicts from evs."""
     if flags["test"]:

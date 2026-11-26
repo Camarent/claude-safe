@@ -43,17 +43,17 @@ from .run import Run
 from .util import TOOLS, default_dir, read_text, swallowed, write_text
 
 
-def ctx_path(a, phase):
+def ctx_path(a, phase) -> str:
     return os.path.join(pf.feature_dir(a), "phases", phase["dir"], "plan-context.md")
 
 
-def ctx_sentence(a, phase):
+def ctx_sentence(a, phase) -> str:
     if not os.path.exists(ctx_path(a, phase)):
         return ""
     return f"Read .work/{a.feature}/phases/{phase['dir']}/plan-context.md first: a script-made digest (decisions, what earlier phases merged, likely files); treat it as hints to verify, not as truth. "
 
 
-def carried_sentence(a, phase):
+def carried_sentence(a, phase) -> str:
     """For a phase after the first: the rule to read the earlier phases' reports, audits and TASKS.md, and to write the carried-items section. "" for the first phase."""
     from .phase_context import earlier_rows
 
@@ -69,14 +69,14 @@ def carried_sentence(a, phase):
     )
 
 
-def repo_phase(a, phase):
+def repo_phase(a, phase) -> dict:
     """PHASE with its `paths` made repo-root-relative: Plan.md names them from the workspace (`myrepo/src`), but the planner's context and the devs see the repo root (worktree root), so the repo prefix must not leak into task files."""
     repo = (project(a.dir).get("repo") or "").strip("/")
     pre = repo + "/"
     return {**phase, "paths": [p[len(pre) :] if repo and p.startswith(pre) else ("." if p == repo else p) for p in phase["paths"]]}
 
 
-def phase_ctx(a, phase):
+def phase_ctx(a, phase) -> None:
     """Write the phase's plan-context.md and log a `context` event. Best effort: never raises, never blocks the planner."""
     if os.environ.get(ENV_NO_CONTEXT):
         return
@@ -114,7 +114,7 @@ def phase_ctx(a, phase):
         return
 
 
-def plan_prompt(a, phase):
+def plan_prompt(a, phase) -> str:
     S = pf.stage_of(a.feature, phase)
     phase = repo_phase(a, phase)
     return (
@@ -126,7 +126,7 @@ def plan_prompt(a, phase):
     )
 
 
-def plan_phase(a, phase):
+def plan_phase(a, phase) -> list[str]:
     """Architect session for one phase. -> problems list ([] = planned and valid)."""
     folder = os.path.join(pf.feature_dir(a), "phases", phase["dir"])
     print(progress.phase_line(folder, "planning started: building the phase context"), flush=True)
@@ -166,11 +166,11 @@ def _review_plan(a, phase, folder, n):
     kind = _review_kind(a, phase)
     report_path = os.path.join(folder, PLAN_REVIEW_REPORT_FILE)
 
-    def dispatch(model, k):
+    def dispatch(model, k) -> str:
         claude.session(claude.claude_args("plan-reviewer", model, None, plan_review.build_prompt(k, a.feature, report_path)), a.dir, None)
         return read_text(report_path)
 
-    def fix(report):
+    def fix(report) -> None:
         note = f"\n\nThe plan review found these gaps; fix them in the task files and run `plan.py check --stage {pf.stage_of(a.feature, phase)}` until it prints OK:\n{report}"
         claude.session(claude.claude_args("architect", None, None, plan_prompt(a, phase) + note), a.dir, None)
 
@@ -189,7 +189,7 @@ def _review_plan(a, phase, folder, n):
     return []
 
 
-def run_done_when(a, phase):
+def run_done_when(a, phase) -> tuple[bool, str]:
     """-> (ok, tail of output). Runs the phase's done_when in the repo folder with the project's test_env."""
     cfg = project(a.dir)
     repo = repo_dir(a.dir, cfg)
@@ -201,7 +201,7 @@ def run_done_when(a, phase):
         return False, str(e)
 
 
-def block(a, message):
+def block(a, message) -> int:
     write_text(os.path.join(pf.feature_dir(a), BLOCKED_FILE), message + "\n")
     print(f"BLOCKED, back to lead (also in {pf.feature_dir(a)}/BLOCKED.md):\n{message}")
     return EXIT_BLOCKED
@@ -292,7 +292,7 @@ def _single_stage(a, ns):
     return not pf.read_phases(ns) and os.path.exists(pf.tasks_path(pf.feature_dir(a)))
 
 
-def cmd_feature(a):
+def cmd_feature(a) -> int:
     if a.dry_run:
         return _feature(a)
     os.makedirs(pf.feature_dir(a), exist_ok=True)
@@ -338,7 +338,7 @@ def _feature(a):
             return rc
 
 
-def add_feature_command(sub):
+def add_feature_command(sub) -> None:
     p = sub.add_parser("feature")
     p.add_argument("--feature", required=True)
     p.add_argument("--dir", default=default_dir())

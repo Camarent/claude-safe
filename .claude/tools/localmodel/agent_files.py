@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 from pipeline import gitx  # noqa: E402
 from pipeline.configuration import EXPLORE_MAX_TURNS  # noqa: E402
 from pipeline.shellwords import short_flag  # noqa: E402
+from pipeline.util import swallowed  # noqa: E402 - imports below the sys.path insert at line 22
 
 MAX_TURNS = EXPLORE_MAX_TURNS
 BUDGET_S = 240  # wall clock for the whole loop: past it the model is told to answer now. Below the 300 s limit of the plan context step (the answer call and the file digest still follow); 3 of 4 real runs hit that limit at 600
@@ -135,7 +136,8 @@ PROMPT = (
 def _lp(repo, *args, t=60):
     try:
         return subprocess.run(["lp", *args], cwd=repo, capture_output=True, text=True, timeout=t, check=False).stdout
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        swallowed("agent_files._lp", ex)  # lp missing or too slow: the tool result is empty
         return ""
 
 
@@ -265,21 +267,27 @@ def arch_map(repos, limit=12000, readme=1500):
             with open(os.path.join(root, "course.json"), encoding="utf-8") as fh:
                 c = json.load(fh)
             line += f" (a course: id {c.get('id')}, title {c.get('title')}; content in content/*.jsonl)"
-        except (OSError, ValueError, AttributeError):
-            pass
+        except FileNotFoundError:
+            pass  # not a course: no course.json
+        except (OSError, ValueError, AttributeError) as ex:
+            swallowed("agent_files.arch_map course.json", ex)
         out.append(line)
     out.append("")
     for name, root in repos.items():
         try:
             with open(os.path.join(root, "docs", "ARCHITECTURE.md"), encoding="utf-8") as fh:
                 out.append(f"## {name}\n" + fh.read()[:limit])
-        except OSError:
-            pass
+        except FileNotFoundError:
+            pass  # optional doc: most repos have none
+        except OSError as ex:
+            swallowed("agent_files.arch_map ARCHITECTURE.md", ex)
         try:
             with open(os.path.join(root, "README.md"), encoding="utf-8") as fh:
                 out.append(f"## {name} README.md\n" + fh.read()[:readme])
-        except OSError:
-            pass
+        except FileNotFoundError:
+            pass  # optional doc: a repo may have no README
+        except OSError as ex:
+            swallowed("agent_files.arch_map README.md", ex)
     return "\n\n".join(out)
 
 
@@ -297,7 +305,8 @@ def describe(path):
                 if t.startswith(("//!", "///", "#", "/*", "*", '"""', "'''", "<!--")) and len(body) > 3:
                     return body[:90]
             return first[:90]
-    except OSError:
+    except OSError as ex:
+        swallowed("agent_files.describe", ex)  # unreadable file: no description line
         return ""
 
 
@@ -478,6 +487,7 @@ def agent_files(repos, request, leads="", post=_post, run=run_tool, log=None, ar
             msgs.append({"role": "user", "content": results})
             err_run = err_run + bad if bad else 0  # a good result resets the run only when every result of the turn is good
     except Exception as ex:  # Strata or network trouble never fails the planner
+        swallowed("agent_files.explore", ex)
         STATS["ended"] = "error:" + type(ex).__name__
         if log is not None:
             log.append(f"failed: {type(ex).__name__} {str(ex)[:200]}")

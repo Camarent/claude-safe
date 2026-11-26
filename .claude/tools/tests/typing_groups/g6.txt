@@ -1,0 +1,4 @@
+.claude/tools/pipeline/driver.py
+.claude/tools/pipeline/extra_tools.py
+.claude/tools/pipeline/gitx.py
+.claude/tools/pipeline/guidelines.py

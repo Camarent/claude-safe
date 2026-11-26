@@ -48,7 +48,7 @@ def _patterns_and_dir(args):
     return pats, tests_dir
 
 
-def ptest_selector_problems(d, tid, repo):
+def ptest_selector_problems(d, tid, repo) -> list[str]:
     """Problems for one task file: a ptest selector pattern in its `Test:` line that matches no test file under the tests dir and that no Predicted path (or one of the tasks it depends on) creates."""
     text = read_text(os.path.join(d, tid + ".md"))
     m = TEST_LINE_RE.search(text)

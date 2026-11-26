@@ -43,12 +43,12 @@ from .util import append_event, paths, read_jsonl, read_text, run_py, swallowed
 from .worktrees import job_info, tasks_merged
 
 
-def ask_all(asks):
+def ask_all(asks) -> dict:
     """One ask_main for every blocked item of the wave, so the ladder runs once per wave, not once per task."""
     return {"action": "ask_main", "message": "\n".join(x["message"] for x in asks)}
 
 
-def run_index(a):
+def run_index(a) -> int:
     """Script step, no agent: refresh the code index; a failure only warns (stderr)."""
     try:
         return run_py("search/local.py", "index", "--root", a.dir, cwd=a.dir, timeout=INDEX_TIMEOUT_S).returncode
@@ -545,7 +545,7 @@ def _unmerged_done(a, evs, tasks, prune=True):
     return out
 
 
-def unmerged_done_ids(a, evs, tasks):
+def unmerged_done_ids(a, evs, tasks) -> list:
     """Done tasks whose job branch is not merged into the stage branch although their wave's merge step already ran (`wave.py status` lists them; before that merge a done task is simply waiting for it). Read-only: unlike the driver's own check it never removes an empty job's worktree."""
     wave = {t["id"]: t["wave"] for t in tasks}
     return [t for t in _unmerged_done(a, evs, tasks, prune=False) if _step_satisfied(evs, f"merge-w{wave.get(t)}")]
@@ -688,7 +688,7 @@ def _closing_phases(a, flags, tasks, evs, n):
     return _retro_phases(a, evs, n) if flags["retro"] else None
 
 
-def decide(a):
+def decide(a) -> dict:
     """Waves first (dev -> reviewer per task, parallel inside a wave, merger after each wave), then tests, docs, audits and the fix cycle."""
     w, log = paths(a)
     tm = os.path.join(w, TASKS_FILE)

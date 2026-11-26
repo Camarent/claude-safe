@@ -52,7 +52,7 @@ Reason: A cleanup step in the finish phase removes merged or gone job worktrees 
 
 ## Problem 13
 
-Reason: `scripts/sync-claude-config.sh` syncs `~/.claude` in one command. It refuses while a driver is mid-step and never runs `host_agents.py --apply`.
+Reason: `scripts/sync-claude-config.sh` syncs `~/.claude` in one command. It is a dry run by default (lists the files it would overwrite, writes nothing); `--apply` writes. It refuses while a driver is mid-step and never runs `host_agents.py --apply`.
 
 ## Problem 14
 
@@ -86,7 +86,7 @@ Stage decisions, one per task. Reason = the report item it fixes.
 - task-11: zero-count ESCALATE with no security keyword is PASS with notes. Reason: stability 15.
 - task-12: env failures classified; worktree_setup reruns once before asking. Reason: stability 1, 16.
 - task-13: dev BLOCKED with committed work and an env/test reason runs the verify path. Reason: stability 2.
-- task-14: rework ladder: Haiku rework first, Sonnet only after it fails; review_ccn starts on Haiku. Reason: tokens 3, 5.
+- task-14: rework ladder: Haiku rework first, Sonnet only after it fails; the complexity review route starts on Haiku. Reason: tokens 3, 5.
 - task-15: final-test FAIL reruns failing files alone, then on the preflight head. Reason: stability 6.
 - task-16: third round of a repeating docs-only finding becomes a script step; auditor retry is the default. Reason: stability 16, time 11.
 - task-17: task gate skips docs-only diffs; linkguard flags line-number cites. Reason: time 3, 4.
@@ -131,18 +131,18 @@ Item map. Report, item, task id or drop reason:
 | stability | 21 | dropped: manual `retry --from review` role write is known and already fixed in hardening phase 03 (`cli_orch.cmd_reset` writes `role: reviewer`); listed only as closed |
 | stability | 22 | task-28 |
 | stability | 23 | task-29 |
-| time | 1 | dropped: kata-only (kata repo, check-all.sh) |
+| time | 1 | dropped: project-specific (other repo, check-all.sh) |
 | time | 2 | task-18 |
 | time | 3 | task-17 |
 | time | 4 | task-17, task-19 |
 | time | 5 | task-20 |
 | time | 6 | task-2 |
-| time | 7 | dropped: kata-only |
-| time | 8 | dropped: kata-only; only setup timing kept in task-9 |
+| time | 7 | dropped: project-specific |
+| time | 8 | dropped: project-specific; only setup timing kept in task-9 |
 | time | 9 | task-18 |
 | time | 10 | task-24 |
 | time | 11 | task-16 |
-| time | 12 | dropped: concurrency (kata ci.yml; image jobs must finish); CI poll part in task-27 |
+| time | 12 | dropped: concurrency (project-specific ci.yml; image jobs must finish); CI poll part in task-27 |
 | time | 13 | task-8 |
 | tokens | 1 | task-23 |
 | tokens | 2 | task-20 |
@@ -180,3 +180,26 @@ Owner decisions per task. Reason = the report item it fixes.
 ## Stage pipeline-fixes
 
 - task-10: public docs and CI reads are documented in `practices/pipeline-dev.md` and `ORCHESTRATOR.md`. `public_forbidden_words` is a per-project list; an empty list or a private repo skips the scan, so it never fails on private docs. Source: `.claude/tools/pipeline/configuration/public.py:3`, `.claude/tools/ops_steps.py:170`.
+
+## Stage packaging-safety
+
+Owner decisions for the packaging and safety task (task-9). Reason = the report item it fixes.
+
+- `settings.json allows` keeps `git add`, `git commit` and `git merge`. The pipeline needs them to commit job work and merge stage branches. No change to `.claude/settings.json`. Source: the allow list in `.claude/settings.json`.
+- Pins policy: the base image pins its Node base by digest (`FROM ...@sha256:` in `Dockerfile`). Extra tools are pinned and vetted in `.claude/EXTRA-TOOLS.md`. A new unpinned image or tool is a review item.
+- Token opt-in: host tokens are not forwarded by default. `--with-gh-token` and `--with-cloudflare-token` in `run.sh` forward one token each, for the session only. Reason: a forwarded token is readable by anything in the session.
+- Auto mode is opt-in by script: `scripts/pipeline_auto.py` starts a stage in auto permission mode (`PERMISSION_MODE_AUTO`). The default run keeps the allowlist prompt. Reason: auto mode removes the prompt, so it needs a deliberate start.
+- Packaging: `package = false` in `pyproject.toml`. The supported install is the `.claude/bin` wrappers on PATH; the project metadata documents the entry points only. Reason: the tools have no runtime dependencies and the wrappers are the install path.
+
+## E1 dispatch and old logs
+
+Reason: the model route is one rule now: a Sonnet dev or reviewer needs an E1 event, logged as `E1(a|b|c)` (`pipeline/e1.py`). Old logs with a ccn or extra-round why still parse: the task state reads the why as text and no parser drops it. A running stage whose task sits on Sonnet without an E1 event gets Haiku at its next dispatch, because the model is read from the events, not from a flag. Reason for the change: owner cost decision, fewer Sonnet dispatches.
+
+## Strict typing: disallow_untyped_defs (task-13)
+
+Reason: the modules below have every def annotated, so mypy runs them with `disallow_untyped_defs = true` and `disallow_incomplete_defs = true` (the `[[tool.mypy.overrides]]` block in `pyproject.toml`). Found by running mypy with that flag and keeping the modules with no error line; no source was edited for this. Other modules stay on the looser default until their defs are annotated.
+
+Modules (24, `pipeline` package):
+
+- `pipeline`, `pipeline.agents`, `pipeline.plan_review`, `pipeline.run`, `pipeline.steps_docfix`, `pipeline.verify_retry`, `pipeline.webskip`, `pipeline.worktrees`
+- `pipeline.configuration`, `pipeline.configuration.ci_poll`, `pipeline.configuration.cite_check`, `pipeline.configuration.cleanup`, `pipeline.configuration.defaults`, `pipeline.configuration.env`, `pipeline.configuration.errors`, `pipeline.configuration.layout`, `pipeline.configuration.limits`, `pipeline.configuration.planning`, `pipeline.configuration.pr_gates`, `pipeline.configuration.public`, `pipeline.configuration.qrun`, `pipeline.configuration.serve`, `pipeline.configuration.tuning`, `pipeline.configuration.verdicts`

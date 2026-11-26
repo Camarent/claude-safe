@@ -24,7 +24,7 @@ QRUN_HEAD = re.compile(rf"\s*{QRUN_PATTERN}(?:\s|$)")  # a command that already 
 CHECKLIST_HEAD = "## Acceptance checklist"  # `plan-init` writes it empty; `check` fails until it holds `- cmd:` / `- eyes:` lines
 
 
-def section_body(text, is_head, stop_prefix):
+def section_body(text, is_head, stop_prefix) -> str | None:
     """The text after the first line `is_head` accepts (that line must end with a newline), up to the next line that starts with `stop_prefix`; None when there is no such heading."""
     lines = text.split("\n")
     for i, line in enumerate(lines[:-1]):
@@ -38,7 +38,7 @@ def section_body(text, is_head, stop_prefix):
     return None
 
 
-def checklist_items(plan_md_text):
+def checklist_items(plan_md_text) -> list[str]:
     """Bullet lines under `## Acceptance checklist` (up to the next `## `); [] when the section is missing or empty."""
     body = section_body(plan_md_text, lambda ln: ln.rstrip(" \t") == CHECKLIST_HEAD, "## ")
     return [ln for ln in (body or "").splitlines() if re.match(r"\s*[-*] \S", ln)]
@@ -47,7 +47,7 @@ def checklist_items(plan_md_text):
 _EXPECTED_RE = re.compile(r"\s+\([^()]*\)\s*$")  # trailing `(expected result)` of a cmd line
 
 
-def acceptance_items(plan_md_text):
+def acceptance_items(plan_md_text) -> list[tuple[str, str]]:
     """-> [(tag, text)] of the checklist lines, tag = `cmd:`, `eyes:` or "" for a line with neither. A cmd text loses surrounding backticks and a trailing `(expected result)`."""
     out = []
     for ln in checklist_items(plan_md_text):
@@ -67,28 +67,28 @@ class PlanError(Exception):
     """Invalid plan input; the CLI prints it and exits 2."""
 
 
-def stage_of(feature, phase):
+def stage_of(feature, phase) -> str:
     return f"{feature}/phases/{phase['dir']}"
 
 
-def feature_dir(a):
+def feature_dir(a) -> str:
     return os.path.join(a.dir, WORK_DIR, a.feature)
 
 
-def stage_dir(a):
+def stage_dir(a) -> str:
     """`.work/S`, else `.work/*/phases/S` (S may also be `F/phases/NN-name`)."""
     return resolve_stage(a.dir, a.stage, strict=False, phases=True)
 
 
-def csv(s):
+def csv(s) -> list[str]:
     return [x.strip() for x in (s or "").split(",") if x.strip()]
 
 
-def cell(s):
+def cell(s) -> str:
     return str(s).replace("|", "/").replace("\n", " ").strip()
 
 
-def overlap(p1, p2):
+def overlap(p1, p2) -> tuple[str, str] | None:
     """-> first (a, b) pair of paths of two lists that are equal or nested, else None."""
     for a in p1:
         for b in p2:
@@ -101,16 +101,16 @@ def overlap(p1, p2):
 # ---- Plan.md -------------------------------------------------------------
 
 
-def plan_path(a):
+def plan_path(a) -> str:
     return os.path.join(feature_dir(a), PLAN_FILE)
 
 
-def init_plan(a):
+def init_plan(a) -> None:
     os.makedirs(os.path.join(feature_dir(a), "phases"), exist_ok=True)
     write_text(plan_path(a), f"# Plan: {a.feature}\n\n## Goal\n{a.goal.strip()}\n\n{CHECKLIST_HEAD}\n\n## Phases\n{PHASE_HEAD}")
 
 
-def read_phases(a):
+def read_phases(a) -> list[dict]:
     """-> list of {dir, goal, done_when, depends[], paths[], status, tasks} from the Plan.md table (tasks = the architect's estimate, 0 = unknown)."""
     return parse_phase_rows(read_text(plan_path(a)))
 
@@ -120,7 +120,7 @@ def _is_phase_dir(name):
     return len(name) > 3 and name[:2].isdecimal() and name[2] == "-" and "\n" not in name[3:]
 
 
-def parse_phase_rows(plan_md_text):
+def parse_phase_rows(plan_md_text) -> list[dict]:
     out = []
     for line in plan_md_text.splitlines():
         c = [x.strip() for x in line.strip().strip("|").split("|")]
@@ -130,7 +130,7 @@ def parse_phase_rows(plan_md_text):
     return out
 
 
-def is_mid_phase(tasks_md):
+def is_mid_phase(tasks_md) -> bool:
     """True when `tasks_md` sits in `.work/<feature>/phases/NN-name/` and that phase is not the last row of the feature's Plan.md. Decided from Plan.md at run time, so phases added after the stage was created still count."""
     folder = os.path.dirname(os.path.abspath(tasks_md))
     parent = os.path.dirname(folder)
@@ -140,7 +140,7 @@ def is_mid_phase(tasks_md):
     return os.path.basename(folder) in names and names[-1] != os.path.basename(folder)
 
 
-def is_last_phase(folder):
+def is_last_phase(folder) -> bool:
     """True when `folder` is `.work/<feature>/phases/NN-name/` and that phase is the last row of the feature's Plan.md (the finish phase when there is one)."""
     parent = os.path.dirname(os.path.abspath(folder))
     if os.path.basename(parent) != PHASES_DIR:
@@ -155,18 +155,18 @@ PATH_NAME = r"[\w.-]+"
 PATH_FILE = rf"{PATH_DIRS}*{PATH_NAME}\.\w{{1,6}}"  # optional directories, a name, an extension of 1-6 word characters
 
 
-def is_finish_dir(name):
+def is_finish_dir(name) -> bool:
     """True for the closing phase of a feature (`NN-finish`): no tasks of its own; it runs tests, audits, master merge, push, index, cleanup and the feature retro."""
     return bool(FINISH_RE.fullmatch(name))
 
 
-def is_finish_phase(tasks_md):
+def is_finish_phase(tasks_md) -> bool:
     """True when `tasks_md` sits in a `.work/<feature>/phases/NN-finish/` folder."""
     folder = os.path.dirname(os.path.abspath(tasks_md))
     return os.path.basename(os.path.dirname(folder)) == "phases" and is_finish_dir(os.path.basename(folder))
 
 
-def is_later_phase(tasks_md):
+def is_later_phase(tasks_md) -> bool:
     """True when `tasks_md` sits in `.work/<feature>/phases/NN-name/` and a Plan.md row comes before that phase (phase 2 and later, the finish phase too)."""
     folder = os.path.dirname(os.path.abspath(tasks_md))
     parent = os.path.dirname(folder)
@@ -176,7 +176,7 @@ def is_later_phase(tasks_md):
     return os.path.basename(folder) in names and names.index(os.path.basename(folder)) > 0
 
 
-def earlier_phase_tasks_mds(finish_tasks_md):
+def earlier_phase_tasks_mds(finish_tasks_md) -> list[str]:
     """TASKS.md paths of the phases before the finish phase, in Plan.md order (the audits look at their tasks)."""
     folder = os.path.dirname(os.path.abspath(finish_tasks_md))
     phases_dir = os.path.dirname(folder)
@@ -185,7 +185,7 @@ def earlier_phase_tasks_mds(finish_tasks_md):
     return [t for t in out if os.path.exists(t)]
 
 
-def next_phase_no(phases):
+def next_phase_no(phases) -> int:
     """Number of the phase after the last one. 99 is the last: `100-` breaks the NN- folder names."""
     n = int(phases[-1]["dir"][:2]) + 1
     if n > PLAN_MAX_PHASES:
@@ -193,7 +193,7 @@ def next_phase_no(phases):
     return n
 
 
-def ensure_finish(a):
+def ensure_finish(a) -> bool:
     """Append the `NN-finish` row to Plan.md when the feature has task phases and none yet. -> True when it added the row."""
     phases = read_phases(a)
     if not phases or any(is_finish_dir(p["dir"]) for p in phases):
@@ -240,7 +240,7 @@ def _place(a, phases, new, pos, num):
     return [*phases[:pos], new, *later]
 
 
-def insert_phase(a, phases, new, after):
+def insert_phase(a, phases, new, after) -> list[dict]:
     """Put `new` after phase `after` and renumber the later phases (see `_place`). -> the new list."""
     pos = next((i for i, p in enumerate(phases) if after in (p["dir"], p["dir"][3:])), None)
     if pos is None:
@@ -248,7 +248,7 @@ def insert_phase(a, phases, new, after):
     return _place(a, phases, new, pos + 1, int(phases[pos]["dir"][:2]) + 1)
 
 
-def insert_before(a, phases, new, before):
+def insert_before(a, phases, new, before) -> list[dict]:
     """Put `new` ahead of phase `before` and renumber it and the later phases (see `_place`): `new` takes the number after the phase before it (00 when first) and `before` gets the new phase in its depends. -> the new list."""
     pos = next((i for i, p in enumerate(phases) if before in (p["dir"], p["dir"][3:])), None)
     if pos is None:
@@ -258,7 +258,7 @@ def insert_before(a, phases, new, before):
     return out
 
 
-def write_phases(a, phases):
+def write_phases(a, phases) -> None:
     txt = read_text(plan_path(a)).split("## Phases")[0]
     rows = "".join(
         "| "
@@ -269,7 +269,7 @@ def write_phases(a, phases):
     write_text(plan_path(a), txt + "## Phases\n" + PHASE_HEAD + rows)
 
 
-def phase_ref(phases, name):
+def phase_ref(phases, name) -> dict | None:
     """-> phase whose folder is `name` or `NN-name`'s suffix is `name`, else None."""
     return next((p for p in phases if name in (p["dir"], p["dir"][3:])), None)
 
@@ -289,12 +289,12 @@ def _depends_reach(phases, src, dst):
     return False
 
 
-def phases_ordered(phases, x_dir, y_dir):
+def phases_ordered(phases, x_dir, y_dir) -> bool:
     """-> True when one phase reaches the other through depends (transitively; names match like phase_ref), so their paths never run at once."""
     return _depends_reach(phases, x_dir, y_dir) or _depends_reach(phases, y_dir, x_dir)
 
 
-def next_open_phase(phases):
+def next_open_phase(phases) -> dict | None:
     """The first phase that is not done and whose dependencies are all done, else None."""
     return next((p for p in phases if p["status"] != "done" and all((phase_ref(phases, d) or {}).get("status") == "done" for d in p["depends"])), None)
 
@@ -302,19 +302,19 @@ def next_open_phase(phases):
 # ---- TASKS.md --------------------------------------------------------------
 
 
-def started_tasks(d):
+def started_tasks(d) -> set[str]:
     """-> ids of the tasks with a dispatch or skip event in the stage's orch.jsonl."""
     return {e["task"] for e in read_jsonl(os.path.join(d, ORCH_LOG)) if e.get("ev") in STARTED_EVENTS and e.get("task")}
 
 
-def tasks_path(d):
+def tasks_path(d) -> str:
     return os.path.join(d, TASKS_FILE)
 
 
 BULLET = re.compile(r"^- (?:\[[ xX]\] )?(task-\d+) (.*?)(?: - owner: (\w+))? - review: wave W(\d+)(?:, (\w+))?(?: - depends: (\S+))?\s*$")
 
 
-def read_entries(d):
+def read_entries(d) -> list[dict]:
     """-> ordered list of {id, title, owner, wave, review, depends[]} from the TASKS.md bullets plan.py wrote."""
     out = []
     for line in read_text(tasks_path(d)).splitlines():
@@ -324,12 +324,12 @@ def read_entries(d):
     return out
 
 
-def bullet(e):
+def bullet(e) -> str:
     dep = f" - depends: {','.join(e['depends'])}" if e["depends"] else ""
     return f"- {e['id']} {e['title']} - review: wave W{e['wave']}{dep}"
 
 
-def graph_line(entries):
+def graph_line(entries) -> str:
     waves = sorted({e["wave"] for e in entries})
     return " | ".join(f"wave {w}: " + ", ".join(e["id"] for e in entries if e["wave"] == w) for w in waves)
 
@@ -343,7 +343,7 @@ def _sections_after_graph(text):
     return text[at + len("## Graph") + nxt.start() :].rstrip() + "\n" if nxt else ""
 
 
-def write_tasks(d, entries):
+def write_tasks(d, entries) -> None:
     old = read_text(tasks_path(d))
     head = old.split("## Tasks")[0].rstrip() + "\n\n"
     body = "".join(bullet(e) + "\n" for e in sorted(entries, key=lambda e: int(e["id"][5:])))
@@ -351,7 +351,7 @@ def write_tasks(d, entries):
     write_text(tasks_path(d), head + "## Tasks\n" + body + "\n## Graph\n" + graph_line(entries) + "\n" + ("\n" + tail if tail else ""))
 
 
-def init_stage(d, stage, goal, flags, pr_title=""):
+def init_stage(d, stage, goal, flags, pr_title="") -> None:
     title = f"pr-title: {pr_title.strip()}\n" if pr_title.strip() else ""
     write_text(tasks_path(d), f"# Stage: {stage}\nGoal: {goal.strip()}\n{title}flags: {flags.strip()}\n\n## Tasks\n\n## Graph\n")
 
@@ -363,7 +363,7 @@ LINE_EXTS = (".jsonl", ".ndjson", ".tsv", ".csv")  # line-based data files: git 
 ANNOT_RE = re.compile(r"\s*\((rows|mass)\)\s*$", re.I)  # `path (rows)` = some rows only, `path (mass)` = most or all rows
 
 
-def path_modes(text):
+def path_modes(text) -> list[tuple[str, str]]:
     """The `Predicted paths:` list of a task file's text -> [(path, mode)], mode `rows`, `mass` or "" (whole file, the default). Backticks dropped."""
     m = re.search(r"(?im)^Predicted paths:\s*(.*)$", text)
     if not m:
@@ -379,16 +379,16 @@ def path_modes(text):
     return out
 
 
-def paths_in(text):
+def paths_in(text) -> list[str]:
     """The `Predicted paths:` list of a task file's text (backticks and `(rows)`/`(mass)` marks dropped), [] when absent."""
     return [p for p, _ in path_modes(text)]
 
 
-def is_line_based(path):
+def is_line_based(path) -> bool:
     return path.lower().endswith(LINE_EXTS)
 
 
-def wave_conflict(m1, m2):
+def wave_conflict(m1, m2) -> tuple[str, str] | None:
     """-> first (a, b) overlapping path pair of two path_modes lists that may NOT share a wave, else None. Allowed: the same line-based file with `(rows)` on both sides."""
     for a, ma in m1:
         for b, mb in m2:
@@ -400,7 +400,7 @@ def wave_conflict(m1, m2):
 AFFECTED_RE = re.compile(r"(?im)^Affected tests:[ \t]*(.*)$")
 
 
-def task_affected_tests(text):
+def task_affected_tests(text) -> str:
     """The `Affected tests:` line of a task file's text (tests that probably assert the old behavior), "" when absent."""
     m = AFFECTED_RE.search(text)
     v = m[1].strip() if m else ""
@@ -410,22 +410,22 @@ def task_affected_tests(text):
 TASK_TYPES = ("code", "report", "webtest")
 
 
-def task_type(text):
+def task_type(text) -> str:
     """The `Type:` header of a task file's text, lowercased; `code` when absent. `report` = the deliverable is a file outside any repo (no diff); `webtest` = a browser check the web-tester agent runs (no dev, no worktree: the task's `Test:` validates its report on the stage branch checkout)."""
     m = re.search(r"(?im)^Type:[ \t]*(\S*)", text)
     return m[1].lower() if m else "code"
 
 
-def task_inputs(text):
+def task_inputs(text) -> list[str]:
     """The `Inputs:` header lines of a task file's text, comma separated: [] when absent."""
     return [x.strip("` ") for m in re.finditer(r"(?im)^Inputs:[ \t]*(.*)$", text) for x in m[1].split(",") if x.strip("` ")]
 
 
-def task_paths(d, tid):
+def task_paths(d, tid) -> list[str]:
     return paths_in(read_text(os.path.join(d, f"{tid}.md")))
 
 
-def task_path_modes(d, tid):
+def task_path_modes(d, tid) -> list[tuple[str, str]]:
     return path_modes(read_text(os.path.join(d, f"{tid}.md")))
 
 
@@ -439,12 +439,12 @@ TASK_FIELDS = {
 }
 
 
-def with_qrun(cmd):
+def with_qrun(cmd) -> str:
     """-> CMD run through qrun once: unchanged when it already starts with `python3 -I .../qrun.py` or the `cs-qrun` wrapper."""
     return cmd if QRUN_HEAD.match(cmd) else QRUN + cmd
 
 
-def set_task_field(txt, tid, field, value):
+def set_task_field(txt, tid, field, value) -> str:
     """-> task-N.md text with one field replaced (title also updates the Goal line)."""
     if field == "title":
         txt = re.sub(r"(?m)^# " + tid + r": .*$", lambda m: f"# {tid}: {value}", txt, count=1)
@@ -457,12 +457,12 @@ def set_task_field(txt, tid, field, value):
     return re.sub(r"(?m)^" + pat + r".*$", lambda m: pre + value, txt, count=1)
 
 
-def depends_line(deps):
+def depends_line(deps) -> str:
     """-> the `Depends:` line of a task file (task ids, comma and space), or '' when the task has no dependency."""
     return f"Depends: {', '.join(deps)}\n" if deps else ""
 
 
-def set_depends_line(txt, deps):
+def set_depends_line(txt, deps) -> str:
     """-> task-N.md text whose `Depends:` line equals DEPS: the old line goes, the new one follows the `Wave:` line."""
     head, *rest = re.split(r"(?m)^(?=## ADDENDUM)", txt, maxsplit=1)  # a retry addendum is the lead's note, never edited here
     head = re.sub(r"(?m)^Depends: .*\n", "", head, count=1)
@@ -470,7 +470,7 @@ def set_depends_line(txt, deps):
     return head + "".join(rest)
 
 
-def render_task(e, a, paths):
+def render_task(e, a, paths) -> str:
     cmd = with_qrun(a.test)
     pat = a.pattern or (paths[0] + ":1" if paths else "")
     aff = f"Affected tests: {a.affected}\n" if getattr(a, "affected", "") else ""

@@ -17,7 +17,7 @@
    A `cd` into the hook's own cwd (the job worktree) is not denied: it is dropped by the rewrite (`cd . && git x` -> `git x`).
 
 Quoted text and heredoc bodies are data, not commands, except the body of `sh -c` / `bash -c`.
-Known limit: `$(...)` subshells and `(...)` groups are not split; a hook crash exits 1 and the call is allowed (fail open).
+Known limit (A11): `$(...)` and backtick subshells and `(...)` groups are not split, so a qrun call inside them is not checked; a hook crash exits 1 and the call is allowed (fail open).
 Setup: settings.json runs `python3 -I /root/.claude/tools/cmd_guard.py`; if that path is missing python exits 2 and blocks every Bash
 call, so restore the file (or fix the hook path) rather than the guard.
 
@@ -57,11 +57,11 @@ except ImportError as err:  # fail closed: the guard cannot split commands, so i
     TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
     FALLBACK_SPLIT = re.compile(r"&&|\|\||;|\||\n")
 
-    def split_commands(cmd, pipe=True, amp=True, newline=True):
+    def split_commands(cmd, pipe=True, amp=True, newline=True) -> list[str]:
         """Minimal splitter used only when pipeline.shellwords cannot be imported (verdict() denies first)."""
         return FALLBACK_SPLIT.split(cmd)
 
-    def strip_heredocs(cmd, keep_opener=True):
+    def strip_heredocs(cmd, keep_opener=True) -> str:
         """Fallback: heredoc bodies stay in the text (verdict() denies first)."""
         return cmd
 
@@ -101,7 +101,13 @@ QRUN_HEAD = re.compile(rf"(?:{QRUN_PATTERN})(?=\s|$)")
 WRAPPERS = {"env", "nohup", "time", "exec", "command", "nice", "builtin"}
 ASSIGN_WORDS = {"export", "declare", "typeset", "local", "readonly"}
 VAR_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
-SHELL_C = re.compile(r"\b(?:ba|z|da)?sh\s+(?:-\w+\s+)*-\w*c\s+(['\"])(.*?)\1", re.S)
+TIMEOUT_VALUE_FLAGS = {"-k", "--kill-after", "-s", "--signal"}  # timeout flags whose value is the next word
+SHELL_C = re.compile(r"\b(?:ba|z|da)?sh\s+(?:-\w+\s+)*-\w*c\s+('[^']*'|\"(?:\\.|[^\"\\])*\")", re.S)  # the quoted body, escapes kept
+
+
+def shell_c_bodies(cmd):
+    """-> the body of each `sh -c` / `bash -c` argument, quotes and escapes removed (shlex reads the quoted token)."""
+    return [shlex.split(quoted)[0] for quoted in SHELL_C.findall(strip_heredocs(cmd))]
 
 
 def strip_quotes(cmd):
@@ -122,8 +128,10 @@ def parse(seg):
         elif w == "timeout":
             words = words[1:]
             while words and words[0].startswith("-"):
-                words.pop(0)
-            words = words[1:]
+                takes_value = words.pop(0) in TIMEOUT_VALUE_FLAGS
+                if takes_value and words:
+                    words.pop(0)  # the value of `-k 5` or `-s TERM` is not the duration
+            words = words[1:]  # the duration
         elif VAR_WORD.match(w):
             env = True
             words.pop(0)
@@ -155,7 +163,7 @@ QRUN_MSG = (
     "One qrun per Bash call. No pipe, `||`, `;`, `&` or newline after qrun.py: a pipe hides the test exit status (a red or empty run looks green) "
     "and a second command runs outside qrun. To see the result, run the command bare and read the exit code. "
     f"After qrun, `&&` is allowed only before another qrun call or a read-only command ({', '.join(QRUN_CHAIN_READ_ONLY)}). "
-    f"Run `python3 -I {TOOLS_DIR}/qrun.py -- <command>` alone (a leading `cd dir &&` is fine); qrun already trims the output."
+    "Run `cs-qrun -- <command>` alone (a leading `cd dir &&` is fine); qrun already trims the output."
 )
 
 
@@ -454,9 +462,14 @@ def segments_why(segs):
                 f"qrun applies the test env itself: run `{head}` alone. To set a variable for the test, set it inside the test script, "
                 "or put `env` in a script file and run that file."
             )
-        if TEST_HEAD.match(head) and (env or seen_assign):
+        if TEST_HEAD.match(head) and env:
             return (
                 "Set the variable inside the test script, or put `env` in a script file and run that file. "
+                f"Then run the test as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
+            )
+        if TEST_HEAD.match(head) and seen_assign:
+            return (
+                "Write absolute paths in the command instead: no variable assignment before a command (`export` or `VAR=x`). "
                 f"Then run the test as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
             )
     return ""
@@ -466,8 +479,8 @@ def verdict_rule(cmd):
     """-> (rule, deny reason) or ('', '') when allowed; the rule names the check that denied (denial log)."""
     if IMPORT_FAILURE:
         return "import", IMPORT_FAILURE
-    for body in SHELL_C.findall(strip_heredocs(cmd)):
-        rule, why = verdict_rule(body[1])
+    for body in shell_c_bodies(cmd):
+        rule, why = verdict_rule(body)
         if why:
             return rule, why
     text = strip_quotes(cmd)
@@ -495,7 +508,7 @@ def git_cd_reason(why):
     return why.startswith("No `cd ")
 
 
-def main():
+def check():
     try:
         tool_input = json.load(sys.stdin).get("tool_input", {})
         cmd = tool_input.get("command", "")
@@ -515,6 +528,15 @@ def main():
             denial_log.append(rule, cmd, os.getcwd())
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why}}))
     return 0
+
+
+def main():
+    """Fail closed: an unexpected exception denies the command (exit 2, reason on stderr), it never allows it."""
+    try:
+        return check()
+    except Exception as err:
+        print(f"cmd_guard: unexpected error ({err}); the Bash command is denied. Fix the hook and retry.", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

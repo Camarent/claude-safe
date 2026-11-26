@@ -11,6 +11,7 @@ from pipeline import plan_check, plan_files, plan_report, steps
 from tests.support.project import dry_run, make_project
 from tests.support.tmpdirs import tracked_mkdtemp
 
+T1, T2, T3 = "task-1", "task-2", "task-3"  # task ids: asserts use these, not literals
 TABLE2 = (
     "| task | what | owner | price | review |\n|---|---|---|---|---|\n| task-1 | a | dev | 1 | wave 1, haiku |\n| task-2 | b | dev | 1 | wave 1, haiku |\n\n"
     "## Graph\nwave 1: task-1, task-2\n"
@@ -40,7 +41,7 @@ class ParseTest(unittest.TestCase):
 
     def test_inputs_lines_and_commas(self):
         txt = "Inputs: a/b.txt, `tool:jq`\nInputs: after:task-1:out.csv\n"
-        self.assertEqual(plan_files.task_inputs(txt), ["a/b.txt", "tool:jq", "after:task-1:out.csv"])
+        self.assertEqual(plan_files.task_inputs(txt), ["a/b.txt", "tool:jq", f"after:{T1}:out.csv"])
         self.assertEqual(plan_files.task_inputs("# t\n"), [])
 
 
@@ -57,14 +58,14 @@ class SequenceTest(unittest.TestCase):
         self.assertEqual(scripts.count("prereview"), 2, got)  # both tasks: the report task in file mode
         self.assertEqual(scripts.count("quality"), 1, got)  # the code task only
         self.assertEqual(scripts.count("test"), 2, got)  # both run their Test lines
-        # task-2 (report): test run, pre-review (file mode), no quality run, then its reviewer on Sonnet; task-1 (code): pre-review right before its Haiku reviewer
-        self.assertEqual([x[:2] for x in seq if x[0] == "reviewer"], [("reviewer", "sonnet"), ("reviewer", "haiku")], got)
+        # task-2 (report): test run, pre-review (file mode), no quality run, then its reviewer (Haiku: no report route, no E1 event); task-1 (code): pre-review right before its Haiku reviewer
+        self.assertEqual([x[:2] for x in seq if x[0] == "reviewer"], [("reviewer", "haiku"), ("reviewer", "haiku")], got)
         pre = [n for n, x in enumerate(seq) if x[2] == "prereview"]
         revs = [n for n, x in enumerate(seq) if x[0] == "reviewer"]
         self.assertEqual(len(pre), 2, got)
         self.assertLess(max(pre), min(revs), got)  # both pre-reviews run before either paid review
-        self.assertEqual([("--task task-2" in got[n][3]) for n in pre], [True, False], got)
-        self.assertNotIn("--task task-2", " ".join(x[3] for x in got if "qualityrun" in x[3]))
+        self.assertEqual([(f"--task {T2}" in got[n][3]) for n in pre], [True, False], got)
+        self.assertNotIn(f"--task {T2}", " ".join(x[3] for x in got if "qualityrun" in x[3]))
 
     def test_is_report_reads_the_task_file(self):
         d = two_task_project()
@@ -73,13 +74,13 @@ class SequenceTest(unittest.TestCase):
         self.assertFalse(steps.is_report(a, {"id": "task-1"}))
         self.assertFalse(steps.is_report(a, {"id": "task-9"}))  # no file: code
 
-    def test_reviewer_reason_text(self):
+    def test_reviewer_of_a_report_task_is_haiku_without_events(self):
+        # the report-task route is gone: a Type: report task's reviewer takes its model from e1.model_for (no event: Haiku, no why)
         d = two_task_project()
         a = mock.Mock(dir=d, stage="s")
-        s = mock.Mock(reviewer_sonnet=False)
-        with mock.patch.object(steps, "_disp", return_value={}):
-            r = steps._disp_reviewer_model(a, {"id": "task-2"}, "x", s)
-        self.assertIn("report task: content review on Sonnet", r["why"])
+        with mock.patch.object(steps, "prompt_for", return_value="p"), mock.patch.object(steps, "job_heads", return_value="h"):
+            r = steps._disp_reviewer(a, {"id": "task-2"}, "x")
+        self.assertEqual((r["model"], r.get("why")), ("haiku", None))
 
 
 class InputsTest(unittest.TestCase):
@@ -99,7 +100,7 @@ class InputsTest(unittest.TestCase):
     def test_missing_input_names_task_and_input(self):
         got = self.check("dict.txt, nope.txt")
         self.assertEqual(len(got), 1)
-        self.assertIn("task-1", got[0])
+        self.assertIn(T1, got[0])
         self.assertIn("nope.txt", got[0])
 
     def test_tool_found_or_missing(self):
@@ -107,13 +108,13 @@ class InputsTest(unittest.TestCase):
         self.assertIn("tool:no-such-tool-xyz", self.check("tool:no-such-tool-xyz")[0])
 
     def test_after_is_not_checked_and_no_inputs_is_unchanged(self):
-        self.assertEqual(self.check("after:task-3:out/none.csv"), [])
-        _write(os.path.join(self.d, "task-1.md"), "# t\nPredicted paths: a\n")
-        self.assertEqual(plan_report.check_type_inputs(self.d, "task-1", self.ws, self.ws), [])
+        self.assertEqual(self.check(f"after:{T3}:out/none.csv"), [])
+        _write(os.path.join(self.d, f"{T1}.md"), "# t\nPredicted paths: a\n")
+        self.assertEqual(plan_report.check_type_inputs(self.d, T1, self.ws, self.ws), [])
 
     def test_unknown_type_is_an_error(self):
         _write(os.path.join(self.d, "task-1.md"), "# t\nType: weird\n")
-        self.assertIn("Type", plan_report.check_type_inputs(self.d, "task-1", self.ws, self.ws)[0])
+        self.assertIn("Type", plan_report.check_type_inputs(self.d, T1, self.ws, self.ws)[0])
 
     def test_wired_into_the_task_file_check(self):
         self.assertIn(plan_check.check_type_inputs, vars(plan_check).values())

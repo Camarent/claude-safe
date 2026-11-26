@@ -152,7 +152,7 @@ def daemon_call(argv, kind="find", cwd=None):
                 return None
             timed_out = True
             continue
-        except (OSError, ValueError):
+        except (OSError, ValueError):  # server gone or garbled reply: None makes the caller run in-process
             return None
         finally:
             c.close()

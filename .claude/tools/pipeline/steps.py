@@ -7,7 +7,6 @@ import shlex
 
 from . import maincheck
 from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, testrun_on, webtest_prompt
-from .ccn import CCN_REVIEW_BRIEF, CCN_REVIEW_WHY, review_ccn_hit
 from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
     ARCHITECT,
@@ -25,23 +24,17 @@ from .configuration import (
     FAIL,
     GATE_FREE_ROUNDS,
     GATE_PLAN_ERROR,
-    HAIKU_DEV_TRIES,
-    HAIKU_REWORK_TRIES,
     MAX_ROUNDS,
     MAX_TRIES,
     METRICS_LOG,
-    MODEL_HAIKU,
-    MODEL_OPUS,
     MODEL_SONNET,
     PASS,
     PHASES_DIR,
-    PLAN_ERROR,
     PLAN_NOTES_FILE,
     PREREVIEW_DIFF_CHARS,
     PREREVIEW_FREE_ROUNDS,
     PREREVIEW_SKIP_ASK,
     PREREVIEW_SKIP_REVIEWER,
-    REVIEW_EXTRA_OPUS_AFTER,
     REVIEW_EXTRA_ROUNDS,
     RULES_FILE,
     SKIPPED,
@@ -53,10 +46,44 @@ from .configuration import (
     repo_dir,
     tool_cmd,
 )
+from .configuration import (
+    PLAN_ERROR as PLAN_ERROR,
+)
+from .e1 import model_for
 from .plan_files import paths_in, task_type
 from .stagedir import resolve_stage
 from .steps_docfix import DOCFIX_WHY, repeated_pair
 from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
+from .steps_history import (  # moved names, re-exported here (`X as X`) for the callers of pipeline.steps
+    PLAN_ERROR_RE as PLAN_ERROR_RE,
+)
+from .steps_history import (
+    _after_retry as _after_retry,
+)
+from .steps_history import (
+    _extra_rounds_ran,
+    _failed_review_reports,
+    _plan_error,
+    _reviewer_reports,
+    _TaskState,
+    failed_event,
+    failing_reports,
+    hint,
+    history,
+    script_ids,
+)
+from .steps_history import (
+    _failed_rounds as _failed_rounds,
+)
+from .steps_history import (
+    _is_report as _is_report,
+)
+from .steps_history import (
+    _reports as _reports,
+)
+from .steps_history import (
+    sonnet_dev_dispatched as sonnet_dev_dispatched,
+)
 from .steps_verify import VERIFY_WHY, blocked_for_checks
 from .steps_verify import command as verify_command
 from .util import append_event, append_jsonl, now, paths, read_text, work_path, write_text
@@ -64,142 +91,28 @@ from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
 
-def history(evs, tid):
-    """Events of one task/step since its last `retry` (the owner's reset)."""
-    mine = [e for e in evs if e.get("task") == tid]
-    for i in range(len(mine) - 1, -1, -1):
-        if mine[i]["ev"] == EV_RETRY:
-            return _after_retry(mine, i)
-    return mine
-
-
-def _after_retry(mine, i):
-    """The events of a task that survive its retry marker `mine[i]` (the owner's reset, or a driver re-run)."""
-    marker = mine[i]
-    if marker.get("from") == "script":  # a lost script step: only its own dispatch goes, the task's events stay
-        return [e for e in mine[:i] if e.get("id") != marker.get("id")] + mine[i + 1 :]
-    if marker.get("from") == "review":  # keep the dev events, drop the reviewer's
-        return [e for e in mine[:i] if e["ev"] != EV_RETRY and e.get("role") != "reviewer"] + mine[i + 1 :]
-    if marker.get("auto"):  # an unclear dev report: the review rounds it was asked to fix survive
-        rounds = [e for e in mine[:i] if e["ev"] == EV_REPORT and e["role"] == "reviewer" and e["verdict"] in (FAIL, ESCALATE)]
-        return rounds + mine[i + 1 :]
-    return mine[i + 1 :]
-
-
-def hint(a, tid):
-    return f"; fix the cause, then `orch.py retry --stage {a.stage} --step {tid}` (or `skip`)"
-
-
-def script_ids(mine, word):
-    """Ids of this task's script dispatches whose `why` starts with `word` (pre-review, test run)."""
-    return {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith(word)}
-
-
-def failing_reports(mine):
-    """Every dev ESCALATE, reviewer FAIL/ESCALATE and red test-run FAIL report of the task, oldest first."""
-    test_ids = script_ids(mine, "test run")
-    return [
-        e
-        for e in mine
-        if e["ev"] == EV_REPORT
-        and (
-            (e["role"] == "dev" and e["verdict"] == ESCALATE)
-            or (e["role"] == "reviewer" and e["verdict"] in (FAIL, ESCALATE))
-            or (e["id"] in test_ids and e["verdict"] == FAIL)
-        )
-    ]
-
-
-def failed_event(mine):
-    """The latest of them: what the escalation gate judges."""
-    return next(iter(reversed(failing_reports(mine))), None)
-
-
-def _reviewer_reports(mine, verdict):
-    return sum(1 for e in mine if e["ev"] == EV_REPORT and e["role"] == "reviewer" and e["verdict"] == verdict)
-
-
-PLAN_ERROR_RE = re.compile(rf"^\s*{PLAN_ERROR}:\s*(.*)$", re.MULTILINE)  # reviewer report line: the task file is wrong, not the dev
-
-
-def _plan_error(e):
-    """-> the reviewer's `PLAN-ERROR:` text when report event E is a reviewer FAIL that carries one, else None."""
-    if e["ev"] != EV_REPORT or e.get("role") != "reviewer" or e["verdict"] != FAIL:
-        return None
-    m = PLAN_ERROR_RE.search(read_text(e["file"]))
-    return (m.group(1)[:300] or "no detail given") if m else None
-
-
-def _failed_review_reports(mine):
-    """Failed review reports, oldest first: every reviewer FAIL (a PLAN-ERROR is no dev round), plus an ESCALATE from a Sonnet reviewer (nobody stronger is left, so it counts as a FAIL)."""
-    sonnet_ids = {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "reviewer" and e["model"] == MODEL_SONNET}
-    return [
-        e
-        for e in mine
-        if e["ev"] == EV_REPORT
-        and e["role"] == "reviewer"
-        and ((e["verdict"] == FAIL and _plan_error(e) is None) or (e["verdict"] == ESCALATE and e["id"] in sonnet_ids))
-    ]
-
-
-def _failed_rounds(mine):
-    return len(_failed_review_reports(mine))
-
-
-def _extra_rounds_ran(mine):
-    """Extra dev rounds the task already got (dispatches with the EXTRA_ROUND_WHY reason)."""
-    return sum(1 for e in mine if e["ev"] == EV_DISPATCH and e.get("why") == EXTRA_ROUND_WHY)
-
-
-def _reports(mine, role, verdict, ids=None):
-    """How many report events of ROLE (any role when None) with VERDICT; only those whose id is in IDS when given."""
-    return sum(1 for e in mine if _is_report(e, role, verdict, ids))
-
-
-def _is_report(e, role, verdict, ids):
-    return e["ev"] == EV_REPORT and (role is None or e["role"] == role) and e["verdict"] == verdict and (ids is None or e["id"] in ids)
-
-
-class _TaskState:
-    """What next_step derives once from a task's events: review rounds, escalations, pre-review script ids, who is Sonnet."""
-
-    def __init__(self, a, task, mine):
-        self.rounds = _failed_rounds(mine)
-        self.rev_esc = _reviewer_reports(mine, ESCALATE) > 0  # a Haiku reviewer ESCALATE sends the task to the Sonnet reviewer
-        self.dev_esc = _reports(mine, "dev", ESCALATE)
-        self.test_ids = script_ids(mine, "test run")
-        self.qual_ids = script_ids(mine, "quality run")
-        self.gate_ids = script_ids(mine, "task gates")
-        self.test_fails = _reports(mine, None, FAIL, self.test_ids)
-        self.dev_done = _reports(mine, "dev", DONE)
-        self.sonnet_dev = sonnet_dev_dispatched(mine)
-        ccn_ids = {e["id"] for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "reviewer" and str(e.get("why") or "").startswith(CCN_REVIEW_WHY)}
-        self.ccn_fail = _reports(mine, "reviewer", FAIL, ccn_ids) > 0
-        self.reviewer_sonnet = (
-            task["review_sonnet"] or self.rev_esc or self.ccn_fail or sonnet_review_dispatched(mine)
-        )  # the reviewer goes to Sonnet only by itself (gate, its own ESCALATE, or a FAIL of a ccn-hit Haiku reviewer) and then stays; a Sonnet dev does not move it
-
-
-REPORT_WHY = "report task: content review on Sonnet"
-
-
-def is_report(a, task):
+def is_report(a, task) -> bool:
     """True when the task file says `Type: report`: its deliverable is a file, not a repo diff (no quality run; the local pre-review judges the file, Sonnet reviewer)."""
     repo = getattr(a, "dir", ".")
     return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "report"
 
 
-def _disp(a, task, rid, role, sonnet, rework=None, free=False, model=None):
-    return {
+def _disp(a, task, rid, role, rework=None, free=False, mine=()):
+    """The dispatch of ROLE; a dev or reviewer takes its model and its E1 `why` from e1.model_for on the task's events MINE (no event: Haiku)."""
+    model, why = model_for(role, task, mine)
+    d = {
         "free": free,  # logged on the dispatch event: a rework after a local pre-review FAIL is not a dev try
         "action": "dispatch",
         "id": rid,
         "agent": role,
-        "model": model or (MODEL_SONNET if sonnet else MODEL_HAIKU),
+        "model": model,
         "task": task["id"],
         "role": role,
         "prompt": prompt_for(a, task, role, rework, rid),
     }
+    if why:
+        d["why"] = why
+    return d
 
 
 def _dirty_rework(a, task, mine, rid):
@@ -213,33 +126,16 @@ def _dirty_rework(a, task, mine, rid):
         f"The job worktree has uncommitted changes, so it cannot be reviewed:\n{chr(10).join('- ' + x for x in dirty[:20])}\n"
         "Commit them with wt.py commit if they belong to the task, otherwise remove the change by editing the file back by hand. NEVER run `git checkout --`, `git restore` or `git reset`: they destroy work. The worktree must be clean before review.\n",
     )
-    return _disp(a, task, rid, "dev", task["owner_sonnet"] or _tries(mine, "dev", MODEL_HAIKU) >= HAIKU_DEV_TRIES, rework=f)
+    return _disp(a, task, rid, "dev", rework=f, mine=mine)
 
 
-def _disp_reviewer(a, task, rid, s, mine=()):
-    """The reviewer dispatch; Sonnet also when a changed function is above `review_ccn` (driver decision, any error -> Haiku). A dirty job worktree goes back to the dev."""
+def _disp_reviewer(a, task, rid, mine=()):
+    """The reviewer dispatch, model and why from e1.model_for. A dirty job worktree goes back to the dev."""
     back = _dirty_rework(a, task, mine, rid)
     if back:
         return back
-    d = _disp_reviewer_model(a, task, rid, s)
+    d = _disp(a, task, rid, "reviewer", mine=mine)
     d["head"] = job_heads(a, task["id"])  # logged on the dispatch event: a later rework with the same HEAD added no commit
-    return d
-
-
-def _disp_reviewer_model(a, task, rid, s):
-    if is_report(a, task):
-        d = _disp(a, task, rid, "reviewer", True)
-        d["why"] = "reviewer on Sonnet: " + REPORT_WHY
-        return d
-    if s.reviewer_sonnet:
-        return _disp(a, task, rid, "reviewer", True)
-    if os.environ.get(ENV_DRY_NO_CCN):  # dry run: no job worktree, the gate cannot fire
-        return _disp(a, task, rid, "reviewer", False)
-    why = review_ccn_hit(a, task["id"])
-    d = _disp(a, task, rid, "reviewer", False)  # a ccn hit starts Haiku with the ccn brief; its FAIL or ESCALATE goes on to Sonnet
-    if why:
-        d["why"] = why
-        d["prompt"] += CCN_REVIEW_BRIEF
     return d
 
 
@@ -297,7 +193,7 @@ def _gates_rework(a, task, mine, rid):
         f"Your report {rep['file']} has no `Gates:` line. Run every gate listed in your brief (or say SKIPPED with the reason), then report one line: "
         "`Gates: <name> RAN <result>; <name> SKIPPED <why>; ...`.\n",
     )
-    return _disp(a, task, rid, "dev", task["owner_sonnet"] or _tries(mine, "dev", MODEL_HAIKU) >= HAIKU_DEV_TRIES, rework=f)
+    return _disp(a, task, rid, "dev", rework=f, mine=mine)
 
 
 def _taskgates_script(a, task, rid):
@@ -326,10 +222,10 @@ def _quality_or_review(a, task, mine, rid, s):
             "quality run (audit tools on the touched files, advisory); FAIL gives the dev one recommended extra round",
             f"{tool_cmd('audit/qualityrun.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}",
         )
-    return _to_review(a, task, mine, rid, s)
+    return _to_review(a, task, mine, rid)
 
 
-def _to_review(a, task, mine, rid, s):
+def _to_review(a, task, mine, rid):
     """The local pre-review (if on) before each paid review, then the paid reviewer. The pre-review is skipped once the dev used its last try, so
     the local model can never keep a task away from the paid reviewer (Haiku, Haiku, Sonnet, Sonnet: each earlier try faces the gate)."""
     if prereview_on(a) and _tries(mine, "dev") < MAX_TRIES and not _prereview_done(a, task, mine):
@@ -339,7 +235,7 @@ def _to_review(a, task, mine, rid, s):
             "local pre-review (lp review); FAIL goes back to the dev",
             f"{tool_cmd('localmodel/prereview.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')}",
         )
-    return _no_commit_ask(a, task, mine) or _disp_reviewer(a, task, rid, s, mine)
+    return _no_commit_ask(a, task, mine) or _disp_reviewer(a, task, rid, mine)
 
 
 DIFF_SHA_RE = re.compile(r"^diff-sha: (\w+)", re.M)
@@ -401,7 +297,7 @@ def _no_edit_first_run(a, task, mine, last):
     return bool(job_heads(a, task["id"])) and not job_diff(a, task["id"]) and not job_dirty(a, task["id"])
 
 
-def straight_to_sonnet(a, task, mine):
+def straight_to_sonnet(a, task, mine) -> dict | None:
     """The dev ESCALATE report that ends `mine` when it goes straight to the Sonnet dev (a PLAN GAP, or a first run with no edit), else None: no more Haiku tries, no judge gate."""
     last = mine[-1] if mine else None
     if last and last["ev"] == EV_REPORT and last.get("role") == "dev" and (_plan_gap(last) or _no_edit_first_run(a, task, mine, last)):
@@ -433,9 +329,9 @@ def _after_dev_other(a, task, mine, rid, s, last):
             "message": f"{task['id']}: NO FIX, owner decision: {why}; report {last['file']}. No further tries run. "
             "Decide: wait for the cause to be fixed (then `orch.py retry`), accept the risk (`orch.py skip`), or change the brief." + hint(a, task["id"]),
         }
-    if last["verdict"] == ESCALATE and not (task["owner_sonnet"] or s.sonnet_dev or s.dev_esc > 1):
-        # E1(b) and E4: the first dev ESCALATE with its reason moves the step to Sonnet once; a second one blocks to the lead below
-        return _disp(a, task, rid, "dev", True, rework=last["file"])
+    if last["verdict"] == ESCALATE and not (s.sonnet_dev or s.dev_esc > 1):
+        # E1(b) and E4: the first dev ESCALATE with its reason moves the step to Sonnet once (e1.model_for); a second one blocks to the lead below
+        return _disp(a, task, rid, "dev", rework=last["file"], mine=mine)
     if _plan_gap(last):  # Sonnet (or an owner-Sonnet task) also found a plan gap: the lead fixes the plan
         return {
             "action": "ask_main",
@@ -455,7 +351,7 @@ def _after_dev_other(a, task, mine, rid, s, last):
             os.path.join(paths(a)[0], METRICS_LOG),
             {"ev": "note", "ts": now(), "stage": a.stage, "task": task["id"], "text": "verdict from evidence: commit + green Test lines"},
         )
-        return _to_review(a, task, mine, rid, s)
+        return _to_review(a, task, mine, rid)
     if _checks_blocked(a, task, last):  # the checks decide, not the lead: the Test lines and gates run once, green -> review, red -> dev
         return _script(task, rid, VERIFY_WHY, verify_command(a, task["id"]))
     return {
@@ -472,9 +368,9 @@ def _checks_blocked(a, task, last):
 def _after_verify(a, task, mine, rid, s, last):
     """The verify step after a BLOCKED dev: green -> the review (no ask); red -> the dev reworks with the output; anything else -> the lead."""
     if last["verdict"] == DONE:
-        return _to_review(a, task, mine, rid, s)
+        return _to_review(a, task, mine, rid)
     if last["verdict"] == FAIL:
-        return _disp(a, task, rid, "dev", task["owner_sonnet"] or sonnet_dev_dispatched(mine), rework=last["file"])
+        return _disp(a, task, rid, "dev", rework=last["file"], mine=mine)
     return {"action": "ask_main", "message": f"{task['id']}: checks cannot run after the dev BLOCKED; output {last['file']}" + hint(a, task["id"])}
 
 
@@ -526,7 +422,7 @@ def _docfix_dispatch(a, task, mine, rid, last):
 def _docfix_done(a, task, mine, rid, s, last):
     """The docfix script ran: applied -> the reviewer judges the new commit (not a reviewer try); not applied -> the normal review round."""
     if last["verdict"] == DONE:
-        d = _disp_reviewer(a, task, rid, s, mine)
+        d = _disp_reviewer(a, task, rid, mine)
         if d["agent"] == "reviewer":
             d["free"] = True
         return d
@@ -544,8 +440,8 @@ def _after_script(a, task, mine, rid, s, last):
         return _after_taskgates(a, task, mine, rid, s, last)
     if last["id"] in s.qual_ids:  # advisory: FAIL -> one dev round with the findings (Haiku, or Sonnet for an owner-Sonnet task); anything else -> review
         if last["verdict"] == FAIL and _tries(mine, "dev") < MAX_TRIES:
-            return _disp(a, task, rid, "dev", task["owner_sonnet"], rework=last["file"])
-        return _to_review(a, task, mine, rid, s)
+            return _disp(a, task, rid, "dev", rework=last["file"], mine=mine)
+        return _to_review(a, task, mine, rid)
     # the pre-review: FAIL -> dev reworks with its reason; SKIPPED is no review: the paid reviewer or the lead (setting), never a pass; anything else -> the paid reviewer
     if last["verdict"] == SKIPPED and prereview_skip(a) == PREREVIEW_SKIP_ASK:
         return {
@@ -554,8 +450,8 @@ def _after_script(a, task, mine, rid, s, last):
         }
     if last["verdict"] == FAIL:
         # not a dev try and no escalation: the dev keeps the model it had
-        return _disp(a, task, rid, "dev", task["owner_sonnet"] or sonnet_dev_dispatched(mine), rework=last["file"], free=True)
-    return _disp_reviewer(a, task, rid, s, mine)
+        return _disp(a, task, rid, "dev", rework=last["file"], free=True, mine=mine)
+    return _disp_reviewer(a, task, rid, mine)
 
 
 def _env_red(a, task, mine, rid, last, kind):
@@ -591,10 +487,9 @@ def _after_test(a, task, mine, rid, s, last):
         cls, why = classify_test_run(read_text(last["file"]), os.path.join(repo, WORK_DIR, a.stage), task["id"], repo)
         if cls in STOP:  # no dev retry and no Sonnet can fix a wrong Test line or a broken environment
             return {"action": "ask_main", "message": f"{task['id']}: test run failed, class {cls}: {why}; output {last['file']}" + hint(a, task["id"])}
-        if s.sonnet_dev or (task["owner_sonnet"] and s.test_fails > 1):  # Sonnet tried already: the lead decides
+        if s.sonnet_dev:  # Sonnet tried already: the lead decides
             return {"action": "ask_main", "message": f"{task['id']}: Test lines still red after Sonnet; output {last['file']}" + hint(a, task["id"])}
-        sonnet = s.test_fails >= 2 or task["owner_sonnet"]
-        return _disp(a, task, rid, "dev", sonnet, rework=last["file"])
+        return _disp(a, task, rid, "dev", rework=last["file"], mine=mine)
     return _quality_or_review(a, task, mine, rid, s)
 
 
@@ -622,33 +517,31 @@ def _after_taskgates(a, task, mine, rid, s, last):
     if (env := _env_red(a, task, mine, rid, last, GATES_KIND)) is not None:
         return env
     fails = _taskgate_fails(a, task, mine)
-    sonnet = task["owner_sonnet"] or s.sonnet_dev
     if len(fails) <= GATE_FREE_ROUNDS:  # free rounds: no dev try, the dev keeps its model
-        return _disp(a, task, rid, "dev", sonnet, rework=last["file"], free=True)
-    if sonnet:  # red after the Sonnet rework: the lead decides
+        return _disp(a, task, rid, "dev", rework=last["file"], free=True, mine=mine)
+    if s.sonnet_dev:  # red after the Sonnet rework: the lead decides
         return {"action": "ask_main", "message": f"{task['id']}: task gates still red after Sonnet; output {last['file']}" + hint(a, task["id"])}
-    return _disp(a, task, rid, "dev", True, rework=_taskgates_all(a, task, rid, fails))
+    return _disp(a, task, rid, "dev", rework=_taskgates_all(a, task, rid, fails), mine=mine)
 
 
 def _extra_round(a, task, mine, rid):
-    """One extra dev round after the last failed review round: one rework file with the verbatim text of every failed review; Opus once REVIEW_EXTRA_OPUS_AFTER Sonnet devs ran."""
+    """One extra dev round after the last failed review round: one rework file with the verbatim text of every failed review; the model is e1.model_for's."""
     fails = _failed_review_reports(mine)
     f = work_path(os.path.join(getattr(a, "dir", "."), WORK_DIR, a.stage), f"reviews-all-{task['id']}-{rid}.md", create=True)
     write_text(f, "".join(f"## review {i}\n{read_text(e['file'])}\n" for i, e in enumerate(fails, 1)))
-    sonnet_devs = sum(1 for e in mine if e["ev"] == EV_DISPATCH and e["role"] == "dev" and e["model"] == MODEL_SONNET)
-    d = _disp(a, task, rid, "dev", True, rework=f, model=MODEL_OPUS if sonnet_devs >= REVIEW_EXTRA_OPUS_AFTER else None)
-    d["why"] = EXTRA_ROUND_WHY  # the log keeps the reason; _extra_rounds_ran counts these dispatches
+    d = _disp(a, task, rid, "dev", rework=f, mine=mine)
+    d["why"] = "; ".join(x for x in (d.get("why"), EXTRA_ROUND_WHY) if x)  # the log keeps the reason; _extra_rounds_ran counts these dispatches
     return d
 
 
 def _after_reviewer(a, task, mine, rid, s, last):
-    if last["verdict"] == ESCALATE and not task["review_sonnet"] and not sonnet_review_dispatched(mine):
-        return _disp(a, task, rid, "reviewer", True)  # a Haiku reviewer ESCALATE goes straight to the Sonnet reviewer
     if last["verdict"] == ESCALATE and _reviewer_reports(mine, ESCALATE) > 1:  # E4: a second reviewer ESCALATE blocks to the lead
         return {
             "action": "ask_main",
             "message": f"{task['id']}: second reviewer ESCALATE blocks to the lead: {last.get('reason', '')}; findings {last['file']}" + hint(a, task["id"]),
         }
+    if last["verdict"] == ESCALATE:  # E1(c): a reviewer ESCALATE sends the task to the Sonnet reviewer (e1.model_for)
+        return _disp(a, task, rid, "reviewer", mine=mine)
     if (why := _plan_error(last)) is not None:
         return _plan_fix(a, task, mine, rid, last, why)
     if last["verdict"] in (FAIL, ESCALATE):
@@ -658,8 +551,8 @@ def _after_reviewer(a, task, mine, rid, s, last):
             if _extra_rounds_ran(mine) < REVIEW_EXTRA_ROUNDS:
                 return _extra_round(a, task, mine, rid)
             return {"action": "ask_main", "message": f"{task['id']}: review failed {s.rounds} rounds; findings {last['file']}" + hint(a, task["id"])}
-        # first FAIL: Haiku rework (HAIKU_REWORK_TRIES); Sonnet only when that rework also failed review
-        return _disp(a, task, rid, "dev", task["owner_sonnet"] or s.sonnet_dev or s.rounds > HAIKU_REWORK_TRIES, rework=last["file"])
+        # first FAIL: Haiku rework; Sonnet once the failed rounds passed HAIKU_REWORK_TRIES (e1.model_for, event a)
+        return _disp(a, task, rid, "dev", rework=last["file"], mine=mine)
     return None
 
 
@@ -686,7 +579,7 @@ def _plan_fix(a, task, mine, rid, last, why):
 def _after_plan_fix(a, task, mine, rid, s, last):
     if last["verdict"] != DONE:
         return {"action": "ask_main", "message": f"{task['id']}: the architect could not fix the plan error; report {last['file']}" + hint(a, task["id"])}
-    d = _disp_reviewer(a, task, rid, s, mine)
+    d = _disp_reviewer(a, task, rid, mine)
     if d["agent"] == "reviewer":
         d["free"] = True  # the same code is judged against the fixed task file: not a reviewer try
     return d
@@ -696,7 +589,7 @@ def _tries(mine, role, model=None):
     return sum(1 for e in mine if e["ev"] == EV_DISPATCH and e["role"] == role and not e.get("free") and (model is None or e["model"] == model))
 
 
-def next_step(a, task, mine, rid):
+def next_step(a, task, mine, rid) -> dict | None:
     """-> dispatch dict, ask_main dict, or None (task passed) for one task, from its events. Cap: at most MAX_TRIES runs of the dev and of the reviewer
     per task (any model); a fifth one goes to the lead."""
     r = _gate(a, task, mine, rid, _next_step(a, task, mine, rid))
@@ -779,20 +672,22 @@ def _gate_veto(a, task, f, rep):
     return {"action": "ask_main", "message": f"{task['id']}: {what}; failure {f['file']}, gate {rep['file']}" + hint(a, task["id"])}
 
 
-RETRY_ESCALATE_WHY = "retry by lead after ESCALATE: Sonnet"
+def _is_lead_retry(e):
+    """True for a retry marker the lead wrote: not auto, not from the script or the review step."""
+    return not e.get("auto") and e.get("from") not in ("script", "review")
 
 
-def _lead_retry_after_escalate(a, task):
-    """True when the task's last retry marker is the lead's (not auto, script or review) and the last dev report before it was an ESCALATE: history() hid that, the dev goes to Sonnet."""
+def _lead_retry_prefix(a, task):
+    """The task's events before its last retry marker when that marker is the lead's (not auto, script or review) and the last dev report before it was an ESCALATE, else None: history() hid those events, e1.model_for reads them (E1(b))."""
     raw = [e for e in (getattr(a, "orch_events", None) or []) if e.get("task") == task["id"]]
     i = next((k for k in range(len(raw) - 1, -1, -1) if raw[k]["ev"] == EV_RETRY), None)
-    if i is None or i != len(raw) - 1 or raw[i].get("auto") or raw[i].get("from") in ("script", "review"):
-        return False
+    if i is None or i != len(raw) - 1 or not _is_lead_retry(raw[i]):
+        return None
     rep = next((e for e in reversed(raw[:i]) if e["ev"] == EV_REPORT and e.get("role") in ("dev", "reviewer")), None)
-    return rep is not None and rep["role"] == "dev" and rep["verdict"] == ESCALATE
+    return raw[:i] if rep is not None and rep["role"] == "dev" and rep["verdict"] == ESCALATE else None
 
 
-def is_webtest(a, task):
+def is_webtest(a, task) -> bool:
     """True when the task file says `Type: webtest`: a browser check. The web-tester agent runs it (a dev cannot drive a browser); there is no job worktree, no review and no merge."""
     repo = getattr(a, "dir", ".")
     return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "webtest"
@@ -804,7 +699,7 @@ def _next_webtest(a, task, mine, rid):
         return None
     last = mine[-1] if mine else None
     if last is None:
-        d = _disp(a, task, rid, WEB_TESTER, False)
+        d = _disp(a, task, rid, WEB_TESTER)
         d["prompt"] = webtest_prompt(a, task, rid)
         d["why"] = "browser task (Type: webtest): the web-tester runs it, the task's Test lines check its report"
         return d
@@ -835,11 +730,8 @@ def _next_step(a, task, mine, rid):
     last = mine[-1] if mine else None
     s = _TaskState(a, task, mine)
     if last is None:
-        if _lead_retry_after_escalate(a, task):
-            d = _disp(a, task, rid, "dev", True)
-            d["why"] = RETRY_ESCALATE_WHY
-            return d
-        return _disp(a, task, rid, "dev", task["owner_sonnet"])
+        prefix = _lead_retry_prefix(a, task)  # the lead's retry after a dev ESCALATE: E1(b) reads the events before the marker
+        return _disp(a, task, rid, "dev", mine=mine if prefix is None else prefix)
     if last["ev"] == EV_DISPATCH:
         return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
     if last.get("role") == ARCHITECT:
@@ -851,40 +743,32 @@ def _next_step(a, task, mine, rid):
     return _after_reviewer(a, task, mine, rid, s, last)  # last was a reviewer report
 
 
-def gate_on(a):
+def gate_on(a) -> bool:
     return bool(project(getattr(a, "dir", ".")).get("gate", True))
 
 
-def prereview_skip(a):
+def prereview_skip(a) -> str:
     """What a skipped local pre-review leads to: env ENV_PREREVIEW_SKIP, else the `prereview_skip` setting; an unknown value means the paid reviewer."""
     v = os.environ.get(ENV_PREREVIEW_SKIP) or project(getattr(a, "dir", ".")).get("prereview_skip")
     return v if v == PREREVIEW_SKIP_ASK else PREREVIEW_SKIP_REVIEWER
 
 
-def task_gates_on(a):
+def task_gates_on(a) -> bool:
     return driver_gates_on(project(getattr(a, "dir", ".")))
 
 
-def prereview_on(a):
+def prereview_on(a) -> bool:
     return bool(project(getattr(a, "dir", ".")).get("prereview", False))
 
 
-def sonnet_dev_dispatched(mine):
-    return any(e["ev"] == EV_DISPATCH and e["role"] == "dev" and e["model"] == MODEL_SONNET for e in mine)
-
-
-def sonnet_review_dispatched(mine):
-    return any(e["ev"] == EV_DISPATCH and e["role"] == "reviewer" and e["model"] == MODEL_SONNET for e in mine)
-
-
-def step(sid, agent, model, prompt, ok, effort=None, why=""):
+def step(sid, agent, model, prompt, ok, effort=None, why="") -> dict:
     return {"id": sid, "agent": agent, "model": model, "prompt": prompt, "ok": ok, "effort": effort, "why": why}
 
 
 ALWAYS_SCRIPT = ("cleanup",)  # needs no ENV.md and no model: the ops session failed twice on a missing .work/<feature>/ENV.md
 
 
-def ops_as_script(a, cfg, st, sub):
+def ops_as_script(a, cfg, st, sub) -> dict:
     """The ops step ST as a no-model script step when pipeline.json `ops_scripts` lists its id or the step is in ALWAYS_SCRIPT (ops_steps.py SUB); otherwise ST unchanged (the old ops session)."""
     if st["id"] not in ALWAYS_SCRIPT and st["id"] not in (cfg.get("ops_scripts") or []):
         return st
@@ -914,7 +798,7 @@ def _phase_failed_ask(a, st, rep):
     )
 
 
-def run_phase(a, evs, steps, n):
+def run_phase(a, evs, steps, n) -> dict | None:
     """Parallel steps. -> dispatch dict (steps not yet satisfied and not failed), ask_main dict, or None when every step is satisfied."""
     ds: list = []
     asks: list = []
@@ -940,6 +824,6 @@ def run_phase(a, evs, steps, n):
     return None
 
 
-def last_verdict(evs, sid):
+def last_verdict(evs, sid) -> str | None:
     reps = [e for e in history(evs, sid) if e["ev"] == EV_REPORT]
     return reps[-1]["verdict"] if reps else None

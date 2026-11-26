@@ -7,6 +7,7 @@ import os
 import time
 
 from pipeline.configuration import GATE_ENV_NAMES, GATE_ENV_PREFIXES, GATE_WATCH_FILE_BYTES, GATE_WATCH_GREP_FILES, GATE_WATCH_MAX_ENTRIES, GATE_WATCH_SHOW
+from pipeline.util import swallowed
 
 
 def snapshot(root, rels):
@@ -21,7 +22,7 @@ def snapshot(root, rels):
                     return snap
                 try:
                     st = os.lstat(full)
-                except OSError:
+                except OSError:  # KEEP: the file was removed between the walk and this stat, a normal race
                     continue
                 snap[os.path.relpath(full, root)] = (st.st_mtime_ns, st.st_size)
     return snap
@@ -50,7 +51,8 @@ def _text_of(worktree, rel):
     try:
         with open(path, "rb") as fh:
             return fh.read(GATE_WATCH_FILE_BYTES).decode("utf-8", errors="replace")
-    except OSError:
+    except OSError as ex:  # unreadable file: no offender named from it, but say so on stderr
+        swallowed("gatewatch.text_of", ex)
         return ""
 
 

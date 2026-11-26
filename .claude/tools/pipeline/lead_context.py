@@ -10,7 +10,7 @@ LIMIT = 150_000
 TAIL = 1_000_000
 
 
-def project_dir(cwd, home=None):
+def project_dir(cwd, home=None) -> Path:
     """Claude Code's transcript folder for a cwd: the absolute path with / and . replaced by -, under ~/.claude/projects."""
     return Path(home or Path.home()) / ".claude" / "projects" / re.sub(r"[/.]", "-", os.path.abspath(cwd))
 
@@ -18,14 +18,14 @@ def project_dir(cwd, home=None):
 PROJECTS = project_dir(os.getcwd())
 
 
-def warning(tokens, limit=LIMIT):
+def warning(tokens, limit=LIMIT) -> str | None:
     """Return the warning line when tokens > limit, else None."""
     if tokens is None or tokens <= limit:
         return None
     return f"lead context high: {tokens // 1000}k tokens, hand off and start the next phase fresh"
 
 
-def last_context_tokens(projects=PROJECTS):
+def last_context_tokens(projects=PROJECTS) -> int | None:
     """Context size of the last assistant turn in the newest transcript, or None."""
     try:
         files = sorted(Path(projects).glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
@@ -49,7 +49,7 @@ def last_context_tokens(projects=PROJECTS):
         return None
 
 
-def check(projects=PROJECTS, out=None):
+def check(projects=PROJECTS, out=None) -> None:
     """Print the warning to stderr when the lead context is high. Never raises."""
     line = warning(last_context_tokens(projects))
     if line:

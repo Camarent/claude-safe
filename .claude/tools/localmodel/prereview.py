@@ -29,7 +29,7 @@ from pipeline.configuration import (  # noqa: E402
     WORK_DIR,
 )
 from pipeline.plan_files import paths_in, task_type  # noqa: E402
-from pipeline.util import est_tokens  # noqa: E402
+from pipeline.util import est_tokens, swallowed  # noqa: E402
 from pipeline.worktrees import deliverable_texts, files_sha, uncommitted_diff  # noqa: E402
 from search.leadparts import definitions, uses_of  # noqa: E402
 from search.lpcall import added_ranges, git_text, lp, lp_rc  # noqa: E402
@@ -110,7 +110,8 @@ def job_diff(stage, task, d, limit=PREREVIEW_DIFF_CHARS):
         if task not in wt.read_manifest(d, stage):
             return None
         out = wt.diff(d, stage, task, limit)
-    except Exception:  # best effort: fall back to the plain diff
+    except Exception as e:  # best effort: fall back to the plain diff
+        swallowed("prereview.job_diff", e)
         return None
     return "" if out.startswith(NO_COMMITS) else out
 
@@ -192,7 +193,8 @@ def run(stage, task, d, git=git_text, review=lp_rc, context=usage_context):
         f.write(diff)
         try:
             b.write(brief_text + context(d, paths))
-        except Exception:  # context is a bonus: the review still runs on the plain brief
+        except Exception as e:  # context is a bonus: the review still runs on the plain brief
+            swallowed("prereview.run context", e)
             b.write(brief_text)
     try:
         rc, out = review(d, "review", "--brief", b.name, "--diff", f.name, t=PREREVIEW_LP_TIMEOUT_S)

@@ -18,7 +18,7 @@ PER_SONNET_TASK = 4  # Sonnet owner: dev + reviewer, one rework round (dev + rev
 PER_HAIKU_TASK = 2  # a Haiku task that escalates: Sonnet dev + Sonnet reviewer (healthy stages use well under 1 on average)
 
 
-def fixed_part(flags):
+def fixed_part(flags) -> int:
     n = 0
     if flags["audit"]:
         n += AUDITS + FIX_ARCHITECT + REAUDIT + (UX_AUDIT if flags["ui"] else 0)
@@ -29,7 +29,7 @@ def fixed_part(flags):
     return n
 
 
-def heavy_limit(tasks_md, cfg=None):
+def heavy_limit(tasks_md, cfg=None) -> tuple[int, int, int]:
     """-> (limit, fixed part, task part). `cfg` (pipeline.json) may set heavy_per_sonnet_task / heavy_per_haiku_task."""
     cfg = cfg or {}
     flags, tasks = parse_flags(tasks_md), parse_tasks(tasks_md)
@@ -40,19 +40,19 @@ def heavy_limit(tasks_md, cfg=None):
     return round(fixed + per_task), fixed, round(per_task)
 
 
-def is_heavy(agent, model):
+def is_heavy(agent, model) -> bool:
     """True for a Sonnet or Opus session: the model named in the dispatch, else the agent file's default. Scripts are never heavy."""
     if agent == "script":
         return False
     return (model or ((agent_types() or {}).get(agent) or {}).get("model")) in (MODEL_SONNET, MODEL_OPUS)
 
 
-def heavy_count(evs):
+def heavy_count(evs) -> int:
     """Sonnet/Opus dispatches so far in an orch.jsonl event list."""
     return sum(1 for e in evs if e["ev"] == EV_DISPATCH and is_heavy(e.get("agent", ""), e.get("model")))
 
 
-def stage_limit(tasks_md, cfg=None):
+def stage_limit(tasks_md, cfg=None) -> int:
     """The one Sonnet/Opus limit of a stage: ORCH_MAX_DISPATCH when set, else the task-based formula."""
     env = os.environ.get(ENV_MAX_DISPATCH)
     if env:
@@ -63,6 +63,6 @@ def stage_limit(tasks_md, cfg=None):
     return heavy_limit(tasks_md, cfg)[0]
 
 
-def session_guard(tasks_md):
+def session_guard(tasks_md) -> int:
     """Loop guard over ALL model sessions: 60 + 8 per task (a task never needs more than ~9)."""
     return 60 + 8 * len(parse_tasks(tasks_md))

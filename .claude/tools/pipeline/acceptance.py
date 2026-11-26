@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 
 from . import gitx
 from .configuration import (
@@ -41,7 +42,7 @@ QRUN = os.path.join(TOOLS_DIR, "qrun.py")
 EXTRA_S = 60  # backstop over the per-command limit that qrun enforces itself
 
 
-def qrun_runner(cmd, cwd, timeout):
+def qrun_runner(cmd, cwd, timeout) -> tuple[int, str]:
     """-> (exit code, output) of one shell command run through qrun in CWD."""
     env = {**os.environ, ENV_SCRIPT_TIMEOUT: str(timeout)}
     try:
@@ -58,7 +59,7 @@ _MANUAL_VERDICT_RE = re.compile(r"^\s*(?:[-*]\s*)?MANUAL (\d+):\s*(PASS|FAIL|UNK
 _QRUN_LOG_RE = re.compile(r"^(?:FAIL|OK|SKIPPED)[^\n(]*\(log: ([^)\n]+)\)", re.MULTILINE)  # qrun summary line naming its full log
 
 
-def manual_review_brief(manual, branch, base, docs):
+def manual_review_brief(manual, branch, base, docs) -> str:
     """-> reviewer brief for the `eyes:` texts MANUAL: check each against the diff `base...branch` and the DOCS, one `MANUAL n: PASS|FAIL|UNKNOWN` line per item."""
     refs = ", ".join(f"`{d}`" for d in docs) or "none listed"
     items = "\n".join(f"{n}. {text}" for n, text in enumerate(manual, 1))
@@ -71,7 +72,7 @@ def manual_review_brief(manual, branch, base, docs):
     )
 
 
-def manual_verdicts(reply, n):
+def manual_verdicts(reply, n) -> list[str]:
     """-> the n verdicts of the reviewer REPLY (`MANUAL i: PASS|FAIL|UNKNOWN`, first line per item wins); an item with no line is UNKNOWN."""
     found: dict[int, str] = {}
     for m in _MANUAL_VERDICT_RE.finditer(reply):
@@ -79,13 +80,13 @@ def manual_verdicts(reply, n):
     return [found.get(i, UNKNOWN) for i in range(1, n + 1)]
 
 
-def claude_reviewer(workspace, stage):
+def claude_reviewer(workspace, stage) -> Callable[[str], str]:
     """-> reviewer(brief) -> reply text: runs the reviewer agent in WORKSPACE; it writes its verdict lines to .work/<stage>/manual-review.md, which is the reply."""
     from . import claude
 
     path = os.path.join(workspace, WORK_DIR, stage, ACCEPTANCE_REVIEW_FILE)
 
-    def reviewer(brief):
+    def reviewer(brief) -> str:
         write_text(path, "")
         prompt = f"{brief}\nWrite the answer lines to `{os.path.relpath(path, workspace)}`."
         claude.session(claude.claude_args(ACCEPTANCE_REVIEW_AGENT, None, None, prompt, workspace), workspace, None)
@@ -109,7 +110,7 @@ def _keep_failed_log(out, dest, n):
         write_text(os.path.join(dest, f"acceptance-{n}.log"), out + "\n")
 
 
-def run_items(items, cwd, runner, timeout, keep=None):
+def run_items(items, cwd, runner, timeout, keep=None) -> tuple[list[str], int]:
     """-> (lines, failed count) for the checklist ITEMS [(tag, text)], run in CWD with RUNNER(cmd, cwd, timeout) -> (rc, text).
     KEEP(n, text), when given, gets the output of each failed command (n = 1, 2, ...) before the caller drops CWD."""
     lines, bad = [], 0
@@ -180,7 +181,7 @@ def _apply_review(lines, items, branch, cfg, reviewer):
     return lines, sum(v != PASS for v in verdicts)
 
 
-def run(workspace, stage, name, runner=qrun_runner, reviewer=None):
+def run(workspace, stage, name, runner=qrun_runner, reviewer=None) -> tuple[str, str]:
     """-> (verdict, text). Writes .work/<stage>/acceptance.md; DONE when every cmd passed (no cmd = DONE), else FAIL.
     REVIEWER(brief) -> reply text dispatches the reviewer for the MANUAL items: any item not PASS (UNKNOWN when its line is missing) makes the step FAIL. No reviewer: MANUAL items stay for the lead."""
     cfg = project(workspace)

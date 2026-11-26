@@ -7,12 +7,13 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import testrun
-from pipeline import gate_record, worktree
+from pipeline import gate_record, worktree_base
 from pipeline.classify import classify_test_run
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -35,16 +36,17 @@ def git_box(test_lines):
 
 
 class TestRun(unittest.TestCase):
-    def test_line_green_on_identical_tree_is_skipped_with_run_id(self):
+    def test_line_green_on_identical_tree_is_skipped_with_log_path_and_time(self):
         d = git_box("Test: true\n")
         gate_record.record(d, ["cs-qrun", "--", "true"], 0)
-        run_id = gate_record._entries(gate_record._log_path(d))[-1]["run"]
+        rec = gate_record._entries(gate_record._log_path(d))[-1]
         calls = []
         v, note = testrun.run("s", "t1", d, runner=lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a[0], 0, "", ""))
         self.assertEqual(v, "DONE")
         self.assertEqual(calls, [])
-        tree = gate_record._entries(gate_record._log_path(d))[-1]["tree"]
-        self.assertIn(f"skipped true: identical passed tree {tree}, run {run_id}", note)
+        at = datetime.fromtimestamp(rec["ts"], UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        log = os.path.abspath(gate_record._log_path(d))
+        self.assertIn(f"skipped true: identical passed tree {rec['tree']}, record {log} passed at {at}", note)
 
     def test_red_record_or_other_tree_runs_the_line(self):
         d = git_box("Test: true\n")
@@ -120,12 +122,12 @@ class TestRun(unittest.TestCase):
         wtree = tracked_mkdtemp()
         os.makedirs(f"{d}/.wt/s")
         seen = []
-        orig = worktree.read_manifest
-        worktree.read_manifest = lambda *_: {"t1": {"root": wtree}}
+        orig = worktree_base.read_manifest
+        worktree_base.read_manifest = lambda *_: {"t1": {"root": wtree}}
         try:
             testrun.run("s", "t1", d, runner=lambda c, **k: seen.append(k["cwd"]) or subprocess.CompletedProcess(c, 0, "", ""))
         finally:
-            worktree.read_manifest = orig
+            worktree_base.read_manifest = orig
         self.assertEqual(seen, [wtree])
 
     def test_missing_command_or_module_is_blocked_not_red(self):

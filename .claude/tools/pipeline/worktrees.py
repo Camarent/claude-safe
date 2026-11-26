@@ -3,6 +3,8 @@
 import hashlib
 import os
 import sys
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 from . import gitx
 from .configuration import DIFF_SHA_LEN, JOB_DIFF_MAX_CHARS, NO_REVIEW_ROOT, PREREVIEW_FILE_EXTS, PREREVIEW_GIT_TIMEOUT_S, project, work_branch
@@ -12,7 +14,7 @@ sys.path.insert(0, str(TOOLS))
 import wt
 
 
-def job_info(a, task_id, create):
+def job_info(a: Any, task_id: str, create: bool) -> dict[str, Any] | None:
     """-> {branch, base, root, repos} or None when worktrees are off (or the task has none yet and create is False)."""
     d = getattr(a, "dir", ".")
     cfg = project(d)
@@ -26,7 +28,7 @@ def job_info(a, task_id, create):
     return info
 
 
-def job_diff(a, task_id, limit=JOB_DIFF_MAX_CHARS):
+def job_diff(a: Any, task_id: str, limit: int = JOB_DIFF_MAX_CHARS) -> str:
     """The task's committed change as text (stat + diff per repo, cut at `limit` characters per repo) for the reviewer brief, or "" when there is none."""
     memo = getattr(a, "wt_memo", None)  # decide() sets it: one git call per task and limit while the event log stands
     key = ("diff", task_id, limit)
@@ -43,18 +45,18 @@ def job_diff(a, task_id, limit=JOB_DIFF_MAX_CHARS):
     return out
 
 
-def git_text(repo, *args, timeout=PREREVIEW_GIT_TIMEOUT_S):
+def git_text(repo: str, *args: str, timeout: int = PREREVIEW_GIT_TIMEOUT_S) -> str:
     """stdout of a git call, "" when it fails."""
     return gitx.try_out(repo, *args, timeout=timeout) or ""
 
 
-def uncommitted_diff(d, paths, git=git_text):
+def uncommitted_diff(d: str, paths: Sequence[str], git: Callable[..., str] = git_text) -> str:
     """`git diff HEAD` of the task's Predicted `paths` in `d`: the work of a task that has no job worktree. Pre-review and the driver both hash it.
     `git(repo, *args, timeout=)` -> stdout is injectable for tests."""
     return git(d, "diff", "HEAD", "--", *paths, timeout=PREREVIEW_GIT_TIMEOUT_S)
 
 
-def deliverable_texts(paths, d):
+def deliverable_texts(paths: Iterable[str], d: str) -> list[tuple[str, str]]:
     """-> [(path, text)] of the Predicted `paths` (absolute, or relative to the workspace `d`) that are regular text files (PREREVIEW_FILE_EXTS) and decode as UTF-8."""
     out = []
     for p in paths:
@@ -69,7 +71,7 @@ def deliverable_texts(paths, d):
     return out
 
 
-def files_sha(texts):
+def files_sha(texts: Iterable[tuple[str, str]]) -> str:
     """-> the short hash of the judged deliverables ([(path, text)]): pre-review stamps a FAIL with it, the driver compares it."""
     h = hashlib.sha256()
     for p, t in texts:
@@ -77,7 +79,7 @@ def files_sha(texts):
     return h.hexdigest()[:DIFF_SHA_LEN]
 
 
-def tasks_merged(a, task_ids):
+def tasks_merged(a: Any, task_ids: Sequence[str]) -> bool:
     """True when wt.py says every task is merged already (marker or no unmerged content). False on any doubt or error."""
     if not project(getattr(a, "dir", ".")).get("worktrees"):
         return False
@@ -95,7 +97,7 @@ def tasks_merged(a, task_ids):
     return res
 
 
-def job_dirty(a, task_id):
+def job_dirty(a: Any, task_id: str) -> list[str]:
     """Uncommitted changes in the task's job worktrees as a list of `git status` lines; [] when worktrees are off, none exists or all is clean."""
     if not job_info(a, task_id, create=False):
         return []
@@ -109,18 +111,18 @@ REVIEW_NOTE = (
 )
 
 
-def review_note(a, task_id):
+def review_note(a: Any, task_id: str) -> str:
     """Reviewer brief sentence on mutation checks; '' when there is no job worktree."""
     return REVIEW_NOTE if job_info(a, task_id, create=False) else ""
 
 
-def review_root(a, task_id):
+def review_root(a: Any, task_id: str) -> str:
     """The one path the reviewer may edit: the job worktree root, or NO_REVIEW_ROOT (every edit denied) when there is none."""
     info = job_info(a, task_id, create=False)
     return info["root"] if info else NO_REVIEW_ROOT
 
 
-def review_begin(a, task_id):
+def review_begin(a: Any, task_id: str) -> str:
     """-> '' when the HEAD is recorded (worktrees off: nothing to do), else why the reviewer must not start."""
     if not project(getattr(a, "dir", ".")).get("worktrees"):
         return ""
@@ -131,7 +133,7 @@ def review_begin(a, task_id):
     return ""
 
 
-def review_reset(a, task_id):
+def review_reset(a: Any, task_id: str) -> str:
     """-> '' when the job worktree is back at the recorded HEAD (or no review was started), else why not."""
     try:
         wt.review_reset(getattr(a, "dir", "."), a.stage, task_id)
@@ -140,7 +142,7 @@ def review_reset(a, task_id):
     return ""
 
 
-def review_recover(a):
+def review_recover(a: Any) -> list[str]:
     """Crash recovery before a stage starts: reset every job worktree whose review never finished. -> list of 'task: why' for the resets that failed."""
     d = getattr(a, "dir", ".")
     out = []
@@ -151,7 +153,7 @@ def review_recover(a):
     return out
 
 
-def job_heads(a, task_id):
+def job_heads(a: Any, task_id: str) -> str:
     """The job branch HEAD of every repo of the task as one string ("rel=sha;..."), "" when worktrees are off, none exists or git fails."""
     if not job_info(a, task_id, create=False):
         return ""

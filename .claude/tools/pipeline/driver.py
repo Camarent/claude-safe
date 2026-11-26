@@ -44,7 +44,7 @@ from .util import read_jsonl, read_text, run_py, work_path, write_text
 from .worktrees import job_info, review_begin, review_reset, review_root
 
 
-def orch(cmd, stage, dir, *extra):
+def orch(cmd, stage, dir, *extra) -> dict:
     """Run orch.py, -> its parsed json line."""
     r = run_py("orch.py", cmd, "--stage", stage, "--dir", dir, *extra)
     lines = [line for line in r.stdout.splitlines() if line.strip()]
@@ -56,7 +56,7 @@ def orch(cmd, stage, dir, *extra):
         return {"action": "ask_main", "message": f"orch {cmd} gave no JSON: {lines[-1][:200]}"}
 
 
-def orch_inproc(cmd, stage, dir, *extra):
+def orch_inproc(cmd, stage, dir, *extra) -> dict:
     """Same result as `orch`, but calls cli_orch.main in this process (no 100 ms interpreter start per call). Used by the dry run, which makes dozens of calls."""
     from . import cli_orch
 
@@ -81,17 +81,17 @@ def orch_inproc(cmd, stage, dir, *extra):
 SCRIPT_PREFIX = f"python3 -I {TOOLS_DIR}/"
 
 
-def script_timeout():
+def script_timeout() -> float:
     """Seconds one script step may run: env ORCH_SCRIPT_TIMEOUT, else SCRIPT_TIMEOUT_S."""
     return util.script_timeout()
 
 
-def script_step_limit(cfg):
+def script_step_limit(cfg) -> float:
     """Driver limit of one script step: the script limit plus the PR checks wait, so a PR step reports pending checks before the driver kills it."""
     return script_timeout() + checks_timeout(cfg)
 
 
-def run_script(cmd, cwd, timeout=None):
+def run_script(cmd, cwd, timeout=None) -> dict:
     """A no-model step: only commands under tools/ run. timeout: this step's own limit (None = script_timeout()). -> session dict with the output as result."""
     if not cmd.startswith(SCRIPT_PREFIX):
         return dict(claude.usage({}), error=True, result=f"{VERDICT_PREFIX}FAIL\nwave: refused script {cmd[:80]}")
@@ -126,7 +126,7 @@ def run_script(cmd, cwd, timeout=None):
     return dict(claude.usage({}), seconds=round(time.time() - t0), error=bool(r.returncode), result=out)
 
 
-def dispatch_task(c, d):
+def dispatch_task(c, d) -> str | None:
     """-> the task id of dispatch D: `orch next` strips it from the dispatch, the dispatch event in the log keeps it."""
     return d.get("task") or next((e.get("task") for e in read_jsonl(c.log) if e["ev"] == EV_DISPATCH and e["id"] == d["id"]), None)
 
@@ -137,7 +137,7 @@ def _auditor_turns(c, d):
     return cfg.get("auditor_escalate_max_turns" if (dispatch_task(c, d) or "").endswith(AUDIT_ESCALATE_SUFFIX) else "auditor_max_turns")
 
 
-def scratch_env(c):
+def scratch_env(c) -> dict[str, str]:
     """-> env for an agent session: the stage scratch dir (created) as ENV_SCRATCH_DIR and as TMPDIR, unless pipeline.json test_env sets TMPDIR."""
     d = os.path.join(os.path.abspath(c.w), SCRATCH_DIR)
     os.makedirs(d, exist_ok=True)
@@ -151,16 +151,16 @@ def _dev_job(c, d):
     """-> the job worktree info of dev dispatch D (WORKTREE_CWD_AGENTS only), or None when there is none."""
     if d["agent"] not in WORKTREE_CWD_AGENTS or not project(c.dir).get("worktrees"):
         return None
-    return job_info(c, dispatch_task(c, d), create=False)
+    return job_info(c, dispatch_task(c, d) or "", create=False)
 
 
-def session_cwd(c, d):
+def session_cwd(c, d) -> str:
     """-> the dir the session of dispatch D runs in: the job worktree root for the dev roles when worktrees are on, else the project dir. Reviewer and read-only roles keep the project dir."""
     info = _dev_job(c, d)
     return info["root"] if info else c.dir
 
 
-def guard_env(c, d):
+def guard_env(c, d) -> dict[str, str]:
     """-> env that binds a dev session to its job worktree (write_guard): the one tree it may write, the main checkout denied, the reports and scratch dirs allowed. {} when there is no job worktree."""
     info = _dev_job(c, d)
     if not info:
@@ -175,7 +175,7 @@ def guard_env(c, d):
     }
 
 
-def safe_run_one(c, d):
+def safe_run_one(c, d) -> tuple[dict, dict, dict]:
     """run_one for the wave pool: an exception becomes a BLOCKED result and the report is still recorded, so one crashing dispatch does not abort the wave."""
     try:
         return run_one(c, d)
@@ -187,7 +187,7 @@ def safe_run_one(c, d):
         return d, u, orch("report", c.stage, c.dir, "--id", d["id"])
 
 
-def run_one(c, d):
+def run_one(c, d) -> tuple[dict, dict, dict]:
     f = work_path(c.w, f"report-{d['id']}.md", create=True)
     reset_failed = False
     if d["agent"] == "script":
@@ -209,7 +209,7 @@ def run_one(c, d):
                 pgid_file=os.path.join(c.w, PGID_FILE_NAME),
             )
         else:  # mutation checks run in the job worktree; the script puts it back whatever the session does
-            task = dispatch_task(c, d)
+            task = dispatch_task(c, d) or ""
             why = review_begin(c, task)
             if why:
                 u = dict(claude.usage({}), error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview not started: {why}")
@@ -244,7 +244,7 @@ def run_one(c, d):
     return d, u, rep
 
 
-def do_wave(c, ds):
+def do_wave(c, ds) -> None:
     t0 = time.time()
     tasks = c.tasks()
     with claude.kill_on_signal(), ThreadPoolExecutor(max_workers=max(1, len(ds))) as ex:

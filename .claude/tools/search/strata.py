@@ -39,7 +39,7 @@ def messages(body, timeout):
     start = time.time()
     try:
         out = json.load(urllib.request.urlopen(req, timeout=timeout))  # nosec B310  # http URL set by the operator, not user input
-    except Exception as e:
+    except Exception as e:  # logged, then re-raised: not a swallow
         local_log(f"strata request failed after {time.time() - start:.1f}s: {type(e).__name__}: {e}")
         raise
     local_log(f"strata answer after {time.time() - start:.1f}s")
@@ -87,18 +87,18 @@ def strata_up():
         return True
     except urllib.error.HTTPError:
         return True  # server answered, just not on /health
-    except (OSError, http.client.HTTPException, ValueError):
+    except (OSError, http.client.HTTPException, ValueError):  # no answer is the probe's False result, not an error
         return False
 
 
 def _loading():
-    """True when the model may still be loading: STRATA_URL is set (run.sh found model-host's Strata running when this container started, so
+    """True when the model may still be loading: STRATA_URL is set (the start script found the local model server running when this container started, so
     a Strata that does not answer is most likely still loading), or the phase file (STRATA_PHASE_FILE, default /run/strata-phase) says so."""
     if "STRATA_URL" in os.environ:
         return True
     try:
         return "loading" in Path(os.environ.get("STRATA_PHASE_FILE", "/run/strata-phase")).read_text(encoding="utf-8").lower()
-    except OSError:
+    except OSError:  # no phase file: the server is not reported as loading
         return False
 
 
@@ -117,7 +117,5 @@ def preflight():
         if strata_up():
             return True
     os.environ["STRATA"] = "0"
-    print(
-        "preflight: local model (Strata) down: local-model steps are skipped for this run (start it on the host: modelctl use strata, in the model-host project)"
-    )
+    print("preflight: local model (Strata) down: local-model steps are skipped for this run (start it on the host: modelctl use strata)")
     return False

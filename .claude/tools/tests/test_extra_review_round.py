@@ -8,7 +8,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import steps
-from pipeline.configuration import EXTRA_ROUND_WHY, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+from pipeline.configuration import EXTRA_ROUND_WHY, MODEL_HAIKU, MODEL_SONNET
 from test_task_gates import TASK, _SeqBase, dev, done, ev
 
 
@@ -58,7 +58,7 @@ class ExtraReviewRoundTest(_SeqBase):
     def test_second_fail_dispatches_extra_round_with_both_findings_verbatim(self):
         r = self.nxt(self.two_fails())
         self.assertEqual((r["action"], r["role"], r["model"]), ("dispatch", "dev", MODEL_SONNET))
-        self.assertEqual(r["why"], EXTRA_ROUND_WHY)
+        self.assertIn(EXTRA_ROUND_WHY, r["why"])
         text = self.rework_text()
         self.assertIn("FIRST FINDING text", text)
         self.assertIn("SECOND FINDING text", text)
@@ -86,14 +86,11 @@ class ExtraReviewRoundTest(_SeqBase):
             self.review_fail("r2", "two\n"),
         ]
 
-    def test_extra_round_runs_on_opus_once_enough_sonnet_devs_ran(self):
-        r = self.nxt(self.sonnet_twice())  # two Sonnet devs, REVIEW_EXTRA_OPUS_AFTER = 2
-        self.assertEqual((r["role"], r["model"]), ("dev", MODEL_OPUS))
-
-    def test_extra_round_stays_sonnet_below_the_opus_threshold(self):
-        with mock.patch.object(steps, "REVIEW_EXTRA_OPUS_AFTER", 3):
-            r = self.nxt(self.sonnet_twice())
+    def test_extra_round_is_sonnet_never_opus_after_several_sonnet_devs(self):
+        r = self.nxt(self.sonnet_twice())  # two Sonnet devs: the Opus extra-round route is gone, the model is e1.model_for's
         self.assertEqual((r["role"], r["model"]), ("dev", MODEL_SONNET))
+        self.assertTrue(r["why"].startswith("E1("))
+        self.assertIn(EXTRA_ROUND_WHY, r["why"])  # the extra round stays counted by its reason
 
 
 if __name__ == "__main__":
