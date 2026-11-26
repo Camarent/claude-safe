@@ -114,7 +114,7 @@ def symbols(q, root, lang):
     for line in r.stdout.splitlines():
         try:
             t = json.loads(line)
-        except ValueError:
+        except ValueError:  # KEEP: rg prints one JSON object per line; a non-JSON line is skipped, not an error
             continue
         n = t.get("name", "")
         rank = 0 if n == q else 1 if n.lower().startswith(ql) else 2 if ql in n.lower() else None
@@ -165,7 +165,7 @@ def not_checked(f, lang, why):
                 return 1
             print(f"syntax OK only ({why}); type/semantic errors NOT CHECKED")
             return 3
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):  # KEEP: checker missing or hung; the NOT CHECKED line below reports it
             pass
     print(f"NOT CHECKED: {why}")
     return 3
@@ -281,7 +281,7 @@ def _cmd_diag(c, a, f, lang, root):
         pulled = c.req("textDocument/diagnostic", {"textDocument": {"uri": uri(f)}}, 20) if lang in ("py", "js", "ts") else None
         if pulled and "items" in pulled:
             c.diags[uri(f)] = pulled["items"]
-    except (RuntimeError, TimeoutError):
+    except (RuntimeError, TimeoutError):  # KEEP: pull diagnostics is optional; the push settle below covers servers without it
         pass
     if (lang not in ("py", "js", "ts") or uri(f) not in c.diags) and not c.settle(15 if lang != "rs" else 60, uri(f)):
         return not_checked(f, lang, "language server sent no diagnostics")

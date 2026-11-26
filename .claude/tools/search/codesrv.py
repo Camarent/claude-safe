@@ -139,11 +139,11 @@ def handle(conn):
             code = ask_code.main(req["argv"])
         except SystemExit as e:
             code = e.code if isinstance(e.code, int) else (print(e.code, file=sys.stderr) or 2)
-        except Exception:
+        except Exception:  # KEEP: logs the traceback to stderr and reports exit 3 to the caller
             traceback.print_exc(file=sys.stderr)
             code = 3
         conn.sendall((json.dumps({"out": tl.out.getvalue(), "err": tl.err.getvalue(), "code": code or 0}) + "\n").encode())
-    except Exception:
+    except Exception:  # KEEP: last resort for one connection; logs the traceback so the server keeps serving
         traceback.print_exc(file=sys.__stderr__)
     finally:
         if dog:
@@ -165,7 +165,7 @@ def main():
         probe.connect(SOCK)
         print("another server already answers on the socket; exiting", file=sys.__stderr__)
         return  # never run two
-    except OSError:
+    except OSError:  # KEEP: connect fails when no server listens on the socket; then this one starts
         pass
     with contextlib.suppress(FileNotFoundError):
         os.unlink(SOCK)

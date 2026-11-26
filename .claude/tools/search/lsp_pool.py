@@ -11,6 +11,7 @@ import threading
 import time
 
 from pipeline.configuration import tool_setting
+from pipeline.util import swallowed
 
 from search import codesrv, lsp
 from search.lsp_client import EXT, MARKERS, Client, root_of
@@ -179,8 +180,8 @@ class Pool:
             try:
                 if e.client is not None:
                     e.client.drain()
-            except FAILURES:  # the next request notices the dead client
-                pass
+            except FAILURES as ex:  # the next request notices the dead client
+                swallowed("lsp_pool.drain", ex)
             finally:
                 e.lock.release()
 
