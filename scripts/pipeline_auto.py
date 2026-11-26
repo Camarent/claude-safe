@@ -1,10 +1,11 @@
 """Start a planned stage or feature in auto permission mode (opt-in).
 
 Sets the headless-session flags to the full default flags (allowlists kept) with the permission mode switched to auto (the default mode is replaced), then execs
-`cs-wave <args>`. The args must start with `feature` or `run` (`cs-wave feature ...`, `cs-wave run --stage ...`).
+`cs-wave <args>`. The args must start with `feature` or `run`.
 
-    python3 -I scripts/pipeline_auto.py feature --feature F
-    python3 -I scripts/pipeline_auto.py run --stage S
+    python3 -I scripts/pipeline_auto.py run NAME
+
+Old aliases, still accepted: `feature --feature F` and `run --stage S`.
 """
 
 import os

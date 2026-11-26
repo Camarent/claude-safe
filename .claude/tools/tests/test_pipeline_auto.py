@@ -56,6 +56,13 @@ class PlanTests(unittest.TestCase):
         argv, _ = pipeline_auto.plan(["run", "--stage", "S"], {})
         self.assertEqual(argv, [pipeline_auto.CS_WAVE, "run", "--stage", "S"])
 
+    def test_run_name_call_sets_auto_flags_env(self):
+        argv, env = pipeline_auto.plan(["run", "NAME"], {"KEEP": "1"})
+        self.assertEqual(argv, [pipeline_auto.CS_WAVE, "run", "NAME"])
+        self.assertIn(PERMISSION_MODE_AUTO, env[ENV_CLAUDE_FLAGS])
+        self.assertNotIn(PERMISSION_MODE_DEFAULT, env[ENV_CLAUDE_FLAGS])
+        self.assertEqual(env["KEEP"], "1")
+
     def test_bad_first_word_rejected(self):
         with self.assertRaises(ValueError):
             pipeline_auto.plan(["rm", "-rf"], {})
