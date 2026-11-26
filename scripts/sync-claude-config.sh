@@ -4,25 +4,31 @@
 #                                                 that would be overwritten; nothing is written
 #   scripts/sync-claude-config.sh --apply [REF]   writes ~/.claude (replaced files are saved in
 #                                                 ~/.claude/.provision-backup/<UTC time>/)
+#   scripts/sync-claude-config.sh --compare [REF] writes nothing; exit 0 when ~/.claude matches REF, 10 when a file
+#                                                 would be overwritten (the driver's pipeline_install_check)
 # Steps: refuse while a wave driver runs (.work/<stage>/wave.lock held), make a detached worktree of REF,
 # run its scripts/install-claude-config.sh (with --dry-run unless --apply), print the agents rehosted by
 # host_agents.py (dry run only: no write flag is ever passed), remove the worktree, print the commit.
+# --compare skips the driver guard (the driver itself runs it) and host_agents.py.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ref="HEAD"
 apply=0
+compare=0
 
 say() { printf '%s\n' "$*"; }
 usage() {
-  say "usage: scripts/sync-claude-config.sh [--apply] [REF]"
+  say "usage: scripts/sync-claude-config.sh [--apply|--compare] [REF]"
   say "  default: dry run, lists the ~/.claude files that would be overwritten; nothing is written"
   say "  --apply: write ~/.claude from REF; replaced files are saved in ~/.claude/.provision-backup/<UTC time>/"
+  say "  --compare: nothing written; exit 0 when ~/.claude matches REF, 10 when it differs"
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) apply=1 ;;
+    --compare) compare=1 ;;
     -h|--help) usage; exit 0 ;;
     -*) usage >&2; exit 2 ;;
     *) ref="$1" ;;
@@ -43,7 +49,7 @@ driver_running() {
   return 1
 }
 
-if driver_running; then
+if [ "$compare" = 0 ] && driver_running; then
   exit 1
 fi
 
@@ -57,6 +63,17 @@ trap cleanup EXIT
 tree="$wt/tree"
 git -C "$root" worktree add --detach "$tree" "$ref" >/dev/null
 commit="$(git -C "$tree" rev-parse --short HEAD)"
+if [ "$compare" = 1 ]; then
+  out="$(bash "$tree/scripts/install-claude-config.sh" --dry-run)"
+  say "$out"
+  if grep -q 'none: no file would be overwritten' <<<"$out"; then
+    say "compare: ~/.claude matches commit $commit"
+    exit 0
+  fi
+  say "compare: ~/.claude differs from commit $commit: run scripts/sync-claude-config.sh --apply"
+  exit 10
+fi
+
 say "syncing ~/.claude from $ref ($commit)"
 
 if [ "$apply" = 1 ]; then

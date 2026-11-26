@@ -255,6 +255,23 @@ def _record_base(a, folder, phase):
         write_text(f, r.stdout.strip() + "\n")
 
 
+WORK_BRANCH_PLACEHOLDER = "{work_branch}"  # in pipeline_install_check: replaced by the project's work branch name
+
+
+def install_check(a, run=subprocess.run) -> str | None:
+    """-> None when the installed pipeline matches the repo or the check is off (`pipeline_install_check`), else the block text. Exit 0 = match; any other exit = older or unknown."""
+    cfg = project(a.dir)
+    cmd = cfg.get("pipeline_install_check")
+    if not cmd:
+        return None
+    cmd = cmd.replace(WORK_BRANCH_PLACEHOLDER, work_branch(cfg, getattr(a, "feature", None) or a.stage))
+    r = run(cmd, shell=True, cwd=repo_dir(a.dir, cfg), capture_output=True, text=True, timeout=LONG_CMD_TIMEOUT_S, check=False)  # nosec B602,B604  # the command is set by the project's pipeline.json, not by user input
+    if r.returncode == 0:
+        return None
+    tail = (r.stdout + r.stderr).splitlines()[-5:]
+    return "installed pipeline older than repo: sync (scripts/sync-claude-config.sh --apply), then relaunch\n" + "\n".join(tail)
+
+
 def _run_phase(a, phase):
     """Plan (when needed), run and close one phase. -> None when it is done, else the exit code."""
 
@@ -284,6 +301,9 @@ def _run_phase(a, phase):
         return block(a, f"phase {phase['dir']}: done_when failed: `{phase['done_when']}`\n{out}")
     mark_phase_done(Run(dir=a.dir, feature=a.feature), phase["dir"])
     print(f"== phase {phase['dir']} done")
+    # the phase stays done: a relaunch after the sync continues with the next phase
+    if pf.next_open_phase(pf.read_phases(Run(dir=a.dir, feature=a.feature))) is not None and (msg := install_check(a)):
+        return block(a, msg)
     return None
 
 
