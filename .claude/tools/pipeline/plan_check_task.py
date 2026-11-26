@@ -64,7 +64,7 @@ def _in_work_root(d, p):
     return full == root or full.startswith(root + os.sep)
 
 
-def repo_of(d):
+def repo_of(d) -> str:
     """Public name of _repo_root (plan.py dryrun)."""
     return _repo_root(d)
 
@@ -96,7 +96,7 @@ def _unplanned_test_files(repo, predicted, text):
             yield os.path.join(root, f), rel
 
 
-def check_test_refs(d, tid, repo):
+def check_test_refs(d, tid, repo) -> list[str]:
     """Problems for one task file: a test file outside Predicted paths that mentions a `symbol` of the task's Goal/Done, so the dev may have to update it and would stop (BLOCKED)."""
     text = read_text(os.path.join(d, tid + ".md"))
     predicted = [p.rstrip("/") for p in paths_in(text)]
@@ -115,7 +115,7 @@ def check_test_refs(d, tid, repo):
     return probs[:5]
 
 
-def check_test_globs(d, tid, repo):
+def check_test_globs(d, tid, repo) -> list[str]:
     """Problems for one task file: a `Test:` path or glob that matches no file in the repo and that no Predicted path would create (the run is empty, qrun exits 3 and the dev stops BLOCKED)."""
     text = read_text(os.path.join(d, tid + ".md"))
     m = re.search(r"(?m)^Test:\s*(.*)$", text)
@@ -184,7 +184,7 @@ def _exists_hit(repo, predicted, name):
     return None
 
 
-def check_exists(d, tid, repo):
+def check_exists(d, tid, repo) -> list[str]:
     """Problems for one task file: a name its Goal/Done asks to add (file, def or class) that already exists, so the dev would redo finished work."""
     text = read_text(os.path.join(d, tid + ".md"))
     predicted = [p.rstrip("/") for p in paths_in(text)]
@@ -204,7 +204,7 @@ def _in_tree(repo, path):
     return os.path.isfile(os.path.join(repo, _resolve_bare(repo, path)))
 
 
-def check_cite_exists(d, tid, repo, ents):
+def check_cite_exists(d, tid, repo, ents) -> list[str]:
     """Problems for one task file: a `path:line` cite or backticked file in its Goal/Done/Pattern lines whose file is not in the tree and is not a Predicted path of this task or of a task it depends on (an earlier wave); a cite of an existing file must hold the backticked symbol before it (cite_check._cite_msg)."""
     text = read_text(os.path.join(d, tid + ".md"))
     allowed = set(paths_in(text))
@@ -228,7 +228,7 @@ def check_cite_exists(d, tid, repo, ents):
     return probs
 
 
-def check_test_commands(d, tid, repo, produced):
+def check_test_commands(d, tid, repo, produced) -> list[str]:
     """Problems and `cmd:` warnings for one task file's `Test:` command: its executable and path arguments must exist (in the repo or the nested repo the task edits) or be made by the plan. See plan_commands.command_findings."""
     text = read_text(os.path.join(d, tid + ".md"))
     m = re.search(r"(?m)^Test:\s*(.*)$", text)
@@ -244,17 +244,17 @@ _CODE_SPAN = re.compile(r"`[^`]*`")
 DOCS_INDEX_CMD = re.compile(r"docs_index|cs-docs-index")  # the docs index checker: a Done or Test line that runs it must be lead-verified
 
 
-def is_lead_verified(line):
+def is_lead_verified(line) -> bool:
     """True for a `Done:` or `Test:` line whose marker word sits outside backtick code spans (a marker quoted in a code span is not a marker)."""
     return line.startswith(("Done:", "Test:")) and LEAD_MARK in _CODE_SPAN.sub("", line)
 
 
-def lead_verified_lines(text):
+def lead_verified_lines(text) -> list[str]:
     """The `Done:` and `Test:` lines of a task file marked lead-verified."""
     return [ln for ln in text.splitlines() if is_lead_verified(ln)]
 
 
-def check_lead_verified(d, tid):
+def check_lead_verified(d, tid) -> list[str]:
     """Problems for one task file: a `Done:` or `Test:` line that runs the docs index checker without the lead-verified marker (the lead runs that check, never the dev)."""
     return [
         f"{tid}: a Done or Test line runs the docs index checker without the lead-verified marker: {ln[:120]}"
@@ -263,14 +263,14 @@ def check_lead_verified(d, tid):
     ]
 
 
-def check_test_quoting(d, tid):
+def check_test_quoting(d, tid) -> list[str]:
     """Problems for one task file: a `Test:` line whose `-e`/`-c` expression is not quoted (bash parses its parentheses and the run dies before the code starts)."""
     m = re.search(r"(?m)^Test:\s*(.*)$", read_text(os.path.join(d, tid + ".md")))
     hit = re.search(r"\s-[ec]\s+([^\s\"'][^\s]*\()", m[1]) if m else None
     return [f"{tid}: Test line has an unquoted -e/-c expression `{hit[1]}` (put it in double quotes)"] if hit else []
 
 
-def check_git_paths(d, tid, repo):
+def check_git_paths(d, tid, repo) -> list[str]:
     """Problems for one task file: a Predicted path whose nearest existing parent is in no git work tree (the dev cannot commit there and stops with BLOCKED "no git repo")."""
     probs = []
     for p in paths_in(read_text(os.path.join(d, tid + ".md"))):
@@ -289,7 +289,7 @@ def check_git_paths(d, tid, repo):
     return probs
 
 
-def check_denied_commands(d, tid, denied):
+def check_denied_commands(d, tid, denied) -> list[str]:
     """Problems for one task file: a `Test:` command that starts with one of the sandbox-denied prefixes (pipeline.json `preflight_denied`, e.g. "rustup", "chmod", "./tool build"); the dev would be denied and stop BLOCKED. [] when the list is unset."""
     m = re.search(r"(?m)^Test:\s*(.*)$", read_text(os.path.join(d, tid + ".md")))
     if not m or not denied:
@@ -307,7 +307,7 @@ MAX_WARNINGS = 25
 WARN_COUNT_RE = re.compile(r"(?i)\b(\d+)\s+(?:\w+\s+){0,2}warnings?\b")
 
 
-def check_warning_count(d, tid):
+def check_warning_count(d, tid) -> list[str]:
     """`size:` warning (never fails a check): the Goal names more than MAX_WARNINGS warnings to fix, so the dev may run out of budget; split by file."""
     text = read_text(os.path.join(d, tid + ".md"))
     lines = text.splitlines()
@@ -333,7 +333,7 @@ def _repo_prefixed(line, name):
     return ""
 
 
-def check_repo_prefix(d, tid, repo):
+def check_repo_prefix(d, tid, repo) -> list[str]:
     """Problems for one task file: a path in Predicted paths / Pattern / Test starting with the repo directory name (`myrepo/...`). The dev runs in a worktree rooted at the repo, so such a path does not exist there."""
     name = os.path.basename(os.path.normpath(repo))
     if not name or os.path.normpath(repo) == os.path.normpath(_workspace(d)):
@@ -347,7 +347,7 @@ WORK_OUTPUT_RE = re.compile(r"(?im)^(?:Predicted paths|Done):\s*(.*)$")
 RELATIVE_WORK_RE = re.compile(r"(?<![\w./-])\.work/[\w./-]+")
 
 
-def check_work_paths(d, tid):
+def check_work_paths(d, tid) -> list[str]:
     """Problems for one task file: a relative `.work/` output path in Predicted paths / Done. A scout or dev task runs in a job worktree that is deleted afterwards, so such an output is lost; the absolute main-tree path is required."""
     text = read_text(os.path.join(d, tid + ".md"))
     hits = [m[0] for line in WORK_OUTPUT_RE.findall(text) for m in [RELATIVE_WORK_RE.search(line)] if m]
@@ -378,7 +378,7 @@ def _resolve_short(repo, f, tid, line):
     return hits[0]
 
 
-def check_refs(d, tid, repo):
+def check_refs(d, tid, repo) -> list[str]:
     """Problems for one task file: an anchor `path/file.ext:N` whose file is missing or shorter than N lines (stale since the plan was written). New files in Predicted paths are fine."""
     text = read_text(os.path.join(d, tid + ".md"))
     probs = []

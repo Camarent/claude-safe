@@ -343,7 +343,7 @@ def _listings(d, ents):
     return users
 
 
-def shared_warnings(d, ents):
+def shared_warnings(d, ents) -> list[str]:
     """`shared:` warning (never fails a check), once per file listed by SHARED_MIN or more tasks that is not a `shared-file:` error: they chain into waves; one owner task or per-feature files let them run together. Silent for a line-based file all its tasks list as `(rows)`, and for a directory or glob entry. A registry-named or data file listed by SHARED_MIN or more tasks without an owner or fragments is a `shared-file:` error (plan_lint.classify_shared)."""
     waves = {e["id"]: e["wave"] for e in ents}
     out = []
@@ -357,7 +357,7 @@ def shared_warnings(d, ents):
     return out
 
 
-def registry_problems(d, ents):
+def registry_problems(d, ents) -> list[str]:
     """-> a problem for each task whose text matches a pipeline.json `registry_files` rule but whose Predicted paths lack the registry file: two such tasks in one wave would both edit it (one lists it, the other does not, so the overlap rule never saw them) and conflict at the merge. Listing it makes the overlap rule give them separate waves."""
     try:
         rules = registry_files_of(project(_workspace(d)))
@@ -407,7 +407,7 @@ def _feature_paths(d, ents):
     return paths
 
 
-def publish_problems(d, ents):
+def publish_problems(d, ents) -> list[str]:
     """-> [`publish:` problem] when the stage (not a mid phase) or its feature changes paths of a `publish` entry of pipeline.json and no TASKS.md of the feature carries a `PUBLISH:` line or the flag `no-publish`: the republish step would not run and the artifact stays stale. A bad publish config yields none."""
     try:
         entries = publish_entries(project(_workspace(d)))
@@ -430,7 +430,7 @@ def publish_problems(d, ents):
 UX_FLOWS_WARN_PREFIX = "ux-flows: "  # a warning line: never fails a check (errors_of)
 
 
-def ux_flows_findings(d, ents, repo):
+def ux_flows_findings(d, ents, repo) -> list[str]:
     """-> problems for the configured `ux_flows` file (missing and not made by the plan, or invalid) and a `ux-flows:` warning naming the UI files of the plan that no flow covers. [] when none is configured."""
     cfg = project(_workspace(d))
     v = variables(read_text(tasks_path(d)))
@@ -466,7 +466,7 @@ def _limit_problems(d, ents):
     return [msg] if limit and len(waiting) > limit else []
 
 
-def check_stage(d, repo=None):
+def check_stage(d, repo=None) -> tuple[int, list[str]]:
     """-> (task count, problems)."""
     if not os.path.exists(tasks_path(d)):
         return 0, [f"{tasks_path(d)} missing"]
@@ -525,7 +525,7 @@ GATE_RE = re.compile(r"^gate:\s*(uncertainty gate|owner step or real-data run|se
 MIN_PHASE, MAX_COMBINED = 10, 25
 
 
-def errors_of(probs):
+def errors_of(probs) -> list[str]:
     """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check). `ci-drift:` is an error."""
     return [
         p
@@ -555,7 +555,7 @@ def errors_of(probs):
     ]
 
 
-def ci_drift_warnings(d):
+def ci_drift_warnings(d) -> list[str]:
     """-> [`ci-drift:` problem, an error in cs-plan check] for the project that owns .work folder D (see ci_drift.drift; a bad config yields none)."""
     ws = _workspace(d)
     try:
@@ -566,7 +566,7 @@ def ci_drift_warnings(d):
         return []
 
 
-def phase_size_problems(phases):
+def phase_size_problems(phases) -> list[str]:
     """Mechanical plan-size rules over Plan.md: one phase = a stage (error); an estimate < 10 needs a valid `gate:` line (error); adjacent ungated phases whose estimates sum <= 25 (`combine:` warning)."""
     probs = ["Plan.md has one phase: this should be a stage, use stage-init"] if len(phases) == 1 else []
     gated = [bool(GATE_RE.match(p["goal"])) for p in phases]
@@ -584,7 +584,7 @@ def phase_size_problems(phases):
     return probs
 
 
-def is_shell(cmd):
+def is_shell(cmd) -> bool:
     """True when CMD parses as a shell command (`sh -n`); a sentence with `;` or `(` does not."""
     return subprocess.run(["sh", "-n", "-c", cmd], capture_output=True, check=False).returncode == 0
 
@@ -688,7 +688,7 @@ def _plan_head_problems(a, phases):
     return probs + acceptance_problems(read_text(plan_path(a)), repo_dir(a.dir, project(a.dir))) + _gate_command_problems(a)
 
 
-def check_feature(a, fdir):
+def check_feature(a, fdir) -> tuple[int, list[str]]:
     """-> (task count, problems) for Plan.md and every phase folder with a TASKS.md."""
     phases = read_phases(a)
     if not phases and not os.path.exists(os.path.join(fdir, PLAN_FILE)):
@@ -703,18 +703,18 @@ def check_feature(a, fdir):
     return n, probs + release_flag_problems(mds)
 
 
-def publish_urls(text):
+def publish_urls(text) -> set[str]:
     """-> the set of whole URLs on every `PUBLISH:` line of text."""
     return {u for line in re.findall(PUBLISH_LINE_RE, text, re.I | re.M) for u in re.split(r"[\s,;]+", line) if u}
 
 
-def feature_root(d):
+def feature_root(d) -> str:
     """-> the feature folder of D: D itself, or the folder above `phases/` for a phase stage."""
     parent = os.path.dirname(d)
     return os.path.dirname(parent) if os.path.basename(parent) == "phases" else d
 
 
-def tasks_files(root):
+def tasks_files(root) -> list[str]:
     """-> the TASKS.md paths of the feature folder ROOT: its own, then one per phase."""
     out = [os.path.join(root, TASKS_FILE)]
     phases = os.path.join(root, "phases")
@@ -723,7 +723,7 @@ def tasks_files(root):
     return out
 
 
-def publish_problems_in(root, goal):
+def publish_problems_in(root, goal) -> list[str]:
     """-> problem when the request GOAL has a `PUBLISH:` line that no TASKS.md under ROOT carries (the driver's republish step reads only TASKS.md)."""
     if not re.search(PUBLISH_RE, goal, re.I | re.M):
         return []
@@ -736,7 +736,7 @@ def publish_problems_in(root, goal):
     ]
 
 
-def request_problems(d):
+def request_problems(d) -> list[str]:
     """-> the PUBLISH problems of folder D against the request copy (`request.md`) in its feature folder; [] when there is none."""
     root = feature_root(d)
     return publish_problems_in(root, read_text(os.path.join(root, REQUEST_FILE)))
