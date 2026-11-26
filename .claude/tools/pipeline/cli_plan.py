@@ -61,7 +61,8 @@ def _resolve_deps(a, phases, before):
     prev = []  # the phase before `before` (none when first)
     if before is not None and phases.index(before):
         prev = [phases[phases.index(before) - 1]["dir"]]
-    return pf.csv(a.depends) or ([pf.phase_ref(phases, a.after)["dir"]] if a.after and pf.phase_ref(phases, a.after) else prev)
+    after = pf.phase_ref(phases, a.after) if a.after else None  # None when --after names no phase
+    return pf.csv(a.depends) or ([after["dir"]] if after else prev)
 
 
 def _check_overlap(a, phases, paths, deps, before):

@@ -269,7 +269,7 @@ def write_phases(a, phases) -> None:
     write_text(plan_path(a), txt + "## Phases\n" + PHASE_HEAD + rows)
 
 
-def phase_ref(phases, name):
+def phase_ref(phases, name) -> dict | None:
     """-> phase whose folder is `name` or `NN-name`'s suffix is `name`, else None."""
     return next((p for p in phases if name in (p["dir"], p["dir"][3:])), None)
 
@@ -289,12 +289,12 @@ def _depends_reach(phases, src, dst):
     return False
 
 
-def phases_ordered(phases, x_dir, y_dir):
+def phases_ordered(phases, x_dir, y_dir) -> bool:
     """-> True when one phase reaches the other through depends (transitively; names match like phase_ref), so their paths never run at once."""
     return _depends_reach(phases, x_dir, y_dir) or _depends_reach(phases, y_dir, x_dir)
 
 
-def next_open_phase(phases):
+def next_open_phase(phases) -> dict | None:
     """The first phase that is not done and whose dependencies are all done, else None."""
     return next((p for p in phases if p["status"] != "done" and all((phase_ref(phases, d) or {}).get("status") == "done" for d in p["depends"])), None)
 
@@ -302,19 +302,19 @@ def next_open_phase(phases):
 # ---- TASKS.md --------------------------------------------------------------
 
 
-def started_tasks(d):
+def started_tasks(d) -> set[str]:
     """-> ids of the tasks with a dispatch or skip event in the stage's orch.jsonl."""
     return {e["task"] for e in read_jsonl(os.path.join(d, ORCH_LOG)) if e.get("ev") in STARTED_EVENTS and e.get("task")}
 
 
-def tasks_path(d):
+def tasks_path(d) -> str:
     return os.path.join(d, TASKS_FILE)
 
 
 BULLET = re.compile(r"^- (?:\[[ xX]\] )?(task-\d+) (.*?)(?: - owner: (\w+))? - review: wave W(\d+)(?:, (\w+))?(?: - depends: (\S+))?\s*$")
 
 
-def read_entries(d):
+def read_entries(d) -> list[dict]:
     """-> ordered list of {id, title, owner, wave, review, depends[]} from the TASKS.md bullets plan.py wrote."""
     out = []
     for line in read_text(tasks_path(d)).splitlines():
@@ -324,12 +324,12 @@ def read_entries(d):
     return out
 
 
-def bullet(e):
+def bullet(e) -> str:
     dep = f" - depends: {','.join(e['depends'])}" if e["depends"] else ""
     return f"- {e['id']} {e['title']} - review: wave W{e['wave']}{dep}"
 
 
-def graph_line(entries):
+def graph_line(entries) -> str:
     waves = sorted({e["wave"] for e in entries})
     return " | ".join(f"wave {w}: " + ", ".join(e["id"] for e in entries if e["wave"] == w) for w in waves)
 
@@ -343,7 +343,7 @@ def _sections_after_graph(text):
     return text[at + len("## Graph") + nxt.start() :].rstrip() + "\n" if nxt else ""
 
 
-def write_tasks(d, entries):
+def write_tasks(d, entries) -> None:
     old = read_text(tasks_path(d))
     head = old.split("## Tasks")[0].rstrip() + "\n\n"
     body = "".join(bullet(e) + "\n" for e in sorted(entries, key=lambda e: int(e["id"][5:])))
@@ -351,7 +351,7 @@ def write_tasks(d, entries):
     write_text(tasks_path(d), head + "## Tasks\n" + body + "\n## Graph\n" + graph_line(entries) + "\n" + ("\n" + tail if tail else ""))
 
 
-def init_stage(d, stage, goal, flags, pr_title=""):
+def init_stage(d, stage, goal, flags, pr_title="") -> None:
     title = f"pr-title: {pr_title.strip()}\n" if pr_title.strip() else ""
     write_text(tasks_path(d), f"# Stage: {stage}\nGoal: {goal.strip()}\n{title}flags: {flags.strip()}\n\n## Tasks\n\n## Graph\n")
 
@@ -363,7 +363,7 @@ LINE_EXTS = (".jsonl", ".ndjson", ".tsv", ".csv")  # line-based data files: git 
 ANNOT_RE = re.compile(r"\s*\((rows|mass)\)\s*$", re.I)  # `path (rows)` = some rows only, `path (mass)` = most or all rows
 
 
-def path_modes(text):
+def path_modes(text) -> list[tuple[str, str]]:
     """The `Predicted paths:` list of a task file's text -> [(path, mode)], mode `rows`, `mass` or "" (whole file, the default). Backticks dropped."""
     m = re.search(r"(?im)^Predicted paths:\s*(.*)$", text)
     if not m:
@@ -379,16 +379,16 @@ def path_modes(text):
     return out
 
 
-def paths_in(text):
+def paths_in(text) -> list[str]:
     """The `Predicted paths:` list of a task file's text (backticks and `(rows)`/`(mass)` marks dropped), [] when absent."""
     return [p for p, _ in path_modes(text)]
 
 
-def is_line_based(path):
+def is_line_based(path) -> bool:
     return path.lower().endswith(LINE_EXTS)
 
 
-def wave_conflict(m1, m2):
+def wave_conflict(m1, m2) -> tuple[str, str] | None:
     """-> first (a, b) overlapping path pair of two path_modes lists that may NOT share a wave, else None. Allowed: the same line-based file with `(rows)` on both sides."""
     for a, ma in m1:
         for b, mb in m2:
@@ -400,7 +400,7 @@ def wave_conflict(m1, m2):
 AFFECTED_RE = re.compile(r"(?im)^Affected tests:[ \t]*(.*)$")
 
 
-def task_affected_tests(text):
+def task_affected_tests(text) -> str:
     """The `Affected tests:` line of a task file's text (tests that probably assert the old behavior), "" when absent."""
     m = AFFECTED_RE.search(text)
     v = m[1].strip() if m else ""
@@ -410,22 +410,22 @@ def task_affected_tests(text):
 TASK_TYPES = ("code", "report", "webtest")
 
 
-def task_type(text):
+def task_type(text) -> str:
     """The `Type:` header of a task file's text, lowercased; `code` when absent. `report` = the deliverable is a file outside any repo (no diff); `webtest` = a browser check the web-tester agent runs (no dev, no worktree: the task's `Test:` validates its report on the stage branch checkout)."""
     m = re.search(r"(?im)^Type:[ \t]*(\S*)", text)
     return m[1].lower() if m else "code"
 
 
-def task_inputs(text):
+def task_inputs(text) -> list[str]:
     """The `Inputs:` header lines of a task file's text, comma separated: [] when absent."""
     return [x.strip("` ") for m in re.finditer(r"(?im)^Inputs:[ \t]*(.*)$", text) for x in m[1].split(",") if x.strip("` ")]
 
 
-def task_paths(d, tid):
+def task_paths(d, tid) -> list[str]:
     return paths_in(read_text(os.path.join(d, f"{tid}.md")))
 
 
-def task_path_modes(d, tid):
+def task_path_modes(d, tid) -> list[tuple[str, str]]:
     return path_modes(read_text(os.path.join(d, f"{tid}.md")))
 
 
@@ -439,12 +439,12 @@ TASK_FIELDS = {
 }
 
 
-def with_qrun(cmd):
+def with_qrun(cmd) -> str:
     """-> CMD run through qrun once: unchanged when it already starts with `python3 -I .../qrun.py` or the `cs-qrun` wrapper."""
     return cmd if QRUN_HEAD.match(cmd) else QRUN + cmd
 
 
-def set_task_field(txt, tid, field, value):
+def set_task_field(txt, tid, field, value) -> str:
     """-> task-N.md text with one field replaced (title also updates the Goal line)."""
     if field == "title":
         txt = re.sub(r"(?m)^# " + tid + r": .*$", lambda m: f"# {tid}: {value}", txt, count=1)
@@ -457,12 +457,12 @@ def set_task_field(txt, tid, field, value):
     return re.sub(r"(?m)^" + pat + r".*$", lambda m: pre + value, txt, count=1)
 
 
-def depends_line(deps):
+def depends_line(deps) -> str:
     """-> the `Depends:` line of a task file (task ids, comma and space), or '' when the task has no dependency."""
     return f"Depends: {', '.join(deps)}\n" if deps else ""
 
 
-def set_depends_line(txt, deps):
+def set_depends_line(txt, deps) -> str:
     """-> task-N.md text whose `Depends:` line equals DEPS: the old line goes, the new one follows the `Wave:` line."""
     head, *rest = re.split(r"(?m)^(?=## ADDENDUM)", txt, maxsplit=1)  # a retry addendum is the lead's note, never edited here
     head = re.sub(r"(?m)^Depends: .*\n", "", head, count=1)
@@ -470,7 +470,7 @@ def set_depends_line(txt, deps):
     return head + "".join(rest)
 
 
-def render_task(e, a, paths):
+def render_task(e, a, paths) -> str:
     cmd = with_qrun(a.test)
     pat = a.pattern or (paths[0] + ":1" if paths else "")
     aff = f"Affected tests: {a.affected}\n" if getattr(a, "affected", "") else ""
