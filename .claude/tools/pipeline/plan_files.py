@@ -24,7 +24,7 @@ QRUN_HEAD = re.compile(rf"\s*{QRUN_PATTERN}(?:\s|$)")  # a command that already 
 CHECKLIST_HEAD = "## Acceptance checklist"  # `plan-init` writes it empty; `check` fails until it holds `- cmd:` / `- eyes:` lines
 
 
-def section_body(text, is_head, stop_prefix):
+def section_body(text, is_head, stop_prefix) -> str | None:
     """The text after the first line `is_head` accepts (that line must end with a newline), up to the next line that starts with `stop_prefix`; None when there is no such heading."""
     lines = text.split("\n")
     for i, line in enumerate(lines[:-1]):
@@ -38,7 +38,7 @@ def section_body(text, is_head, stop_prefix):
     return None
 
 
-def checklist_items(plan_md_text):
+def checklist_items(plan_md_text) -> list[str]:
     """Bullet lines under `## Acceptance checklist` (up to the next `## `); [] when the section is missing or empty."""
     body = section_body(plan_md_text, lambda ln: ln.rstrip(" \t") == CHECKLIST_HEAD, "## ")
     return [ln for ln in (body or "").splitlines() if re.match(r"\s*[-*] \S", ln)]
@@ -47,7 +47,7 @@ def checklist_items(plan_md_text):
 _EXPECTED_RE = re.compile(r"\s+\([^()]*\)\s*$")  # trailing `(expected result)` of a cmd line
 
 
-def acceptance_items(plan_md_text):
+def acceptance_items(plan_md_text) -> list[tuple[str, str]]:
     """-> [(tag, text)] of the checklist lines, tag = `cmd:`, `eyes:` or "" for a line with neither. A cmd text loses surrounding backticks and a trailing `(expected result)`."""
     out = []
     for ln in checklist_items(plan_md_text):
@@ -67,28 +67,28 @@ class PlanError(Exception):
     """Invalid plan input; the CLI prints it and exits 2."""
 
 
-def stage_of(feature, phase):
+def stage_of(feature, phase) -> str:
     return f"{feature}/phases/{phase['dir']}"
 
 
-def feature_dir(a):
+def feature_dir(a) -> str:
     return os.path.join(a.dir, WORK_DIR, a.feature)
 
 
-def stage_dir(a):
+def stage_dir(a) -> str:
     """`.work/S`, else `.work/*/phases/S` (S may also be `F/phases/NN-name`)."""
     return resolve_stage(a.dir, a.stage, strict=False, phases=True)
 
 
-def csv(s):
+def csv(s) -> list[str]:
     return [x.strip() for x in (s or "").split(",") if x.strip()]
 
 
-def cell(s):
+def cell(s) -> str:
     return str(s).replace("|", "/").replace("\n", " ").strip()
 
 
-def overlap(p1, p2):
+def overlap(p1, p2) -> tuple[str, str] | None:
     """-> first (a, b) pair of paths of two lists that are equal or nested, else None."""
     for a in p1:
         for b in p2:
@@ -101,16 +101,16 @@ def overlap(p1, p2):
 # ---- Plan.md -------------------------------------------------------------
 
 
-def plan_path(a):
+def plan_path(a) -> str:
     return os.path.join(feature_dir(a), PLAN_FILE)
 
 
-def init_plan(a):
+def init_plan(a) -> None:
     os.makedirs(os.path.join(feature_dir(a), "phases"), exist_ok=True)
     write_text(plan_path(a), f"# Plan: {a.feature}\n\n## Goal\n{a.goal.strip()}\n\n{CHECKLIST_HEAD}\n\n## Phases\n{PHASE_HEAD}")
 
 
-def read_phases(a):
+def read_phases(a) -> list[dict]:
     """-> list of {dir, goal, done_when, depends[], paths[], status, tasks} from the Plan.md table (tasks = the architect's estimate, 0 = unknown)."""
     return parse_phase_rows(read_text(plan_path(a)))
 
@@ -120,7 +120,7 @@ def _is_phase_dir(name):
     return len(name) > 3 and name[:2].isdecimal() and name[2] == "-" and "\n" not in name[3:]
 
 
-def parse_phase_rows(plan_md_text):
+def parse_phase_rows(plan_md_text) -> list[dict]:
     out = []
     for line in plan_md_text.splitlines():
         c = [x.strip() for x in line.strip().strip("|").split("|")]
@@ -130,7 +130,7 @@ def parse_phase_rows(plan_md_text):
     return out
 
 
-def is_mid_phase(tasks_md):
+def is_mid_phase(tasks_md) -> bool:
     """True when `tasks_md` sits in `.work/<feature>/phases/NN-name/` and that phase is not the last row of the feature's Plan.md. Decided from Plan.md at run time, so phases added after the stage was created still count."""
     folder = os.path.dirname(os.path.abspath(tasks_md))
     parent = os.path.dirname(folder)
@@ -140,7 +140,7 @@ def is_mid_phase(tasks_md):
     return os.path.basename(folder) in names and names[-1] != os.path.basename(folder)
 
 
-def is_last_phase(folder):
+def is_last_phase(folder) -> bool:
     """True when `folder` is `.work/<feature>/phases/NN-name/` and that phase is the last row of the feature's Plan.md (the finish phase when there is one)."""
     parent = os.path.dirname(os.path.abspath(folder))
     if os.path.basename(parent) != PHASES_DIR:
@@ -155,18 +155,18 @@ PATH_NAME = r"[\w.-]+"
 PATH_FILE = rf"{PATH_DIRS}*{PATH_NAME}\.\w{{1,6}}"  # optional directories, a name, an extension of 1-6 word characters
 
 
-def is_finish_dir(name):
+def is_finish_dir(name) -> bool:
     """True for the closing phase of a feature (`NN-finish`): no tasks of its own; it runs tests, audits, master merge, push, index, cleanup and the feature retro."""
     return bool(FINISH_RE.fullmatch(name))
 
 
-def is_finish_phase(tasks_md):
+def is_finish_phase(tasks_md) -> bool:
     """True when `tasks_md` sits in a `.work/<feature>/phases/NN-finish/` folder."""
     folder = os.path.dirname(os.path.abspath(tasks_md))
     return os.path.basename(os.path.dirname(folder)) == "phases" and is_finish_dir(os.path.basename(folder))
 
 
-def is_later_phase(tasks_md):
+def is_later_phase(tasks_md) -> bool:
     """True when `tasks_md` sits in `.work/<feature>/phases/NN-name/` and a Plan.md row comes before that phase (phase 2 and later, the finish phase too)."""
     folder = os.path.dirname(os.path.abspath(tasks_md))
     parent = os.path.dirname(folder)
@@ -176,7 +176,7 @@ def is_later_phase(tasks_md):
     return os.path.basename(folder) in names and names.index(os.path.basename(folder)) > 0
 
 
-def earlier_phase_tasks_mds(finish_tasks_md):
+def earlier_phase_tasks_mds(finish_tasks_md) -> list[str]:
     """TASKS.md paths of the phases before the finish phase, in Plan.md order (the audits look at their tasks)."""
     folder = os.path.dirname(os.path.abspath(finish_tasks_md))
     phases_dir = os.path.dirname(folder)
@@ -185,7 +185,7 @@ def earlier_phase_tasks_mds(finish_tasks_md):
     return [t for t in out if os.path.exists(t)]
 
 
-def next_phase_no(phases):
+def next_phase_no(phases) -> int:
     """Number of the phase after the last one. 99 is the last: `100-` breaks the NN- folder names."""
     n = int(phases[-1]["dir"][:2]) + 1
     if n > PLAN_MAX_PHASES:
@@ -193,7 +193,7 @@ def next_phase_no(phases):
     return n
 
 
-def ensure_finish(a):
+def ensure_finish(a) -> bool:
     """Append the `NN-finish` row to Plan.md when the feature has task phases and none yet. -> True when it added the row."""
     phases = read_phases(a)
     if not phases or any(is_finish_dir(p["dir"]) for p in phases):
@@ -240,7 +240,7 @@ def _place(a, phases, new, pos, num):
     return [*phases[:pos], new, *later]
 
 
-def insert_phase(a, phases, new, after):
+def insert_phase(a, phases, new, after) -> list[dict]:
     """Put `new` after phase `after` and renumber the later phases (see `_place`). -> the new list."""
     pos = next((i for i, p in enumerate(phases) if after in (p["dir"], p["dir"][3:])), None)
     if pos is None:
@@ -248,7 +248,7 @@ def insert_phase(a, phases, new, after):
     return _place(a, phases, new, pos + 1, int(phases[pos]["dir"][:2]) + 1)
 
 
-def insert_before(a, phases, new, before):
+def insert_before(a, phases, new, before) -> list[dict]:
     """Put `new` ahead of phase `before` and renumber it and the later phases (see `_place`): `new` takes the number after the phase before it (00 when first) and `before` gets the new phase in its depends. -> the new list."""
     pos = next((i for i, p in enumerate(phases) if before in (p["dir"], p["dir"][3:])), None)
     if pos is None:
@@ -258,7 +258,7 @@ def insert_before(a, phases, new, before):
     return out
 
 
-def write_phases(a, phases):
+def write_phases(a, phases) -> None:
     txt = read_text(plan_path(a)).split("## Phases")[0]
     rows = "".join(
         "| "
