@@ -194,34 +194,47 @@ def _parts(a_dir, stage, task):
     return cfg, branch, out
 
 
+def _untracked_skipped(ln, inner, links) -> bool:
+    """True for an untracked status line that names a nested repo (or a wt.py symlink) and so does not count."""
+    return ln.startswith("?? ") and (any(i.startswith(ln[3:]) for i in inner) or ln[3:].rstrip("/") in links)
+
+
 def _dirty(path, repo, nested=None, skip_link=False):
     """Changed paths in a checkout; nested worktrees/repos that sit inside it do not count. NESTED = nested_repos(repo) when the caller has it. SKIP_LINK: PATH is a job worktree part, where a symlink is wt.py's read-only view of a private repo's main copy: no job work, and `git status` there would report the main copy's own edits as the job's. A main checkout that is itself a link is still checked."""
     if skip_link and os.path.islink(path):
         return []
     inner = [n + "/" for n in (nested_repos(repo) if nested is None else nested)]
     links = {n for n in LINK if os.path.islink(os.path.join(path, n))}  # wt.py's own symlinks: a `node_modules/` ignore entry does not match a symlink
-    return [
-        ln
-        for ln in git(path, "status", "--porcelain", check=False).split("\n")
-        if ln and not (ln.startswith("?? ") and (any(i.startswith(ln[3:]) for i in inner) or ln[3:].rstrip("/") in links))
-    ]
+    status = git(path, "status", "--porcelain", check=False).split("\n")
+    return [ln for ln in status if ln and not _untracked_skipped(ln, inner, links)]
 
 
 PIPELINE_DIRS = (".work/", ".wt/", ".audits/")  # the pipeline's own folders: never a stray edit
 
 
-def touched_nested(a_dir, stage, nested) -> list[str]:
-    """-> the nested repos of NESTED that STAGE touches (a Predicted path of its task files or a job manifest repo lies inside), or NESTED whole when the stage has no plan yet."""
+def _plan_paths(a_dir, stage) -> set[str] | None:
+    """-> the paths named by the stage's plan .md files and job manifest, or None when the plan folder cannot be listed."""
     plan = os.path.join(os.path.abspath(a_dir), WORK_DIR, stage)
     try:
         files = [os.path.join(plan, f) for f in os.listdir(plan) if f.endswith(".md")]
     except OSError:
-        return nested
+        return None
     named = {p for f in files for p in paths_in(pathlib.Path(f).read_text(encoding="utf-8", errors="replace"))}
     named |= {rel for job in read_manifest(a_dir, stage).values() for rel in job.get("repos", {})}
+    return named
+
+
+def _names_repo(named, rel) -> bool:
+    """True when a named path is the nested repo REL or lies inside it."""
+    return any(p == rel or p.startswith(rel + "/") for p in named)
+
+
+def touched_nested(a_dir, stage, nested) -> list[str]:
+    """-> the nested repos of NESTED that STAGE touches (a Predicted path of its task files or a job manifest repo lies inside), or NESTED whole when the stage has no plan yet."""
+    named = _plan_paths(a_dir, stage)
     if not named:
         return nested
-    return [n for n in nested if any(p == n or p.startswith(n + "/") for p in named)]
+    return [n for n in nested if _names_repo(named, n)]
 
 
 def dirty_report(a_dir, stage=None) -> str:
