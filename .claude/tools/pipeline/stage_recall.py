@@ -216,13 +216,22 @@ def stage_context(repo, stage_dir, base, head, cfg=None) -> str:
         "",
         f"{len(tasks)} planned tasks, {len(changed)} changed files. Paths are matched as globs, prefixes or exact names.",
     ]
-    allp = [p for _, _, paths, _ in tasks for p in paths]
     lines += _task_sections(tasks, changed)
-    outside = [c for c in changed if not covered(c, allp)]
-    unused = [p for f, _, ps, _ in tasks for p in ps if not any(covered(c, [p]) for c in changed)]
-    lines += ["", "## Changed but not in any task's Predicted paths"] + (pack_paths(outside) or ["(none)"])
-    lines += ["", "## Predicted paths with no change"] + (["- " + p for p in unused[:40]] or ["(none)"])
+    lines += _drift_lines(tasks, changed)
     cfs = find_context_files(stage_dir)
     if cfs:
         lines += _recall_lines(repo, stage_dir, base, head, cfg, cfs)
     return "\n".join(lines) + "\n"
+
+
+def _drift_lines(tasks, changed) -> list[str]:
+    """Plan-vs-change sections: changed files outside every task's Predicted paths, and Predicted paths nothing changed."""
+    allp = [p for _, _, paths, _ in tasks for p in paths]
+    outside = [c for c in changed if not covered(c, allp)]
+    unused = [p for _, _, ps, _ in tasks for p in ps if not any(covered(c, [p]) for c in changed)]
+    return (
+        ["", "## Changed but not in any task's Predicted paths"]
+        + (pack_paths(outside) or ["(none)"])
+        + ["", "## Predicted paths with no change"]
+        + (["- " + p for p in unused[:40]] or ["(none)"])
+    )

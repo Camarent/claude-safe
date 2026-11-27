@@ -257,28 +257,42 @@ def refresh(a_dir, stage, task, discard=False) -> dict[str, list]:
     _cfg, repo, _root, _b = layout(a_dir, stage, task)
     for rel, path in _job_worktrees(info).items():
         src = repo if rel == os.path.basename(repo) else os.path.join(repo, rel)
-        dirty = git(path, "status", "--porcelain", check=False)
-        if dirty and discard:
-            git(path, "reset", "--hard", "-q")
-            git(path, "clean", "-fdq", *[f"--exclude=/{n}" for n in LINK])  # the symlinks create() made stay
-            res["discarded"] += [f"{rel}: {ln.strip()}" for ln in dirty.splitlines()]
-        elif dirty:
-            continue  # uncommitted work of a live dev: a rebase would fail on it
+        if _skip_dirty(path, rel, discard, res):
+            continue
         base = _base_branch(src, info["base"])
         if base == "HEAD" or git(path, "rev-list", "--count", f"HEAD..{base}", check=False) in ("", "0"):
             continue
-        try:
-            r = gitx.run(path, "rebase", base, timeout=GIT_LONG_TIMEOUT_S)
-            failed, why = r.returncode, (r.stdout + r.stderr).strip()[-300:]
-        except subprocess.TimeoutExpired:  # git may still hold the rebase state: abort it below, then report
-            failed, why = True, f"timed out after {GIT_LONG_TIMEOUT_S} s"
-        if failed:
-            files = git(path, "diff", "--name-only", "--diff-filter=U", check=False).split()  # the unmerged paths, read before the abort clears them
-            with contextlib.suppress(subprocess.SubprocessError):
-                gitx.run(path, "rebase", "--abort", timeout=GIT_LONG_TIMEOUT_S)
-            raise RefreshConflict(f"rebase of {info['branch']} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}", files, path, base)
+        _rebase_job(path, rel, base, info["branch"])
         res["rebased"].append(rel)
     return res
+
+
+def _skip_dirty(path, rel, discard, res) -> bool:
+    """True when the job worktree has uncommitted work to keep (a live dev: a rebase would fail on it). `discard`: drop that work first and record it in res["discarded"]."""
+    dirty = git(path, "status", "--porcelain", check=False)
+    if not dirty:
+        return False
+    if not discard:
+        return True
+    git(path, "reset", "--hard", "-q")
+    git(path, "clean", "-fdq", *[f"--exclude=/{n}" for n in LINK])  # the symlinks create() made stay
+    res["discarded"] += [f"{rel}: {ln.strip()}" for ln in dirty.splitlines()]
+    return False
+
+
+def _rebase_job(path, rel, base, branch) -> None:
+    """Rebase the job worktree `path` onto `base`; on a conflict or a timeout abort the rebase and raise RefreshConflict."""
+    try:
+        r = gitx.run(path, "rebase", base, timeout=GIT_LONG_TIMEOUT_S)
+        failed, why = r.returncode, (r.stdout + r.stderr).strip()[-300:]
+    except subprocess.TimeoutExpired:  # git may still hold the rebase state: abort it below, then report
+        failed, why = True, f"timed out after {GIT_LONG_TIMEOUT_S} s"
+    if not failed:
+        return
+    files = git(path, "diff", "--name-only", "--diff-filter=U", check=False).split()  # the unmerged paths, read before the abort clears them
+    with contextlib.suppress(subprocess.SubprocessError):
+        gitx.run(path, "rebase", "--abort", timeout=GIT_LONG_TIMEOUT_S)
+    raise RefreshConflict(f"rebase of {branch} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}", files, path, base)
 
 
 def refresh_stale(a_dir, stage, tasks) -> tuple[list, dict]:
@@ -471,22 +485,12 @@ def create(a_dir, stage, task) -> dict:
     nested = nested_repos(repo)
     state = os.path.join(os.path.dirname(root), ".branch")
     if not os.path.isfile(state):  # first call for this task: pick a free name and keep it for every later call (rework, review, merge, remove)
-        branch = _unique_branch(repo, stage, task, nested)
-        os.makedirs(os.path.dirname(root), exist_ok=True)
-        util.write_text(state, branch + "\n")
+        branch = _claim_branch(repo, stage, task, nested, state)
     fresh = not os.path.isdir(root)
     _add_with_entry(a_dir, stage, task, (repo, root, branch, want))
     if fresh:
-        _seed_index(repo, root)
-        _seed_build(repo, root, cfg.get("seed_build") or [])
-        _copy_mtimes(repo, root)
-        _run_setup(a_dir, stage, task, root, cfg)
-    for name in LINK:
-        src, dst = os.path.join(repo, name), os.path.join(root, name)
-        if os.path.isdir(src) and not os.path.lexists(dst):
-            os.symlink(src, dst)
-        if os.path.islink(dst):
-            _exclude_link(root, name)
+        _seed_fresh(a_dir, stage, task, repo, root, cfg)
+    _link_shared(repo, root)
     text = ""
     tf = os.path.join(a_dir, WORK_DIR, stage, f"{task}.md")
     if os.path.isfile(tf):
@@ -495,8 +499,35 @@ def create(a_dir, stage, task) -> dict:
     for rel in nested:
         if _wants_nested(a_dir, stage, task, root, rel, text):
             repos[rel] = _add_nested(repo, root, rel, branch, want)
-    _check_named_dirs(a_dir, stage, task, repo, root, text, fresh, cfg.get("nested_repo_dir_prefix") or "")
-    link_private(repo, root, cfg.get("nested_repo_dir_prefix") or "", repos, nested)
+    prefix = cfg.get("nested_repo_dir_prefix") or ""
+    _check_named_dirs(a_dir, stage, task, repo, root, text, fresh, prefix)
+    link_private(repo, root, prefix, repos, nested)
     info = {"branch": branch, "root": root, "base": want, "repos": repos}
     _put_entry(a_dir, stage, task, info)
     return info
+
+
+def _claim_branch(repo, stage, task, nested, state) -> str:
+    """Pick a free branch name for the task and write it to the `state` file (kept for every later call)."""
+    branch = _unique_branch(repo, stage, task, nested)
+    os.makedirs(os.path.dirname(state), exist_ok=True)
+    util.write_text(state, branch + "\n")
+    return branch
+
+
+def _seed_fresh(a_dir, stage, task, repo, root, cfg) -> None:
+    """First-time seeding of a new job worktree: index, build files, mtimes, setup command."""
+    _seed_index(repo, root)
+    _seed_build(repo, root, cfg.get("seed_build") or [])
+    _copy_mtimes(repo, root)
+    _run_setup(a_dir, stage, task, root, cfg)
+
+
+def _link_shared(repo, root) -> None:
+    """Symlink the LINK entries of the repo into the job worktree and exclude the links from git."""
+    for name in LINK:
+        src, dst = os.path.join(repo, name), os.path.join(root, name)
+        if os.path.isdir(src) and not os.path.lexists(dst):
+            os.symlink(src, dst)
+        if os.path.islink(dst):
+            _exclude_link(root, name)

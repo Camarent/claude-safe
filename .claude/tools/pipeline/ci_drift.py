@@ -21,7 +21,9 @@ def _norm(cmd):
 
 def _logical(block):
     """-> [command] from the lines of one `run:` block: backslash continuations are joined; comments, heredoc bodies and compound statements (if/for/while/case ... fi/done/esac) are not single commands and are skipped."""
-    out, cur, closers, heredoc = [], "", [], None
+    out: list[str] = []
+    closers: list[str] = []
+    cur, heredoc = "", None
     for raw in block:
         line = raw.strip()
         if heredoc:
@@ -36,17 +38,22 @@ def _logical(block):
         m = HEREDOC_RE.search(cur)
         if m:
             heredoc = m.group(2)
-        tokens = re.split(r"[;\s]+", cur)
-        closer = BLOCK_OPEN.get(tokens[0])
-        if closer:
-            if closer not in tokens[1:]:
-                closers.append(closer)
-        elif closers and tokens[0] == closers[-1]:
-            closers.pop()
-        elif not closers:
-            out.append(cur)
+        _track_block(cur, closers, out)
         cur = ""
     return out
+
+
+def _track_block(cur, closers, out) -> None:
+    """Open or close a compound statement by the first token of `cur`; a plain command outside every compound goes to `out`."""
+    tokens = re.split(r"[;\s]+", cur)
+    closer = BLOCK_OPEN.get(tokens[0])
+    if closer:
+        if closer not in tokens[1:]:
+            closers.append(closer)
+    elif closers and tokens[0] == closers[-1]:
+        closers.pop()
+    elif not closers:
+        out.append(cur)
 
 
 def ci_run_lines(yml_text: str) -> list[str]:
