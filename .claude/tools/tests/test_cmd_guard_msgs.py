@@ -54,7 +54,8 @@ class CmdGuardMessagesTest(unittest.TestCase):
     def test_cd_git_message_names_git_c_form(self):  # C1: cd deny names git -C DIR
         rule, why = cmd_guard.verdict_rule("cd /x && git status")
         self.assertEqual(rule, "cd_git")
-        self.assertIn("Run `git -C /x status` instead", why)
+        self.assertIn("Run `git -C /x status`", why)
+        self.assertIn("instead of `cd /x` before git", why)
 
 
 if __name__ == "__main__":

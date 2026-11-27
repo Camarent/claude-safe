@@ -160,10 +160,11 @@ def serve_why(seg):
 
 OPERATORS = re.compile(r"(\|\||&&|;|\||(?<![<>])&(?!>)|\n)")
 QRUN_MSG = (
-    "One qrun per Bash call. No pipe, `||`, `;`, `&` or newline after qrun.py: a pipe hides the test exit status (a red or empty run looks green) "
+    "Run `cs-qrun -- <command>` alone (a leading `cd dir &&` is fine): one qrun per Bash call. "
+    "No pipe, `||`, `;`, `&` or newline after qrun.py: a pipe hides the test exit status (a red or empty run looks green) "
     "and a second command runs outside qrun. To see the result, run the command bare and read the exit code. "
     f"After qrun, `&&` is allowed only before another qrun call or a read-only command ({', '.join(QRUN_CHAIN_READ_ONLY)}). "
-    "Run `cs-qrun -- <command>` alone (a leading `cd dir &&` is fine); qrun already trims the output."
+    "qrun already trims the output."
 )
 
 
@@ -247,10 +248,10 @@ def cd_git_why(segs):
         elif cd_dir and git_words(seg) and git_words(seg)[1:2] != ["-C"]:
             in_wt = CLEANUP_WT_DIR in Path(os.getcwd()).parts  # the hook's cwd is a job worktree
             return (
-                f"No `cd {cd_dir}` before git: Claude Code denies a cd before a version-control command (untrusted hooks). "
-                f"Run `{git_suggestion(seg, cd_dir)}` instead"
-                + (", or plain `git <args>` (your cwd is already the job worktree)" if in_wt else "")
-                + ". `-c safe.directory` is not needed."
+                f"Run `{git_suggestion(seg, cd_dir)}`"
+                + (" (or plain `git <args>` when your cwd is already the job worktree)" if in_wt else "")
+                + f" instead of `cd {cd_dir}` before git: Claude Code denies a cd before a version-control command (untrusted hooks). "
+                "`-c safe.directory` is not needed."
             )
     return ""
 
@@ -459,13 +460,13 @@ def segments_why(segs):
         seen_assign = seen_assign or assigns
         if TEST_HEAD.match(head) and env and QRUN_HEAD.match(head):
             return (
-                f"qrun applies the test env itself: run `{head}` alone. To set a variable for the test, set it inside the test script, "
-                "or put `env` in a script file and run that file."
+                f"Allowed form: run `{head}` alone, without the env prefix: qrun applies the test env itself. "
+                "To set a variable for the test, set it inside the test script, or put `env` in a script file and run that file."
             )
         if TEST_HEAD.match(head) and env:
             return (
-                "Set the variable inside the test script, or put `env` in a script file and run that file. "
-                f"Then run the test as `python3 -I {TOOLS_DIR}/qrun.py -- <command>`."
+                f"Allowed form: `python3 -I {TOOLS_DIR}/qrun.py -- <command>`, with no variable prefix. "
+                "Set the variable inside the test script, or put `env` in a script file and run that file."
             )
         if TEST_HEAD.match(head) and seen_assign:
             return (
@@ -503,11 +504,6 @@ def verdict(cmd):
     return verdict_rule(cmd)[1]
 
 
-def git_cd_reason(why):
-    """-> True when WHY is the cd-before-git denial (the only one a rewrite can fix)."""
-    return why.startswith("No `cd ")
-
-
 def check():
     try:
         tool_input = json.load(sys.stdin).get("tool_input", {})
@@ -516,7 +512,7 @@ def check():
         return 0
     cmd = cmd if isinstance(cmd, str) else ""
     rule, why = verdict_rule(cmd)
-    if not why or git_cd_reason(why):  # a cd into the cwd is allowed by verdict but still rewritten: Claude Code denies any cd before git
+    if not why or rule == "cd_git":  # a cd into the cwd is allowed by verdict but still rewritten: Claude Code denies any cd before git
         new = rewrite_cd_git(cmd)
         if new and not verdict(new):
             ti = dict(tool_input)
