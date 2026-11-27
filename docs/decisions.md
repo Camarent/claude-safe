@@ -231,13 +231,13 @@ Reason: a usage-limit wait must not hang the driver on one long sleep, and its t
 
 ## Cite verify (retro-m25, cite-verify)
 
-Source: `/home/cam/workspace/kata/.work/m25-ui-impl/orch.jsonl` (1598 lines; some lines are plain strings, so jq prints benign `Cannot index string` errors for them). Filter used (report events of the three tasks whose `why` mentions cite, or whose verdict is BLOCKED):
+Source: `<workspace>/kata/.work/m25-ui-impl/orch.jsonl` (1598 lines; some lines are plain strings, so jq prints benign `Cannot index string` errors for them). Filter used (report events of the three tasks whose `why` mentions cite, or whose verdict is BLOCKED):
 
 ```
-jq -c 'select(type=="object" and .ev=="report" and (.task=="task-25" or .task=="task-36" or .task=="docs-cite-final") and ((.why//"")|test("cite";"i") or .verdict=="BLOCKED")) | {id,task,role,verdict}' /home/cam/workspace/kata/.work/m25-ui-impl/orch.jsonl
+jq -c 'select(type=="object" and .ev=="report" and (.task=="task-25" or .task=="task-36" or .task=="docs-cite-final") and ((.why//"")|test("cite";"i") or .verdict=="BLOCKED")) | {id,task,role,verdict}' <workspace>/kata/.work/m25-ui-impl/orch.jsonl
 ```
 
-- docs-cite-final: 1 cite-related event (a532 script FAIL `docs/modules/extension.md:23 cites ext...`; retry a533 DONE). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
+- docs-cite-final: 1 cite-related event (a532 script FAIL: cite to the missing file `docs/modules/extension.md` (its line 23 was cited) does not hold; retry a533 DONE). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
 - task-25: 5 cite-related events (a458, a460, a463 script FAIL `cite check: a path:line cite does not hold`; a459, a462 dev DONE rework of those cites). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
 - task-36: 2 cite-related events (a659, a662 script FAIL `cite check: a path:line cite does not hold`). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
 
