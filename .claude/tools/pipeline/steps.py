@@ -52,6 +52,7 @@ from .configuration import (
 )
 from .e1 import model_for
 from .plan_files import paths_in, task_type
+from .routing_log import UNLOGGED_WHY, unlogged_routes
 from .stagedir import resolve_stage
 from .steps_docfix import DOCFIX_WHY, repeated_pair
 from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
@@ -113,6 +114,8 @@ def _disp(a, task, rid, role, rework=None, free=False, mine=()):
     }
     if why:
         d["why"] = why
+    if unlogged_routes([{"ev": EV_DISPATCH, **d}]):  # a Sonnet route with no E1 letter: named in the log, never silent
+        d["why"] = UNLOGGED_WHY
     return d
 
 

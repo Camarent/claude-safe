@@ -12,6 +12,7 @@ from .configuration import ESCALATE, EV_DISPATCH, EV_REPORT, HAIKU_DEV_TRIES, MO
 
 E1_LETTER_RE = re.compile(r"E1\([a-d]\)")
 ROUTE_PREFIX = "route:"
+UNLOGGED_WHY = "route: unlogged: Sonnet dispatch with no E1(x) letter"  # the why _disp writes when a Sonnet route is unlogged
 E4_ESCALATES = 2  # dev ESCALATE reports of one task that keep it on Sonnet (E4)
 
 
