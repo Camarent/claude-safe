@@ -206,6 +206,15 @@ Decisions of the pipeline-hardening stage, one section per problem: `docs/decisi
 5. Privacy blocklist: copy `.claude/git/privacy.gitconfig.example` to `.claude/git/privacy.gitconfig` (untracked) and set
    your own regex; optionally add the same regex as repo secret `PRIVACY_BLOCKLIST` for the CI `privacy` job.
 
+### Browser checks: chrome-devtools MCP on the host
+
+`web-tester` and `ux-reviewer` drive Chrome through the `chrome-devtools` MCP server. The MCP server runs as root, and Chrome must not run as root, so the server starts Chrome through a wrapper that switches to the unprivileged `browser` user.
+
+1. Create the `browser` user, then the wrapper `/usr/local/bin/chrome-nonroot`. Its text comes from `wrapper_text` in `.claude/tools/pipeline/extra_tools.py`: it runs `runuser -u browser -- env HOME=<home> ... google-chrome` with `"$@"`.
+2. Register the server with the wrapper as Chrome binary and `--no-sandbox`:
+   `claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest --executablePath /usr/local/bin/chrome-nonroot --no-sandbox`
+3. Check with `claude mcp list`: the `chrome-devtools:` line says `Connected` and contains `--no-sandbox` and `chrome-nonroot`. `browser_ok()` in `extra_tools.py` reads that same line.
+
 ## License
 
 MIT. See `LICENSE` (Copyright (c) 2026 Camarent).
