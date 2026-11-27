@@ -356,6 +356,8 @@ def _audit_step(a, cfg, flags, has_audit_md, small, k, ag, ok, suffix="", why="a
     effort, model = _audit_effort_model(flags, ag, suffix, small)
     if esc:
         model = AUDITOR_ESCALATE_MODEL
+    elif model == MODEL_OPUS:  # Opus from the effort flag: a logged route too (routing_log.unlogged_routes)
+        why = f"route: audit effort high -> opus; {why}"
     return step(
         k + suffix + (AUDIT_ESCALATE_SUFFIX if esc else ""),
         ag,
@@ -518,7 +520,19 @@ def _first_audits(a, cfg, audit_dir, has_ux):
 def _escalated_steps(a, cfg, flags, has_audit_md, small, evs, kinds):
     """-> the one Opus rerun step for each audit in KINDS whose first pass said ESCALATE (none yet run); an Opus rerun never escalates again."""
     return [
-        _audit_step(a, cfg, flags, has_audit_md, small, k, ag, {CLEAN, FIXES}, "", "first pass said ESCALATE (areas left UNKNOWN): rerun once on Opus", True)
+        _audit_step(
+            a,
+            cfg,
+            flags,
+            has_audit_md,
+            small,
+            k,
+            ag,
+            {CLEAN, FIXES},
+            "",
+            "route: auditor ESCALATE -> opus; first pass said ESCALATE (areas left UNKNOWN): rerun once",
+            True,
+        )
         for k, ag in kinds
         if ag in AUDITOR_ESCALATE and last_verdict(evs, k) == ESCALATE
     ]

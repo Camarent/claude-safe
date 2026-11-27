@@ -51,6 +51,9 @@ def _request_action(a, log, name, r, types, n, limit, opus_used, ndisp):
         }
     rid = f"a{ndisp + 1}"  # ids are numbered from ALL dispatches (graph.py), not the heavy ones
     bp = os.path.realpath(os.path.join(a.dir, brief))
+    why = f"requested by file {name}: {brief}"
+    if eff == MODEL_OPUS:  # Opus only behind a logged route (routing_log.unlogged_routes): the lead's reason, or none given
+        why = f"route: lead request {r.get('reason') or 'no reason given'}; {why}"
     return {
         "action": "dispatch",
         "id": rid,
@@ -58,7 +61,7 @@ def _request_action(a, log, name, r, types, n, limit, opus_used, ndisp):
         "model": model,
         "task": None,
         "role": "other",
-        "why": f"requested by file {name}: {brief}",
+        "why": why,
         "prompt": f"Read {os.path.relpath(bp, a.dir)} and do what it says. Write your full report to .work/{a.stage}/reports/report-{rid}.md, then reply with exactly: REPORT {rid}",
     }
 
