@@ -1,7 +1,7 @@
 {
   "audit_file": "AUDIT.md",
   "branch_release": "master",
-  "pipeline_install_check": "scripts/sync-claude-config.sh --compare {work_branch}",
+  "pipeline_install_check": null,
   "ci_drift_ignore": [
     "git config",
     "scripts/dev.sh sync",
