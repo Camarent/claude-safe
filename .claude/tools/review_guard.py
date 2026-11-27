@@ -450,7 +450,10 @@ def segment_verdict(seg, cwd, root, exported=False):
     """-> (deny reason or '', new cwd)."""
     words = seg_words(seg)
     if words is None:
-        return "review_guard: unparsable command; cannot check where it writes.", cwd
+        return (
+            "Run one plain command per Bash call (no unbalanced quotes, no `;` or `&&` chain). review_guard: unparsable command; cannot check where it writes.",
+            cwd,
+        )
     why = redirect_verdict(words, cwd, root)
     if why:
         return why, cwd
