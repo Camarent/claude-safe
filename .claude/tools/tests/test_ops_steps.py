@@ -133,11 +133,17 @@ class OpsStepsTest(unittest.TestCase):
         self.assertTrue(ok, lines)
 
     def _repo_with_doc(self, text):
+        # the base commit holds a neutral line; the stage branch adds `text`, so its hits are on the stage diff
         git(self.d, "init", "-q", "-b", "master")
+        with open(os.path.join(self.d, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write("intro\n")
+        git(self.d, "add", "README.md")
+        git(self.d, "commit", "-q", "-m", "i")
+        git(self.d, "checkout", "-q", "-b", "stage")
         with open(os.path.join(self.d, "README.md"), "w", encoding="utf-8") as fh:
             fh.write(text)
         git(self.d, "add", "README.md")
-        git(self.d, "commit", "-q", "-m", "i")
+        git(self.d, "commit", "-q", "-m", "stage")
 
     def test_public_words_hit_on_public_repo_prints_file_line_and_fails(self):
         self._repo_with_doc("intro\nthe sauce is here\n")
@@ -185,7 +191,7 @@ class OpsStepsTest(unittest.TestCase):
         self.assertIn("stale: README.md\tsauce\tgone line", out.getvalue())
 
     def test_public_words_tracked_symlink_to_outside_file_is_not_a_hit(self):
-        self._repo_with_doc("intro\n")
+        self._repo_with_doc("intro\nmore\n")
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)
         secret = os.path.join(os.path.realpath(outside.name), "secret.txt")

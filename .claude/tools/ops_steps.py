@@ -185,7 +185,7 @@ def _forbidden_words(d):
 
 
 def public_words_gate(d):
-    """-> (ok, lines): on a public repo, every tracked text line with a forbidden word that the baseline does not accept. Per new hit: `file:line: word` and `add to <baseline>: <key line>`. A baseline entry with no hit is `stale: <key>` and does not fail. Fails closed: a scan, baseline read or visibility check that cannot finish is not ok."""
+    """-> (ok, lines): on a public repo, every tracked text line with a forbidden word that the baseline does not accept and that the stage adds (base..HEAD). Per new hit: `file:line: word` and `add to <baseline>: <key line>`. A hit on a line the stage does not add is a base hit: listed once as a non-blocking note. A baseline entry with no hit is `stale: <key>` and does not fail. Fails closed: a scan, baseline read, stage base or visibility check that cannot finish is not ok."""
     words = _forbidden_words(d)
     if not any(w.strip() for w in words):
         return True, []
@@ -200,15 +200,20 @@ def public_words_gate(d):
         skip = project(d).get(PUBLIC_WORDS_SKIP_FILES_KEY, PUBLIC_WORDS_SKIP_FILES_DEFAULT)
         found = public_words.records(repo, words, skip)
         baseline = public_words.read_baseline(os.path.join(repo, baseline_rel))
+        added = public_words.stage_added_lines(repo, project(d))
     except public_words.ScanError as e:
         return False, [str(e)]
     new, stale = public_words.diff(found, baseline)
+    blocking, on_base = public_words.split_on_stage(new, added)
     lines = []
-    for rel, n, w, text in new:
+    for rel, n, w, text in blocking:
         lines.append(f"{rel}:{n}: {w}")
         lines.append(f"add to {baseline_rel}: {public_words.hit_key(rel, w, text)}")
     lines += [f"stale: {key}" for key in stale]
-    return not new, lines
+    if on_base:
+        lines.append(f"base hits: {len(on_base)} on lines the stage does not add (not blocking)")
+        lines += [f"base: {rel}:{n}: {w}" for rel, n, w, _text in on_base]
+    return not blocking, lines
 
 
 def main(argv=None):
