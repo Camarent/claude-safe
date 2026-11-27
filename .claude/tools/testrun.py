@@ -204,11 +204,11 @@ def _cite_findings(cwd, d, report, diff):
     return "\n".join(["FAIL cite check: a path:line cite does not hold:", *msgs, *bare]), ""
 
 
-def _docs_impact_findings(cwd, d, diff):
-    """-> (FAIL note naming each doc the job diff leaves stale (docs_impact.check), skip note). Off when the `docs_impact_gate` key of pipeline.json is false or `docs_dir` is empty (no docs folder, no root walk). No job diff -> no finding, the skip note NO_DIFF_NOTE."""
+def _docs_impact_findings(cwd, d, stage, diff):
+    """-> (FAIL note naming each doc the job diff leaves stale (docs_impact.check), skip note). Off when the `docs_impact_gate` key of pipeline.json is false for `stage` (a dict gives each stage its own switch, docs_impact.gate_on) or `docs_dir` is empty (no docs folder, no root walk). No job diff -> no finding, the skip note NO_DIFF_NOTE."""
     cfg = project(d)
     docs = docs_dir_of(cfg)
-    if not cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT) or not docs:
+    if not docs_impact.gate_on(cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT), stage) or not docs:
         return "", ""
     if diff is None:
         return "", NO_DIFF_NOTE
@@ -281,7 +281,7 @@ def _diff_findings(cwd, d, stage, task, report, diff_fn):
     cite, cite_note = _cite_findings(cwd, d, report, diff)
     if cite:
         return cite, []
-    docs, docs_note = _docs_impact_findings(cwd, d, diff)
+    docs, docs_note = _docs_impact_findings(cwd, d, stage, diff)
     if docs:
         return docs, []
     empty, empty_note = _empty_test_findings(cwd, d, diff)

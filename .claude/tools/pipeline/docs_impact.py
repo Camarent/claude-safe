@@ -10,10 +10,12 @@ from pathlib import Path
 from . import cite_check
 from .configuration import (
     DOCS_IMPACT_DEF_RE,
+    DOCS_IMPACT_DEFAULT,
     DOCS_IMPACT_EXEMPT_KEY,
     DOCS_IMPACT_GENERIC_SYMBOLS,
     DOCS_IMPACT_HEADER_RE,
     DOCS_IMPACT_PATH_RE,
+    DOCS_IMPACT_STAGE_DEFAULT_KEY,
     DOCS_IMPACT_SYMBOL_MIN,
     DOCS_IMPACT_TICK_RE,
 )
@@ -48,6 +50,13 @@ def doc_files(worktree, docs_dir) -> list[str]:
     for folder, _dirs, files in os.walk(root):
         out.extend(Path(os.path.relpath(os.path.join(folder, f), worktree)).as_posix() for f in files if f.endswith(cite_check.CITE_MD_EXTENSIONS))
     return sorted(out)
+
+
+def gate_on(setting, stage) -> bool:
+    """-> whether the docs impact check runs for `stage`. A bool is the switch of every stage; a dict {"default": bool, <stage>: bool} gives a stage its own switch and the others the `default` one (DOCS_IMPACT_DEFAULT when absent)."""
+    if not isinstance(setting, dict):
+        return bool(setting)
+    return bool(setting.get(stage, setting.get(DOCS_IMPACT_STAGE_DEFAULT_KEY, DOCS_IMPACT_DEFAULT)))
 
 
 def _doc_text(worktree, doc):

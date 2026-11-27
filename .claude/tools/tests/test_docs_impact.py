@@ -85,10 +85,10 @@ class TestDocsImpactCheck(unittest.TestCase):
 
 
 class TestDocsImpactGate(unittest.TestCase):
-    def run_task(self, diff, switch=None, docs=None):
+    def run_task(self, diff, switch=None, docs=None, stage="s"):
         d = tracked_mkdtemp()
-        os.makedirs(f"{d}/.work/s")
-        with open(f"{d}/.work/s/task-1.md", "w") as f:
+        os.makedirs(f"{d}/.work/{stage}")
+        with open(f"{d}/.work/{stage}/task-1.md", "w") as f:
             f.write("# t\nTest: true\n")
         os.makedirs(f"{d}/docs")
         for rel, text in (docs or {"docs/m.md": "see a.py for the parser\n"}).items():
@@ -101,7 +101,7 @@ class TestDocsImpactGate(unittest.TestCase):
         def green(argv, **_kw):
             return subprocess.CompletedProcess(argv, 0, "", "")
 
-        return testrun.run("s", "task-1", d, runner=green, scan=lambda *_a: [], diff_fn=lambda *_a: diff)
+        return testrun.run(stage, "task-1", d, runner=green, scan=lambda *_a: [], diff_fn=lambda *_a: diff)
 
     def test_stale_doc_is_fail_with_docs_impact_note(self):
         verdict, note = self.run_task(added_file("a.py"))
@@ -113,3 +113,33 @@ class TestDocsImpactGate(unittest.TestCase):
         verdict, note = self.run_task(added_file("a.py"), switch=False)
         self.assertEqual(verdict, testrun.DONE)
         self.assertNotIn("docs impact", note)
+
+    def test_dict_switch_on_for_named_stage_fails(self):
+        verdict, note = self.run_task(added_file("a.py"), switch={"default": False, "s": True}, stage="s")
+        self.assertEqual(verdict, testrun.FAIL)
+        self.assertIn("FAIL docs impact:", note)
+
+    def test_dict_default_on_covers_unnamed_stage(self):
+        verdict, note = self.run_task(added_file("a.py"), switch={"default": True, "s": False}, stage="other")
+        self.assertEqual(verdict, testrun.FAIL)
+        self.assertIn("FAIL docs impact:", note)
+
+    def test_dict_switch_off_named_stage_skips_check_even_with_default_on(self):
+        verdict, note = self.run_task(added_file("a.py"), switch={"default": True, "s": False}, stage="s")
+        self.assertEqual(verdict, testrun.DONE)
+        self.assertNotIn("docs impact", note)
+
+
+class TestGateOn(unittest.TestCase):
+    def test_bool_is_the_switch_of_every_stage(self):
+        self.assertTrue(docs_impact.gate_on(True, "any"))
+        self.assertFalse(docs_impact.gate_on(False, "any"))
+
+    def test_dict_names_stages_and_default_covers_the_rest(self):
+        setting = {"default": False, "a": True}
+        self.assertTrue(docs_impact.gate_on(setting, "a"))
+        self.assertFalse(docs_impact.gate_on(setting, "b"))
+
+    def test_dict_without_default_is_on_for_unnamed_stage(self):
+        self.assertTrue(docs_impact.gate_on({"a": False}, "b"))
+        self.assertFalse(docs_impact.gate_on({"a": False}, "a"))

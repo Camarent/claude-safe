@@ -33,6 +33,12 @@
       "cmd": "scripts/dev.sh ccn"
     }
   ],
+  "gates_merge": [
+    {
+      "name": "lsp-e2e",
+      "cmd": "scripts/dev.sh test test_lsp_e2e.py"
+    }
+  ],
   "gates_final": [
     {
       "name": "cov",
