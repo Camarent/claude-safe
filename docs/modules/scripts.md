@@ -27,6 +27,9 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - Ledger figures (`cs-ledger`, `.claude/tools/retro/ledger.py`): the lead part covers a session only when its transcript has a `subagents/` dir next to it. Headless driver sessions have no `subagents/` dir: they are counted only with `--metrics`, which takes their ids from `metrics.jsonl`; without it they are left out. The `LEAD-COST` lines cover the lead session by stage window. Log layout and session ids: `docs/headless-session-logs.md`.
 - `.claude/tools/pipeline/docs_impact.py` - stage gate: a doc that cites a file or top-level def the job diff changed must change too; `check` at `.claude/tools/pipeline/docs_impact.py:72`.
 - `.claude/tools/pipeline/entry.py` - shared entry helpers: the status-line formatter, the shared run flags, the open-phase resolver and the feature-level BLOCKED copy; `write_blocked` writes it.
+- `.claude/tools/pipeline/gitx.py` - `gitx.ignored(repo, paths)`: the paths git ignores (one `check-ignore` call per path; tracked and outside-repo paths are not reported). Shared by the plan checks and the callers that used to copy it.
+- `.claude/tools/pipeline/task_text.py` - the shared task-file field parser: `field(text, name)` and `lines(text, *names)` read `NAME:` lines, skipping fenced code blocks. Used by brieflint and the plan checks.
+- `.claude/tools/pipeline/plan_problem.py` - `Problem(kind, level, text)`: a str equal to its text that also carries its `kind:` token and level. `KIND_LEVELS` maps each kind to `ERROR` or `WARN`; an unknown kind is an error.
 - `.claude/tools/pipeline/empty_tests.py` - stage gate: lists test functions in a Python test file that assert nothing; `find` at `.claude/tools/pipeline/empty_tests.py:46`.
 
 ## Invariants and gotchas
@@ -34,6 +37,16 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - A worktree's `.uv` is a symlink to the main checkout's venv; `dev.sh sync` refuses there (`scripts/dev.sh:19`).
 - `release.sh` scans a copy of tracked and untracked-but-not-ignored files, not the working dir, so ignored data is not walked.
 - `host_agents.py` imports `.claude/tools/pipeline/cmdindex.py` (`scripts/host_agents.py:16`); the wrappers must exist (`gen-bin`) or it stops with an error.
+
+## Plan check kinds (stricter checks, M25 retro)
+Each problem line starts with its kind token. The level comes from `KIND_LEVELS` in `plan_problem.py`: `error` fails `cs-plan check`, `warn` never does. Examples:
+- `ignored-done:` (error): a path on a task's Done, Goal or Test line is git-ignored, so the job never commits it. Example: `ignored-done: T3: path \`build/out.log\` on a Done, Goal or Test line is git-ignored`. Checked by `plan_outputs.py` via `gitx.ignored`.
+- `cite-short:` (error): a bare file name cite (no directory) resolves to a file in a subdirectory or to 2+ files of the tree. Example: `cite-short: loader.py has no directory and the tree has pipeline/loader.py, tools/loader.py; cite the full path`. Checked by `plan_check_task.py`.
+- `research-hint:` (warn): a task's Goal or Done names a fact the repo may lack and the task depends on no research task. Example: `research-hint: T7: its Goal or Done needs a fact the repo may lack: add a \`Type: research\` task that finds it and depend on it`. Checked by `plan_research_hint.py`.
+- `carried-notes:` (error): a bullet in the later-notes file names a path of this stage but no `- task-N ...` or not-needed line in `## Carried`. Example: `carried-notes: \`pipeline/loader.py\` names a path of this stage: add a \`- task-N ...\` or \`- <not-needed> reason\` line to \`## Carried\``. Checked by `plan_check.py`.
+- `testcmd:` (error, was a warning): a task `Test:` line runs bare `pytest` or `python -m pytest` while the project names its test command (`test_command_hint`). Example: `testcmd: T4: Test runs bare \`pytest\` but the project's test command is \`<hint>\`: use that, or the runner the project notes name`. Checked by `plan_testcmd.py`.
+
+The brieflint pre-flight (`.claude/tools/brieflint.py`) also rejects a `Test:` line with `;` or `|`, a `&&` chain whose later segment is not `cs-qrun --` or a read-only command, or a first segment that is not `cs-qrun --`.
 
 ## Depends on / used by
 - Depends on: `.claude/tools/ptest.py`, `.claude/tools/tests/`, `.claude/tools/pipeline/cmdindex.py`, `Dockerfile`, `profiles/`, the `claude-safe:rust` image (docker), `uv`, `flock`, `git`.
