@@ -42,5 +42,6 @@
   "worktrees": true,
   "public_forbidden_words": [
     "/home/"
-  ]
+  ],
+  "docs_impact_gate": false
 }
