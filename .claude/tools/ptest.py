@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
-from pipeline.configuration import JOB_BRANCH_PREFIX
+from pipeline.configuration import DEFAULT_WORKSPACE, JOB_BRANCH_PREFIX, MERGE_ONLY_TESTS_KEY, project
 
 ENV_FAIL_ON_SKIP = "CI"  # set to 1: a skipped test fails the run (skips hide gaps; the container image has every tool)
 TAIL_LINES = 30  # output lines shown under a FAIL line
@@ -101,10 +101,17 @@ def keep_failure_log(name, text):
     return path
 
 
-def select_files(tests_dir, patterns):
-    """Test file names matching the patterns, largest first: they tend to be the slowest, so the longest job starts early instead of last."""
+def merge_only_tests():
+    """-> test file names only the merge gate runs (configuration merge_only_tests). A PATTERN that names one selects it."""
+    return project(DEFAULT_WORKSPACE)[MERGE_ONLY_TESTS_KEY]
+
+
+def select_files(tests_dir, patterns, merge_only=()):
+    """Test file names matching the patterns, largest first: they tend to be the slowest, so the longest job starts early instead of last.
+    A merge-only file is left out unless a pattern names it exactly."""
     # A pattern given as a repo path (.claude/tools/tests/test_x.py) selects by its file name: the tests dir is flat.
-    names = sorted({f.name for pat in patterns for f in Path(tests_dir).glob(Path(pat).name)})
+    named = {Path(pat).name for pat in patterns}
+    names = sorted({f.name for pat in patterns for f in Path(tests_dir).glob(Path(pat).name) if f.name not in merge_only or f.name in named})
     names.sort(key=lambda n: -os.path.getsize(os.path.join(tests_dir, n)))
     return names
 
@@ -211,7 +218,7 @@ def main(argv=None):
     ap.add_argument("--cov", action="store_true", help="measure coverage (parallel data files, combined, reported against pyproject fail_under)")
     ap.add_argument("patterns", nargs="*", default=["test_*.py"])
     a = ap.parse_args(argv)
-    names = select_files(a.dir, a.patterns)
+    names = select_files(a.dir, a.patterns, merge_only_tests())
     if not names:
         print("ptest: no test files match")
         return 1
