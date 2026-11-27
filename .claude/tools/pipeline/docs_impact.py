@@ -21,6 +21,18 @@ from .configuration import (
 )
 
 
+def _def_name(text):
+    """The def or class name `text` starts with, or None."""
+    d = DOCS_IMPACT_DEF_RE.match(text)
+    return d[1] if d else None
+
+
+def _header_def(ln):
+    """The def or class name of a hunk header (its section text), or None."""
+    m = DOCS_IMPACT_HEADER_RE.match(ln)
+    return _def_name(m[1]) if m else None
+
+
 def _changes(diff_text) -> tuple[set[str], set[str]]:
     """-> (the paths the diff adds, modifies, deletes or renames; the top-level def or class names of its changed hunks, names of at least DOCS_IMPACT_SYMBOL_MIN characters)."""
     paths: set = set()
@@ -31,16 +43,14 @@ def _changes(diff_text) -> tuple[set[str], set[str]]:
             cur, hunk = "", False
         elif ln.startswith("@@"):
             hunk = True
-            if (m := DOCS_IMPACT_HEADER_RE.match(ln)) and (d := DOCS_IMPACT_DEF_RE.match(m[1])):
-                syms.add(d[1])
+            syms.add(_header_def(ln))
         elif hunk:
-            if ln[:1] in ("+", "-") and (d := DOCS_IMPACT_DEF_RE.match(ln[1:])):
-                syms.add(d[1])
+            syms.add(_def_name(ln[1:]) if ln[:1] in ("+", "-") else None)
         else:
             cur = cite_check._header_file(ln, cur, paths)
             if cur:
                 paths.add(cur)
-    return paths, {s for s in syms if len(s) >= DOCS_IMPACT_SYMBOL_MIN and s not in DOCS_IMPACT_GENERIC_SYMBOLS}
+    return paths, {s for s in syms if s and len(s) >= DOCS_IMPACT_SYMBOL_MIN and s not in DOCS_IMPACT_GENERIC_SYMBOLS}
 
 
 def doc_files(worktree, docs_dir) -> list[str]:

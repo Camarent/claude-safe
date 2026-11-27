@@ -65,13 +65,21 @@ def _red_gate_reports(mine):
     return sum(1 for e in mine if e["ev"] == EV_REPORT and e["verdict"] == FAIL and e["id"] in ids)
 
 
+def _last_dev_escalates(mine):
+    """The last dev report of the task is an ESCALATE."""
+    dev_reports = [e for e in mine if e["ev"] == EV_REPORT and e["role"] == "dev"]
+    return bool(dev_reports) and dev_reports[-1]["verdict"] == ESCALATE
+
+
+def _sonnet_e1_dispatched(mine):
+    """A Sonnet dev was dispatched for an E1 route: the route is sticky."""
+    return any(e["ev"] == EV_DISPATCH and e["role"] == "dev" and e["model"] == MODEL_SONNET and (e.get("why") or "").startswith("E1(") for e in mine)
+
+
 def _dev_event(mine):
     if _red_gate_reports(mine) >= HAIKU_DEV_TRIES or _failed_review_rounds(mine) > HAIKU_REWORK_TRIES:
         return "a"
-    dev_reports = [e for e in mine if e["ev"] == EV_REPORT and e["role"] == "dev"]
-    last_escalates = bool(dev_reports) and dev_reports[-1]["verdict"] == ESCALATE
-    sticky = any(e["ev"] == EV_DISPATCH and e["role"] == "dev" and e["model"] == MODEL_SONNET and (e.get("why") or "").startswith("E1(") for e in mine)
-    return "b" if last_escalates or sticky else None
+    return "b" if _last_dev_escalates(mine) or _sonnet_e1_dispatched(mine) else None
 
 
 def _reviewer_event(mine):

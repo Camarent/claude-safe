@@ -163,45 +163,71 @@ def slice_chars(text) -> int:
     return LEAD_SLICE_CHARS_WITH_PATTERN if PATTERN_RE.search(text) and PREDICTED_RE.search(text) else LEAD_SLICE_CHARS
 
 
+def _unique_leads(leads_text):
+    """-> (path, start, end) of each `path:START-END` lead, in order, without repeats or reversed ranges."""
+    seen: set = set()
+    for line in leads_text.splitlines():
+        m = LEAD_RE.match(line)
+        if not m:
+            continue
+        path, start = m.group(1), int(m.group(2))
+        end = int(m.group(3) or start)
+        if end < start or (path, start, end) in seen:
+            continue
+        seen.add((path, start, end))
+        yield path, start, end
+
+
+def _lead_body(root, path, start, end, cap):
+    """The code lines of one lead, or None when the file cannot be read."""
+    try:
+        return _lead_lines(root, path, start, end, cap)
+    except (OSError, ValueError):
+        return None
+
+
+def _fit_block(block, out, max_chars):
+    """-> (the block cut to the room left after `out`, or None when no room; True when the block was cut)."""
+    room = max_chars - len("\n".join(out)) - (1 if out else 0)
+    if room <= 0:
+        return None, True
+    if len(block) <= room:
+        return block, False
+    cut = block[:room].rsplit("\n", 1)[0]
+    return (cut, True) if "\n" in cut else (None, True)
+
+
 def lead_slices(d, leads_text, max_slices=4, cap=40, max_chars=LEAD_SLICE_CHARS) -> str:
     """Real code lines under the `path:START-END` leads. Read fresh on every call (no cache). "" when nothing. Never raises."""
     try:
         root = os.path.realpath(d)
         out: list = []
-        seen: set = set()
-        for line in leads_text.splitlines():
+        for path, start, end in _unique_leads(leads_text):
             if len(out) >= max_slices:
                 break
-            m = LEAD_RE.match(line)
-            if not m:
-                continue
-            path, start = m.group(1), int(m.group(2))
-            end = int(m.group(3) or start)
-            if end < start or (path, start, end) in seen:
-                continue
-            seen.add((path, start, end))
-            try:
-                body = _lead_lines(root, path, start, end, cap)
-            except (OSError, ValueError):
-                body = None
+            body = _lead_body(root, path, start, end, cap)
             if not body:
                 continue
-            block = "\n".join([f"{path}:{start}-{end}", *body])
-            joined = "\n".join(out)
-            room = max_chars - len(joined) - (1 if out else 0)
-            if room <= 0:
-                break
-            if len(block) > room:
-                block = block[:room].rsplit("\n", 1)[0]
-                if "\n" not in block:
-                    break
+            block, cut = _fit_block("\n".join([f"{path}:{start}-{end}", *body]), out, max_chars)
+            if block is not None:
                 out.append(block)
+            if cut:
                 break
-            out.append(block)
         return "\n".join(out)
     except Exception as ex:
         swallowed("steps.lead_slices", ex)
         return ""
+
+
+def _led_files(root, leads_text, text) -> list[str]:
+    """The existing files the leads and the task text name, first six, without repeats."""
+    led = [m[1] for m in (LEAD_RE.match(line) for line in leads_text.splitlines()) if m]
+    cands = [*led, *paths_in(text)[:4]]
+    files: list[str] = []
+    for p in cands:
+        if p not in files and os.path.isfile(os.path.join(root, p)):
+            files.append(p)
+    return files[:6]
 
 
 def related_files(d, leads_text, text) -> str:
@@ -211,15 +237,7 @@ def related_files(d, leads_text, text) -> str:
         from search.leads_docs import with_docs, with_tests
 
         root = os.path.realpath(d)
-        files = []
-        for line in leads_text.splitlines():
-            m = LEAD_RE.match(line)
-            if m and m.group(1) not in files and os.path.isfile(os.path.join(root, m.group(1))):
-                files.append(m.group(1))
-        for p in paths_in(text)[:4]:
-            if p not in files and os.path.isfile(os.path.join(root, p)):
-                files.append(p)
-        files = files[:6]
+        files = _led_files(root, leads_text, text)
         if not files:
             return ""
         extra = [p for p in with_tests(root, with_docs(root, files)) if p not in files][:8]
@@ -349,10 +367,15 @@ def docs_only(diff) -> bool:
     return bool(names) and all(any(fnmatch.fnmatch(n, g) for g in GATE_SKIP_PATHS) for n in names)
 
 
+def _test_run_ids(evs) -> set:
+    """Ids of the driver test-run script dispatches among the events."""
+    return {e["id"] for e in evs if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith("test run")}
+
+
 def gate_output(a, task) -> str:
     """Tail of the report of the task's last driver test run ("" when none ran or the file is gone): the reviewer reads it in the brief instead of rerunning the gate."""
     evs = [e for e in (getattr(a, "orch_events", None) or []) if e.get("task") == task["id"]]
-    ids = {e["id"] for e in evs if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith("test run")}
+    ids = _test_run_ids(evs)
     rep = next((e for e in reversed(evs) if e["ev"] == EV_REPORT and e.get("id") in ids and e.get("file")), None)
     return read_text(rep["file"]).strip()[-GATE_OUTPUT_CHARS:] if rep else ""
 

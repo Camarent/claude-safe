@@ -63,16 +63,25 @@ def records(repo, words, skip=()) -> list[tuple[str, int, str, str]]:
         # a tracked symlink names a target outside the repo: it is not repo text, so it is not scanned
         if os.path.islink(os.path.join(repo, rel)):
             continue
-        try:
-            with open(os.path.join(repo, rel), "rb") as f:
-                head = f.read(PUBLIC_BINARY_SNIFF_BYTES)
-                if b"\0" in head:
-                    continue
-                raw = head + f.read()
-        except OSError:
-            raise ScanError(f"scan failed: cannot read tracked file {rel}") from None
-        for n, text in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
-            for w in needles:
-                if re.search(re.escape(w), text, re.IGNORECASE):
-                    found.append((rel, n, w, text))
+        lines = _text_lines(repo, rel)
+        if lines is not None:
+            found.extend(_hits(rel, lines, needles))
     return found
+
+
+def _text_lines(repo, rel) -> list[str] | None:
+    """The lines of a tracked file, or None for a binary file (NUL byte in the first PUBLIC_BINARY_SNIFF_BYTES). Raises ScanError when it cannot be read."""
+    try:
+        with open(os.path.join(repo, rel), "rb") as f:
+            head = f.read(PUBLIC_BINARY_SNIFF_BYTES)
+            if b"\0" in head:
+                return None
+            raw = head + f.read()
+    except OSError:
+        raise ScanError(f"scan failed: cannot read tracked file {rel}") from None
+    return raw.decode("utf-8", errors="replace").splitlines()
+
+
+def _hits(rel, lines, needles) -> list[tuple[str, int, str, str]]:
+    """-> (file, line, word, text) for each line that contains a needle, case-insensitive."""
+    return [(rel, n, w, text) for n, text in enumerate(lines, 1) for w in needles if re.search(re.escape(w), text, re.IGNORECASE)]
