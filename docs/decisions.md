@@ -242,3 +242,14 @@ jq -c 'select(type=="object" and .ev=="report" and (.task=="task-25" or .task=="
 - task-36: 2 cite-related events (a659, a662 script FAIL `cite check: a path:line cite does not hold`). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
 
 Verdict on retro report b (section B, row cite check, 0 BLOCKED rows): the 0-BLOCKED count holds. The claim of zero cite causes does not hold: 6 cite FAIL events were caught and retried (5 script `cite check` FAIL plus the docs-cite-final FAIL, all listed above). Cite checks fail, they do not block, so the row count is right and the cause count is wrong.
+
+## Denial messages and routing log (retro-m25, phase 04-denials-routing)
+
+Reason: a denied command must tell the agent the allowed form at once, and an Opus or off-rule Sonnet dispatch must be visible in the log without reading every event.
+
+- Denial message rule (`b642418`): the first line of every guard deny reason names the allowed form (`model_guard.py`, `review_guard.py`, `write_guard.py`); write_guard also names the worktree path. No new deny rules were added; the five denial forms stay as they are.
+- Retro denials fix line (`8ce37ad`): `retro/denials.py` prints a fix line for the multi-operation and classifier families, so the retro report names the change to make, not only the count.
+- Route why (`775db1c`): every Opus dispatch logs its why as `route: <reason>` (auditor rerun, effort-high audit, lead request). A Sonnet dispatch logs its E1 letter (`E1(a)` to `E1(d)`).
+- Routing log checks (`pipeline/routing_log.py`, fb6b78c): `unlogged_routes` lists a Sonnet or Opus dispatch with neither an E1 letter nor a `route:` prefix; `off_rule` lists an E1(a) dev dispatch before its Haiku tries and an E1(b) dev dispatch before its dev ESCALATE reports (E4). Both read the task's own events in `orch.jsonl`.
+- Docs: `practices/orch-pipeline.md` "Rounds and fix routes" names `routing_log.py` and the `route:` why; `ORCHESTRATOR.md` "Models: Haiku first" has one line on what the off-rule check flags.
+- Phase 05 note: `docs/modules/pipeline.md` (created by phase 05) lists `routing_log.py`. This phase does not touch it.
