@@ -232,6 +232,7 @@ from .layout import (  # noqa: F401  (re-export: the facade keeps every name imp
     FETCH_FAIL_LINE,
     FETCH_FAIL_MARKS,
     FETCH_RETRIES,
+    LATER_NOTES_PATH,
     METRICS_LOG,
     MISSING_BINARIES_KEY,
     MISSING_BINARY_MARK,

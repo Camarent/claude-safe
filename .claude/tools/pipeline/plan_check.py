@@ -23,6 +23,7 @@ from .configuration import (
     FINAL_GATES_KEY,
     GATE_LABELS,
     GATES_KEY,
+    LATER_NOTES_PATH,
     MERGE_GATES_KEY,
     PLAN_FILE,
     PUBLISH_BUILD,
@@ -517,13 +518,15 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
 
 
 def _carried_problems(d, ents):
-    """A phase after the first: TASKS.md needs a `## Carried from earlier phases` section; each bullet in it names a task of this stage or says `not needed: reason`."""
+    """A phase after the first: TASKS.md needs a `## Carried from earlier phases` section; each bullet in it names a task of this stage or says `not needed: reason`.
+    The later-notes file (workspace root) adds: each of its bullets naming a path of this stage needs such a bullet too (`carried-notes:`)."""
     if not is_later_phase(tasks_path(d)):
         return []
     heading = f"## {CARRIED_SECTION}"
     lines = Path(tasks_path(d)).read_text(encoding="utf-8", errors="replace").splitlines()
     if heading not in lines:
-        return [f"{heading} section missing: list each item carried from earlier phases as a task or `{CARRIED_NOT_NEEDED} reason`"]
+        missing = f"{heading} section missing: list each item carried from earlier phases as a task or `{CARRIED_NOT_NEEDED} reason`"
+        return [missing, *_later_notes_problems(d, ents, [])]
     body = []
     for x in lines[lines.index(heading) + 1 :]:
         if x.startswith("## "):
@@ -531,16 +534,35 @@ def _carried_problems(d, ents):
         if x.startswith("- "):
             body.append(x)
     if not body:
-        return [f"{heading} section has no items: write one `- task-N ...` or `- {CARRIED_NOT_NEEDED} reason` line per carried item"]
+        empty = f"{heading} section has no items: write one `- task-N ...` or `- {CARRIED_NOT_NEEDED} reason` line per carried item"
+        return [empty, *_later_notes_problems(d, ents, [])]
     ids = {e["id"] for e in ents}
-    probs = []
-    for x in body:
-        named = {t for t in re.findall(r"task-\d+", x) if t in ids}
-        if CARRIED_NOT_NEEDED in x and x.split(CARRIED_NOT_NEEDED, 1)[1].strip():
-            continue
-        if not named:
-            probs.append(f"{heading}: `{x[2:]}` is neither a task of this stage nor `{CARRIED_NOT_NEEDED} reason`")
-    return probs
+    probs = [f"{heading}: `{x[2:]}` is neither a task of this stage nor `{CARRIED_NOT_NEEDED} reason`" for x in body if not _carried_ok(x, ids)]
+    return probs + _later_notes_problems(d, ents, [x for x in body if _carried_ok(x, ids)])
+
+
+def _carried_ok(x, ids) -> bool:
+    """True when a Carried bullet X names a task of the stage (IDS) or says `not needed: reason`."""
+    if CARRIED_NOT_NEEDED in x and x.split(CARRIED_NOT_NEEDED, 1)[1].strip():
+        return True
+    return any(t in ids for t in re.findall(r"task-\d+", x))
+
+
+def _later_notes_problems(d, ents, ok_bullets) -> list[str]:
+    """Each bullet of the later-notes file that names a path (or its file name) of this stage's tasks needs one valid Carried bullet (OK_BULLETS); the file absent gives none.
+    The match is count-based: Carried bullets name no path, so N valid bullets cover N notes items and the rest are flagged."""
+    path = os.path.join(_workspace(d), LATER_NOTES_PATH)
+    if not os.path.isfile(path):
+        return []
+    items = [x for x in Path(path).read_text(encoding="utf-8", errors="replace").splitlines() if x.startswith("- ")]
+    paths = {p for e in ents for p in task_paths(d, e["id"]) if p}
+    # whole-token match of the path or its file name, never a substring (`a` must not match `data`)
+    names = {n for p in paths for n in (p, os.path.basename(p)) if n}
+    named = [x for x in items if any(re.search(rf"(?<![\w.-]){re.escape(n)}(?![\w-])", x) for n in names)]
+    return [
+        f"carried-notes: `{x[2:]}` names a path of this stage: add a `- task-N ...` or `- {CARRIED_NOT_NEEDED} reason` line to `## {CARRIED_SECTION}`"
+        for x in named[len(ok_bullets) :]
+    ]
 
 
 GATE_RE = re.compile(r"^gate:\s*(uncertainty gate|owner step or real-data run|separate repo|30-task cap)\b", re.I)

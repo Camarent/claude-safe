@@ -38,6 +38,7 @@ PHASES_DIR, REPORTS_DIR, AUDITS_DIR, BASE_FILE = (
 )  # feature folder layout; BASE_FILE = work branch head at a phase start
 CARRIED_SECTION = "Carried from earlier phases"  # TASKS.md heading of a phase after the first: each earlier item is a task line or a `not needed: reason` line
 CARRIED_NOT_NEEDED = "not needed:"
+LATER_NOTES_PATH = ".notes/later.md"  # the later-notes file in the workspace root (git-ignored): its bullets naming a stage's paths need a Carried line
 DEVIATION_TAG, DOCS_STALE_TAG = "DEVIATION", "DOCS-STALE"  # line starts in reports and audits that the next phase must read
 DIGEST_LINES_CAP = 40  # open-item lines (FAIL, DEVIATION, DOCS-STALE, open FIXES) kept in a phase digest
 DIGEST_TASKS_CAP = 60  # earlier task lines kept in a phase digest

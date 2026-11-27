@@ -49,7 +49,7 @@ KIND_LEVELS = {
     "testcmd": ERROR,  # a bare pytest Test line where the project names its test command (was a warning)
     "ignored-done": ERROR,  # planned: task-5
     "cite-short": ERROR,  # planned: task-7
-    "carried-notes": ERROR,  # planned: task-11
+    "carried-notes": ERROR,
 }
 
 KIND_RE = re.compile(r"([a-z][a-z-]*):")  # a problem line starts with this token
