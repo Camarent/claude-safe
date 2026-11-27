@@ -33,32 +33,39 @@ def _json(path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+_LOWER = {">=": 0, ">": 1}
+_UPPER = {"<": 0, "<=": 1}
+
+
+def _alt_majors(alt) -> set[int] | None:
+    """Majors one `||` alternative admits; None when a token is unparsed or the set is open-ended."""
+    lo = hi = exact = None
+    for tok in alt.split():
+        m = TOKEN.fullmatch(tok)
+        if not m:
+            return None
+        op, n = m.group(1), int(m.group(2))
+        if op in _LOWER:
+            lo = n + _LOWER[op]
+        elif op in _UPPER:
+            hi = n + _UPPER[op]
+        else:
+            exact = n
+    if exact is not None and lo is None and hi is None:
+        return {exact}
+    if lo is not None and hi is not None:
+        return set(range(lo, hi))
+    return None  # open-ended or empty comparator: not a bounded major set
+
+
 def majors(rng) -> set[int] | None:
     """Major versions a semver range admits: '^5' -> {5}, '>=4 <6' -> {4, 5}, '5 || 6' -> {5, 6}. None when unparsed."""
     out: set[int] = set()
     for alt in rng.split("||"):
-        lo = hi = exact = None
-        for tok in alt.split():
-            m = TOKEN.fullmatch(tok)
-            if not m:
-                return None
-            op, n = m.group(1), int(m.group(2))
-            if op == ">=":
-                lo = n
-            elif op == ">":
-                lo = n + 1
-            elif op == "<":
-                hi = n
-            elif op == "<=":
-                hi = n + 1
-            else:
-                exact = n
-        if exact is not None and lo is None and hi is None:
-            out.add(exact)
-        elif lo is not None and hi is not None:
-            out.update(range(lo, hi))
-        else:
-            return None  # open-ended or empty comparator: not a bounded major set
+        got = _alt_majors(alt)
+        if got is None:
+            return None
+        out |= got
     return out or None
 
 

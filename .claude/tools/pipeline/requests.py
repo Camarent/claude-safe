@@ -73,17 +73,8 @@ def _load_request(p):
         return {}
 
 
-def take_request(a, w, log) -> dict | None:
-    rd = os.path.join(w, "requests")
-    if not os.path.isdir(rd):
-        return None
-    types = agent_types()
-    evs = read_jsonl(log)
-    n = heavy_count(evs)  # Sonnet/Opus dispatches only: Haiku and scripts do not use up the lead's budget
-    limit = stage_limit(os.path.join(w, TASKS_FILE), project(a.dir))
-    opus_used = sum(1 for e in evs if e["ev"] == EV_DISPATCH and e.get("model") == MODEL_OPUS)
-    ndisp = sum(1 for e in evs if e["ev"] == EV_DISPATCH)
-    rejected = {e.get("request"): e.get("mtime") for e in evs if e["ev"] == "reject"}  # name -> mtime of the file when it was rejected
+def _valid_requests(a, w, rd, log, types, rejected):
+    """Yield (name, path, request) of each request file that is valid and not rejected since its last edit; a bad one stays in place and its reject is logged once per edit."""
     for name in sorted(os.listdir(rd)):
         p = os.path.join(rd, name)
         if not name.endswith(".json") or not os.path.isfile(p):
@@ -96,6 +87,21 @@ def take_request(a, w, log) -> dict | None:
         if why:  # a bad request stays where it is (only an accepted one moves to done/); the reject is logged once per edit
             append_event(log, {"ev": "reject", "request": name, "why": why, "mtime": mtime})
             continue
+        yield name, p, r
+
+
+def take_request(a, w, log) -> dict | None:
+    rd = os.path.join(w, "requests")
+    if not os.path.isdir(rd):
+        return None
+    types = agent_types()
+    evs = read_jsonl(log)
+    n = heavy_count(evs)  # Sonnet/Opus dispatches only: Haiku and scripts do not use up the lead's budget
+    limit = stage_limit(os.path.join(w, TASKS_FILE), project(a.dir))
+    opus_used = sum(1 for e in evs if e["ev"] == EV_DISPATCH and e.get("model") == MODEL_OPUS)
+    ndisp = sum(1 for e in evs if e["ev"] == EV_DISPATCH)
+    rejected = {e.get("request"): e.get("mtime") for e in evs if e["ev"] == "reject"}  # name -> mtime of the file when it was rejected
+    for name, p, r in _valid_requests(a, w, rd, log, types, rejected):
         os.makedirs(os.path.join(rd, "done"), exist_ok=True)
         os.replace(p, os.path.join(rd, "done", name))
         action = _request_action(a, log, name, r, types, n, limit, opus_used, ndisp)

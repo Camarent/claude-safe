@@ -61,6 +61,8 @@ class ToolProbeTest(unittest.TestCase):
 
     def test_range_forms_are_parsed(self):
         self.assertEqual(tool_probe.majors(">=4 <6"), {4, 5})
+        self.assertEqual(tool_probe.majors(">4 <=6"), {5, 6})
+        self.assertEqual(tool_probe.majors(">=4 <=5"), {4, 5})
         self.assertEqual(tool_probe.majors("5 || 6"), {5, 6})
         self.assertEqual(tool_probe.majors("~5.2"), {5})
         self.assertIsNone(tool_probe.majors("latest"))

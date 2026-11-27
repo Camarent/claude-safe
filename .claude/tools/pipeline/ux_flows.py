@@ -64,20 +64,31 @@ def _flow_problems(i, f):
     return probs
 
 
-def read(path: str) -> tuple[list[dict[str, Any]], list[str]]:
-    """-> (flows, problems) of the flows file PATH: a missing or invalid file gives problems and no flows."""
+def _load_flows(path: str) -> tuple[Any, list[str]]:
+    """-> (parsed JSON, []) or (None, [problem]) when PATH cannot be read or is not JSON."""
     try:
         with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+            return json.load(fh), []
     except OSError as e:
-        return [], [f"{path}: cannot read the flows file ({e.strerror})"]
+        return None, [f"{path}: cannot read the flows file ({e.strerror})"]
     except ValueError as e:
-        return [], [f"{path}: not valid JSON ({e})"]
+        return None, [f"{path}: not valid JSON ({e})"]
+
+
+def _name_problems(data) -> list[str]:
+    """One problem per flow name used more than once."""
+    names = [f.get("name") for f in data if isinstance(f, dict)]
+    return [f"flow name {n!r} is used twice" for n in sorted({n for n in names if names.count(n) > 1}, key=str)]
+
+
+def read(path: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """-> (flows, problems) of the flows file PATH: a missing or invalid file gives problems and no flows."""
+    data, probs = _load_flows(path)
+    if probs:
+        return [], probs
     if not isinstance(data, list) or not data:
         return [], [f"{path}: must be a non-empty JSON list of flows"]
-    probs = [p for i, f in enumerate(data) for p in _flow_problems(i, f)]
-    names = [f.get("name") for f in data if isinstance(f, dict)]
-    probs += [f"flow name {n!r} is used twice" for n in sorted({n for n in names if names.count(n) > 1}, key=str)]
+    probs = [p for i, f in enumerate(data) for p in _flow_problems(i, f)] + _name_problems(data)
     return ([] if probs else data), [f"{path}: {p}" for p in probs]
 
 

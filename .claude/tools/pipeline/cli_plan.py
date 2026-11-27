@@ -272,6 +272,14 @@ def _check_new_paths(d, ents, e, tid, v):
             raise pf.PlanError(f"{tid} and {o['id']} share paths in wave {e['wave']}: {ov[0]} / {ov[1]}")
 
 
+def _check_dep(by, tid, dep):
+    """Raise PlanError when DEP cannot be a dependency of TID: unknown, the task itself, or a cycle."""
+    if dep not in by or dep == tid:
+        raise pf.PlanError(f"depends on unknown {dep}" if dep != tid else f"{tid} cannot depend on itself")
+    if plan_insert._reaches(by, dep, tid):
+        raise pf.PlanError(f"cycle: {dep} depends on {tid}")
+
+
 def _add_depends(d, ents, e, tid, spec):
     """edit-task --depends: add the named tasks to E's dependencies. Each must exist, not be the task itself and not depend on it (no cycle). A dependency in the same or a later wave moves the task (and the tasks that depend on it) to the wave after it, like `task --before`; a started task cannot move. -> [(task id, old wave, new wave)] of the tasks that moved."""
     if e is None:
@@ -279,10 +287,7 @@ def _add_depends(d, ents, e, tid, spec):
     by = {x["id"]: x for x in ents}
     old = {x["id"]: x["wave"] for x in ents}
     for dep in (x if x.startswith("task-") else f"task-{x}" for x in pf.csv(spec)):
-        if dep not in by or dep == tid:
-            raise pf.PlanError(f"depends on unknown {dep}" if dep != tid else f"{tid} cannot depend on itself")
-        if plan_insert._reaches(by, dep, tid):
-            raise pf.PlanError(f"cycle: {dep} depends on {tid}")
+        _check_dep(by, tid, dep)
         if dep not in e["depends"]:
             e["depends"] = [*e["depends"], dep]
     plan_insert._shift_waves(ents, pf.started_tasks(d))
@@ -330,14 +335,19 @@ def _after_depends(d, ents, e, moved, had_deps, asked):
         print("\n".join(_depends_report(d, ents, e, moved, had_deps)))
 
 
+def _check_edit_args(a):
+    """edit-task needs --field/--value pairs of equal count, or --depends, or both missing is an error."""
+    if a.field and len(a.field) != len(a.value) or a.depends is None and not a.field:
+        raise pf.PlanError("edit-task needs matching --field/--value pairs or --depends")
+
+
 def cmd_edit_task(a) -> int:
     d = pf.stage_dir(a)
     tid = f"task-{int(a.id)}"
     f = os.path.join(d, tid + ".md")
     if not os.path.exists(f):
         raise pf.PlanError(f"unknown task {tid} in {d}")
-    if a.field and len(a.field) != len(a.value) or a.depends is None and not a.field:
-        raise pf.PlanError("edit-task needs matching --field/--value pairs or --depends")
+    _check_edit_args(a)
     ents = pf.read_entries(d)
     e = next((x for x in ents if x["id"] == tid), None)
     had_deps = any(x["depends"] for x in ents)

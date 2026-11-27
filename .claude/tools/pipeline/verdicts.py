@@ -127,20 +127,30 @@ def verdict(role, text, report_id="") -> tuple[str, str]:
     if _partial_ui_pass(role, m, text):
         return BLOCKED, "UI check partial or not run: a PASS needs every checklist item verified"
     if m:  # an explicit line decides, even a wrong one (then the safe verdict)
-        if _zero_wrong_downgrade(role, m, text):
-            return (
-                "PASS",
-                f"escalate_downgraded: ESCALATE with wrong 0, risky 0, nit 0 and no security line: PASS with notes, report {report_id or '-'}",
-            )  # nothing to fix: a second paid review would only repeat it
-        if _reviewer_stub(role, m, text) or _reviewer_undefined_escalate(role, m, text):
-            return FAIL, STUB_REASON  # no finding line (FAIL) or no defect at file:line (ESCALATE): unclear, the auto retry runs the reviewer once more
-        if m.group(1) in allowed:
-            return m.group(1), "report line"
-        return safe, f"verdict {m.group(1)} not valid for {role}"
+        return _explicit_verdict(role, m, text, report_id, allowed, safe)
+    return _unlabelled_verdict(role, text, allowed, safe)
+
+
+def _explicit_verdict(role, m, text, report_id, allowed, safe) -> tuple[str, str]:
+    """Verdict of a report with a `VERDICT: X` line: the downgrade, stub and allowed-set checks."""
+    if _zero_wrong_downgrade(role, m, text):
+        return (
+            "PASS",
+            f"escalate_downgraded: ESCALATE with wrong 0, risky 0, nit 0 and no security line: PASS with notes, report {report_id or '-'}",
+        )  # nothing to fix: a second paid review would only repeat it
+    if _reviewer_stub(role, m, text) or _reviewer_undefined_escalate(role, m, text):
+        return FAIL, STUB_REASON  # no finding line (FAIL) or no defect at file:line (ESCALATE): unclear, the auto retry runs the reviewer once more
+    if m.group(1) in allowed:
+        return m.group(1), "report line"
+    return safe, f"verdict {m.group(1)} not valid for {role}"
+
+
+def _unlabelled_verdict(role, text, allowed, safe) -> tuple[str, str]:
+    """Verdict of a report without a `VERDICT:` line: ESCALATE:/final status word/dev heuristic, else the safe verdict."""
     if ESCALATE in allowed and re.search(rf"^\s*{ESCALATE}\s*:", text, re.M):
         return ESCALATE, "heuristic"
     final = _final_word(text)
-    if final in allowed:  # no VERDICT line, but the report ends with a bare status word the role may use
+    if final is not None and final in allowed:  # no VERDICT line, but the report ends with a bare status word the role may use
         return final, "final status line"
     if _dev_heuristic_done(role, text):
         return DONE, "heuristic"

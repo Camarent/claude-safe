@@ -258,6 +258,30 @@ def escalation_note(a) -> str:
     )
 
 
+def _architect_session(a, c, model, goal, extra):
+    """Run the architect; a Sonnet ESCALATE reruns it once on Opus with the handoff. -> (model used, verdict)."""
+    v = session(a, c, model, build_prompt(a, model, goal, extra), "plan-opus" if model == MODEL_OPUS else "plan")
+    if v == "ESCALATE" and model == MODEL_SONNET:
+        model = MODEL_OPUS
+        hand = os.path.join(feature_dir(a), "ESCALATE.md")
+        if os.path.exists(hand):
+            extra += f"Sonnet escalated this request to you and left a handoff: read .work/{a.feature}/ESCALATE.md first, trust its facts, and do not repeat its exploration.\n"
+        extra += escalation_note(a)
+        v = session(a, c, model, build_prompt(a, model, goal, extra), "plan-opus")
+    return model, v
+
+
+def _plan_fix(a, c, model, goal, probs):
+    """One plan-fix session: the architect repairs the plan through plan.py after `check` failed."""
+    session(
+        a,
+        c,
+        model,
+        build_prompt(a, model, fix_goal(a, goal), "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)),
+        PLAN_FIX,
+    )
+
+
 def run(a) -> int:
     """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
     goal = read_text(a.prompt_file)
@@ -272,16 +296,7 @@ def run(a) -> int:
     step(c, "startup", "start")
     extra = code_context(a, goal)
     step(c, "startup", "done")
-    prompt = build_prompt(a, model, goal, extra)
-    v = session(a, c, model, prompt, "plan-opus" if model == MODEL_OPUS else "plan")
-    if v == "ESCALATE" and model == MODEL_SONNET:
-        model = MODEL_OPUS
-        hand = os.path.join(feature_dir(a), "ESCALATE.md")
-        if os.path.exists(hand):
-            extra += f"Sonnet escalated this request to you and left a handoff: read .work/{a.feature}/ESCALATE.md first, trust its facts, and do not repeat its exploration.\n"
-        extra += escalation_note(a)
-        prompt = build_prompt(a, model, goal, extra)
-        v = session(a, c, model, prompt, "plan-opus")
+    model, v = _architect_session(a, c, model, goal, extra)
     if v == "BLOCKED":
         print(blocked_report(a))
         return 2
@@ -289,13 +304,7 @@ def run(a) -> int:
     n, probs = check_now(a, goal)
     step(c, "check", "done", tasks=n, errors=len(errors_of(probs)))
     if errors_of(probs):
-        session(
-            a,
-            c,
-            model,
-            build_prompt(a, model, fix_goal(a, goal), "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)),
-            PLAN_FIX,
-        )
+        _plan_fix(a, c, model, goal, probs)
         n, probs = check_now(a, goal)
     n, probs = testrun_check(a, c, model, goal, n, probs)
     if errors_of(probs):
