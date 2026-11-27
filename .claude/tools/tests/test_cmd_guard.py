@@ -433,7 +433,7 @@ class CdGitRewriteTest(unittest.TestCase):
 
     def test_cd_git_denial_text_gives_git_c_not_cd(self):  # C2: the replacement is `git -C D args`, never a cd
         why = cmd_guard.verdict("cd /wt/x && git status --short")
-        self.assertIn("Run `git -C /wt/x status --short` (or plain", why)
+        self.assertIn("Run `git -C /wt/x status --short`", why)  # the "(or plain ...)" clause depends on the cwd, not asserted here
         self.assertIn("instead of `cd /wt/x` before git", why)
         self.assertNotIn("Run `cd", why)
 
