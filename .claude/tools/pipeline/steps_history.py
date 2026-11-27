@@ -2,7 +2,7 @@
 
 import re
 
-from .configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, EV_RETRY, EXTRA_ROUND_WHY, FAIL, MODEL_SONNET, PLAN_ERROR
+from .configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, EV_RETRY, EV_RETRY_REFRESH, EXTRA_ROUND_WHY, FAIL, MODEL_SONNET, PLAN_ERROR
 from .entry import name_of_stage
 from .util import read_text
 
@@ -44,8 +44,8 @@ def _retry_survivors(mine, i):
 
 
 def _after_retry(mine, i):
-    """The events of a task that survive its retry marker `mine[i]` (the owner's reset, or a driver re-run)."""
-    return _retry_survivors(mine, i) + mine[i + 1 :]
+    """The events of a task that survive its retry marker `mine[i]` (the owner's reset, or a driver re-run). The rebase log `retry_refresh` has no verdict, so it never counts as the task's last event."""
+    return [e for e in _retry_survivors(mine, i) + mine[i + 1 :] if e["ev"] != EV_RETRY_REFRESH]
 
 
 def hint(a, tid: str) -> str:
