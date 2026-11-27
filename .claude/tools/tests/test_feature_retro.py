@@ -8,7 +8,10 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pipeline import gate_record
+from pipeline.configuration import GATE_KIND_TASK
 from retro import feature_retro
+from test_gate_record import make_repo
 
 
 class FeatureRetroTest(unittest.TestCase):
@@ -70,6 +73,20 @@ class FeatureRetroTest(unittest.TestCase):
         self.assertIn("lead-session sid1: 1100000 tokens", text)
         self.assertIn("lead-spawned agent-x", text)
         self.assertIn("$3.00", text)  # 1M in at $2 + 0.1M out at $10
+
+    def test_gate_time_section_lists_an_over_limit_unit_run(self):
+        repo = make_repo(os.path.join(self.dir, "ws"), {"a.txt": "x\n"})
+        gate_record.record(repo, ["scripts/dev.sh", "test"], 0, secs=200.0, level="parallel", kind=GATE_KIND_TASK)
+        text = feature_retro.render("f", feature_retro.gather(self.dir), feature_retro.gate_lines(self.dir, repo))
+        self.assertIn("## Gate time and dev gate warnings", text)
+        self.assertIn("- gate time: unit gate run 200s over the", text)
+        self.assertNotIn("## Gate time and dev gate warnings\n(none)", text)
+
+    def test_gate_time_section_is_none_within_the_limit(self):
+        repo = make_repo(os.path.join(self.dir, "ws"), {"a.txt": "x\n"})
+        gate_record.record(repo, ["scripts/dev.sh", "test"], 0, secs=10.0, level="serial", kind=GATE_KIND_TASK)
+        text = feature_retro.render("f", feature_retro.gather(self.dir), feature_retro.gate_lines(self.dir, repo))
+        self.assertIn("## Gate time and dev gate warnings\n(none)", text)
 
 
 if __name__ == "__main__":

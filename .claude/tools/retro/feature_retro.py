@@ -9,7 +9,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # -I drops the script dir
-from pipeline.configuration import HOME, ORCH_LOG, RETRO_ASK_CAUSE_CHARS
+from pipeline import dev_gate_audit, gate_timing
+from pipeline.configuration import EV_SESSION, HOME, METRICS_LOG, ORCH_LOG, RETRO_ASK_CAUSE_CHARS, WORK_DIR
 from pipeline.util import read_jsonl, work_path
 
 from retro import agent_cost, lead_cost, ledger
@@ -57,7 +58,19 @@ def _ask_lines(data):
     return ["", f"## ask_main stops ({total}, per phase: {per_phase})"] + ([f"- {n}x {cause}" for cause, n in ask_causes(data)] or ["(none)"])
 
 
-def render(feature, data):
+def gate_lines(feature_dir, cwd):
+    """-> gate time warning lines of the feature: the recorded gate runs of the repo at cwd over the unit limit, and the dev gate warnings of every task of every phase (warnings only)."""
+    out = gate_timing.check(cwd, gate_timing.LEVEL_UNIT)
+    root = os.path.join(cwd, WORK_DIR)
+    for ph in phase_dirs(feature_dir):
+        stage = os.path.relpath(os.path.join(os.path.abspath(feature_dir), "phases", ph), root)
+        rows = read_jsonl(os.path.join(root, stage, METRICS_LOG), quiet=True, errors="replace")
+        for task in sorted({str(r["task"]) for r in rows if r.get("ev") == EV_SESSION and r.get("agent") == "dev" and r.get("task")}):
+            out += dev_gate_audit.warn_task(cwd, stage, task)
+    return out
+
+
+def render(feature, data, gate=()):
     names: dict = {}
     for ph, v in data.items():
         for n, _ in v["signals"]:
@@ -66,6 +79,7 @@ def render(feature, data):
     rep = {n: p for n, p in names.items() if len(set(p)) > 1}
     lines += ["", "## Signals seen in 2+ phases"] + ([f"- {n}: {', '.join(sorted(set(p)))}" for n, p in sorted(rep.items())] or ["(none)"])
     lines += _ask_lines(data)
+    lines += ["", "## Gate time and dev gate warnings"] + ([f"- {x[:300]}" for x in gate] or ["(none)"])
     for ph, v in data.items():
         lines += ["", f"## {ph}"]
         lines += [f"- {n}: {t[:300]}" for n, t in v["signals"]] or ["- no tripped signal"]
@@ -100,8 +114,9 @@ def main(argv=None):
     ap.add_argument(
         "--lead-log", action="append", default=[], help="lead transcript file or folder (repeatable): adds lead-session and lead-spawned cost lines"
     )
+    ap.add_argument("--dir", default=os.getcwd(), help="workspace holding pipeline.json and the .work folder (gate time limits, gate-run log)")
     a = ap.parse_args(argv)
-    text = render(os.path.basename(os.path.normpath(a.feature_dir)), gather(a.feature_dir))
+    text = render(os.path.basename(os.path.normpath(a.feature_dir)), gather(a.feature_dir), gate_lines(a.feature_dir, a.dir))
     lead = lead_cost.feature_lines(a.feature_dir, a.lead_log or [os.path.join(HOME, "projects")])
     if lead:
         text += "\n## Lead cost of the whole feature (script, USD from prices.py)\n" + "\n".join(lead) + "\n"

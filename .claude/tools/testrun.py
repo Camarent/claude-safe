@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402  (sys.path set above)
 from localmodel.prereview import job_diff  # noqa: E402  (sys.path set above)
-from pipeline import cite_check, docs_impact, empty_tests, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
+from pipeline import cite_check, dev_gate_audit, docs_impact, empty_tests, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
 from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     ADD_REPO_CMD,
     BLOCKED,
@@ -272,7 +272,8 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
     fail, skips = _diff_findings(cwd, d, stage, task, report, diff_fn)
     if fail:
         return FAIL, fail
-    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes, *skips])
+    dev_warns = dev_gate_audit.warn_task(d, stage, task)  # warnings only: the DONE verdict stands
+    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes, *skips, *dev_warns])
 
 
 def _diff_findings(cwd, d, stage, task, report, diff_fn):

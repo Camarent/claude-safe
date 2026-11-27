@@ -20,6 +20,7 @@ from pipeline import gate_record
 from pipeline.configuration import (
     BLOCKED,
     DONE,
+    ENV_GATE_KIND,
     FAIL,
     GATE_KIND_MERGE,
     MERGE_CONFLICT_MARK,
@@ -73,7 +74,8 @@ def _log_skipped(a_dir, stage, tasks, skipped, gates):
 def _gate_results(a_dir, stage, tasks, cfg, repo, cmds, gates, runner, lines):
     """Run the merge gate commands CMDS (`gates`, `gates_merge`, `each`) in REPO. -> the results, with a command accepted by `gate_warn_ok` turned green; LINES gets the notes."""
     kw = {"runner": runner} if runner else {}
-    results = final_check.run_all(cmds, repo, {**os.environ, **test_env(cfg, a_dir)}, groups=final_check.gate_groups(cfg, repo, merge=True), **kw)
+    env = {**os.environ, **test_env(cfg, a_dir), ENV_GATE_KIND: GATE_KIND_MERGE}  # qrun records the run as a merge gate run (gate_timing: merge limit)
+    results = final_check.run_all(cmds, repo, env, groups=final_check.gate_groups(cfg, repo, merge=True), **kw)
     final_check.log_gate_cmds(os.path.join(a_dir, WORK_DIR, stage, METRICS_LOG), GATE_KIND_MERGE, results, gates, ",".join(tasks))
     rules, notes = final_check.warn_ok_rules(cfg, stage)
     results, accepted = final_check.accept_warnings(results, [g["name"] for g in all_gates_of(cfg)], rules)

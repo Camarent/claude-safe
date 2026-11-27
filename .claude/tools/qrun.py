@@ -470,10 +470,10 @@ def _tree_before(cwd):
     return None
 
 
-def _record_run(cwd, argv, rc, tree, secs=None, level=None):
+def _record_run(cwd, argv, rc, tree, secs=None, level=None, kind=None):
     """Append the gate-run record; a failure is dropped: qrun's exit code and output never depend on it."""
     with contextlib.suppress(Exception):
-        gate_record.record(cwd, argv, rc, tree=tree, secs=secs, level=level)
+        gate_record.record(cwd, argv, rc, tree=tree, secs=secs, level=level, kind=kind)
 
 
 def main(argv=None):
@@ -510,7 +510,7 @@ def main(argv=None):
         print(e, file=sys.stderr)
         return 2
     if recording:
-        _record_run(cwd, cmd_argv, rc, tree, secs=round(time.monotonic() - started, 3), level=level)
+        _record_run(cwd, cmd_argv, rc, tree, secs=round(time.monotonic() - started, 3), level=level, kind=os.environ.get(ENV_GATE_KIND))
     sm = summary(lines)
     if rc == 0:
         out, code = _report_ok(lines, sm, log)

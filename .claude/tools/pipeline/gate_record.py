@@ -67,10 +67,11 @@ def skip_note(cwd, rec) -> str:
 _TREE_NOW = object()  # record(tree=...) default: hash the tree at the call
 
 
-def record(cwd, argv, rc, now=None, tree=_TREE_NOW, secs=None, level=None) -> None:
-    """Append {run, cmd, tree, base, rc, ts, secs, level} for this gate run; writes nothing when there is no tree or no log path.
+def record(cwd, argv, rc, now=None, tree=_TREE_NOW, secs=None, level=None, kind=None) -> None:
+    """Append {run, cmd, tree, base, rc, ts, secs, level, kind} for this gate run; writes nothing when there is no tree or no log path.
     tree: the tree hash taken before the run (a test may write files during it); default: taken now.
-    secs: measured wall seconds of the run (None when the caller did not measure); level: how the run was executed (e.g. parallel, serial)."""
+    secs: measured wall seconds of the run (None when the caller did not measure); level: how the run was executed (e.g. parallel, serial);
+    kind: which gate the run belongs to (GATE_KIND_TASK, GATE_KIND_MERGE, ...; None when the caller does not say)."""
     if tree is _TREE_NOW:
         tree = tree_hash(cwd)
     path = _log_path(cwd)
@@ -85,6 +86,7 @@ def record(cwd, argv, rc, now=None, tree=_TREE_NOW, secs=None, level=None) -> No
         "ts": time.time() if now is None else now,
         "secs": secs,
         "level": level,
+        "kind": kind,
     }
     try:
         with open(path, "a", encoding="utf-8") as f:
@@ -107,6 +109,12 @@ def _entries(path):
         except ValueError:
             continue
     return out
+
+
+def records(cwd) -> list[dict]:
+    """Every record of the gate-run log of the repo at cwd, oldest first; [] when there is no log or no repo."""
+    path = _log_path(cwd)
+    return _entries(path) if path else []
 
 
 def find_passed(cwd, argv, tree=None, base=None) -> dict | None:

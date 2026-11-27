@@ -112,7 +112,7 @@ class TestRecord(unittest.TestCase):
         self.assertEqual([r["rc"] for r in rows], [0, 2])
         self.assertEqual([r["ts"] for r in rows], [1.0, 2.0])
         self.assertEqual(len({r["run"] for r in rows}), 2)
-        self.assertEqual(set(rows[0]), {"run", "cmd", "tree", "base", "rc", "ts", "secs", "level"})
+        self.assertEqual(set(rows[0]), {"run", "cmd", "tree", "base", "rc", "ts", "secs", "level", "kind"})
 
     def test_secs_and_level_written_and_optional(self):
         G.record(self.repo, ["t"], 0, now=1.0, secs=2.5, level="parallel")
