@@ -1,14 +1,17 @@
 """Report preflight: the dev report is checked against the task's Done line by script before the local pre-review and the paid reviewer. A FAIL
 goes back to the dev as a free round (no review round, no reviewer dispatch)."""
 
+import contextlib
+import io
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import report_preflight, steps
+from pipeline import cite_rewrite, report_preflight, steps
 from pipeline.configuration import DONE, FAIL, WORK_DIR
 from pipeline.steps_history import _failed_rounds
 from pipeline.util import work_path
@@ -129,3 +132,50 @@ class PreflightStepTest(_SeqBase):
                 ev("report", id=f"e{i}", role="dev", verdict=DONE, file=str(self.rep)),
             ]
         self.assertEqual(self.nxt(mine)["why"], PREREVIEW_WHY)
+
+
+class BareCiteRewriteTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.wt = tmp.name
+        self.brief = os.path.join(self.wt, "brief.md")
+        self.report = os.path.join(self.wt, "report.md")
+        Path(self.brief).write_text("Title\n" + DONE_LINE + "\n", encoding="utf-8")
+
+    def _file(self, rel):
+        full = os.path.join(self.wt, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        Path(full).write_text("x\n", encoding="utf-8")
+
+    def _preflight(self, text):
+        Path(self.report).write_text(text, encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            report_preflight.main(["--brief", self.brief, "--report", self.report, "--worktree", self.wt])
+        return out.getvalue()
+
+    def test_bare_cite_with_one_file_in_tree_is_rewritten_and_passes(self):
+        self._file(".claude/tools/pipeline/steps.py")
+        self.assertIn(DONE, self._preflight("see steps.py:274 for the cite\nvulture: 0 findings\nlizard: 0 findings\nmutation: skipped the rule, test red\n"))
+
+    def test_rewrite_keeps_the_line_and_the_range(self):
+        self._file("a/b/steps.py")
+        self.assertEqual(cite_rewrite.rewrite_bare_cites(self.wt, "x steps.py:3-5 y\n"), "x a/b/steps.py:3-5 y\n")
+
+    def test_url_is_not_rewritten(self):
+        self._file("a/steps.py")
+        text = "see https://host/steps.py:80 here\n"
+        self.assertEqual(cite_rewrite.rewrite_bare_cites(self.wt, text), text)
+
+    def test_ambiguous_bare_cite_is_left_and_still_fails(self):
+        self._file("a/steps.py")
+        self._file("b/steps.py")
+        out = self._preflight("see steps.py:274 for the cite\nmutation: skipped the rule, test red\n")
+        self.assertIn(FAIL, out)
+        self.assertIn("steps.py:274", out)
+
+    def test_missing_bare_cite_is_left_and_still_fails(self):
+        out = self._preflight("see nowhere.py:12 for the cite\n")
+        self.assertIn(FAIL, out)
+        self.assertIn("nowhere.py", out)

@@ -15,7 +15,7 @@ import re
 import sys
 
 sys.path[:0] = [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]  # -I drops the script dir; the imports below need the tools dir
-from pipeline import cite_check  # noqa: E402 - sys.path is set on the line above first
+from pipeline import cite_check, cite_rewrite  # noqa: E402 - sys.path is set on the line above first
 from pipeline.configuration import DONE, FAIL, VERDICT_PREFIX  # noqa: E402 - sys.path is set above first
 
 PREFLIGHT_WHY = "report preflight: the dev report checked against the task's Done line by script; FAIL goes back to the dev"
@@ -81,11 +81,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--brief", required=True)
     p.add_argument("--report", required=True)
     p.add_argument("--changed", action="append", default=[], help="a file the task's diff changes (repeat per file)")
+    p.add_argument("--worktree", default=os.getcwd(), help="the worktree whose files a bare cite name is resolved in (default: the cwd)")
     a = p.parse_args(argv)
     with open(a.brief, encoding="utf-8", errors="replace") as f:
         done = done_line(f.read())
     with open(a.report, encoding="utf-8", errors="replace") as f:
-        report = f.read()
+        report = cite_rewrite.rewrite_bare_cites(a.worktree, f.read())  # a bare cite with one file in the tree is full-pathed before the cite check
     msgs = check(done, report, a.changed) if done else []
     print(f"{VERDICT_PREFIX}{FAIL if msgs else DONE}")
     print("\n".join(msgs) or "report preflight: every Done rule holds")
