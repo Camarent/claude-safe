@@ -75,8 +75,8 @@ def _timeout():
     return script_timeout()
 
 
-def run_tool(repo, name, cwd, cmd, parser, rawdir, stamp):
-    """Run one tool; return (status, findings, summary) with status ok|findings|missing|unset|crash."""
+def _cannot_run(repo, cwd, cmd):
+    """-> (status, findings, summary) when the tool cannot run here (unset variable, missing folder), else None."""
     if cwd == "/opt/jstools/proj" and not os.path.isdir(cwd) and os.path.isdir("/opt/jstools/node_modules"):
         from pipeline.extra_tools import ensure_proj  # scaffold is lost on container restart: rebuild it
 
@@ -86,6 +86,14 @@ def run_tool(repo, name, cwd, cmd, parser, rawdir, stamp):
         return "unset", [], unset[0]
     if not os.path.isdir(os.path.join(repo, cwd)):
         return "missing", [], ""
+    return None
+
+
+def run_tool(repo, name, cwd, cmd, parser, rawdir, stamp):
+    """Run one tool; return (status, findings, summary) with status ok|findings|missing|unset|crash."""
+    skipped = _cannot_run(repo, cwd, cmd)
+    if skipped:
+        return skipped
     orig_cwd = os.path.join(repo, cwd)
     run_cwd, mirror = _mirror(repo, orig_cwd) if os.path.isabs(cwd) else (orig_cwd, None)
     try:

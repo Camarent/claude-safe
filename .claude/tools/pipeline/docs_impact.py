@@ -9,18 +9,38 @@ from pathlib import Path
 
 from . import cite_check
 from .configuration import (
+    DOCS_GATE_OFF_RE,
     DOCS_IMPACT_DEF_RE,
+    DOCS_IMPACT_DEFAULT,
     DOCS_IMPACT_EXEMPT_KEY,
     DOCS_IMPACT_GENERIC_SYMBOLS,
     DOCS_IMPACT_HEADER_RE,
     DOCS_IMPACT_PATH_RE,
+    DOCS_IMPACT_STAGE_DEFAULT_KEY,
     DOCS_IMPACT_SYMBOL_MIN,
     DOCS_IMPACT_TICK_RE,
 )
 
 
+def _def_name(text):
+    """The def or class name `text` starts with, or None."""
+    d = DOCS_IMPACT_DEF_RE.match(text)
+    return d[1] if d else None
+
+
+def _header_def(ln):
+    """The def or class name of a hunk header (its section text), or None."""
+    m = DOCS_IMPACT_HEADER_RE.match(ln)
+    return _def_name(m[1]) if m else None
+
+
+def _is_doc(path) -> bool:
+    """-> True when path is a doc file (a markdown file): a doc is never the target of the check, only the citing side."""
+    return path.endswith(cite_check.CITE_MD_EXTENSIONS)
+
+
 def _changes(diff_text) -> tuple[set[str], set[str]]:
-    """-> (the paths the diff adds, modifies, deletes or renames; the top-level def or class names of its changed hunks, names of at least DOCS_IMPACT_SYMBOL_MIN characters)."""
+    """-> (the paths the diff adds, modifies, deletes or renames; the top-level def or class names of its changed hunks of non-doc files, names of at least DOCS_IMPACT_SYMBOL_MIN characters)."""
     paths: set = set()
     syms: set = set()
     cur, hunk = "", False
@@ -29,16 +49,16 @@ def _changes(diff_text) -> tuple[set[str], set[str]]:
             cur, hunk = "", False
         elif ln.startswith("@@"):
             hunk = True
-            if (m := DOCS_IMPACT_HEADER_RE.match(ln)) and (d := DOCS_IMPACT_DEF_RE.match(m[1])):
-                syms.add(d[1])
+            if not _is_doc(cur):
+                syms.add(_header_def(ln))
         elif hunk:
-            if ln[:1] in ("+", "-") and (d := DOCS_IMPACT_DEF_RE.match(ln[1:])):
-                syms.add(d[1])
+            if not _is_doc(cur):
+                syms.add(_def_name(ln[1:]) if ln[:1] in ("+", "-") else None)
         else:
             cur = cite_check._header_file(ln, cur, paths)
             if cur:
                 paths.add(cur)
-    return paths, {s for s in syms if len(s) >= DOCS_IMPACT_SYMBOL_MIN and s not in DOCS_IMPACT_GENERIC_SYMBOLS}
+    return paths, {s for s in syms if s and len(s) >= DOCS_IMPACT_SYMBOL_MIN and s not in DOCS_IMPACT_GENERIC_SYMBOLS}
 
 
 def doc_files(worktree, docs_dir) -> list[str]:
@@ -48,6 +68,18 @@ def doc_files(worktree, docs_dir) -> list[str]:
     for folder, _dirs, files in os.walk(root):
         out.extend(Path(os.path.relpath(os.path.join(folder, f), worktree)).as_posix() for f in files if f.endswith(cite_check.CITE_MD_EXTENSIONS))
     return sorted(out)
+
+
+def gate_on(setting, stage) -> bool:
+    """-> whether the docs impact check runs for `stage`. A bool is the switch of every stage; a dict {"default": bool, <stage>: bool} gives a stage its own switch and the others the `default` one (DOCS_IMPACT_DEFAULT when absent)."""
+    if not isinstance(setting, dict):
+        return bool(setting)
+    return bool(setting.get(stage, setting.get(DOCS_IMPACT_STAGE_DEFAULT_KEY, DOCS_IMPACT_DEFAULT)))
+
+
+def plan_off(tasks_text) -> bool:
+    """-> True when the stage's TASKS.md text holds a `Docs gate: off` line: the check is off for that stage, whatever pipeline.json says."""
+    return bool(DOCS_GATE_OFF_RE.search(tasks_text))
 
 
 def _doc_text(worktree, doc):
@@ -70,14 +102,15 @@ def _cited_paths(text) -> set[str]:
 
 
 def check(worktree, diff_text, docs_files, cfg) -> list[str]:
-    """-> [message] for each changed path or top-level def a doc under docs_files cites while the diff leaves that doc unchanged. A path is cited when the doc names it word-bounded or as a path:line cite; a def when the doc has it in backticks. Docs named by cfg's docs_impact_exempt globs are not read."""
-    paths, syms = _changes(diff_text)
+    """-> [message] for each changed non-doc path or top-level def a doc under docs_files cites while the diff leaves that doc unchanged. A path is cited when the doc names it word-bounded or as a path:line cite; a def when the doc has it in backticks. A changed doc is never a target (a doc cites a doc freely), so a docs-only diff gives nothing. Docs named by cfg's docs_impact_exempt globs are not read."""
+    changed, syms = _changes(diff_text)
+    paths = {p for p in changed if not _is_doc(p)}
     if not paths and not syms:
         return []
     exempt = cfg.get(DOCS_IMPACT_EXEMPT_KEY, [])
     msgs: set[str] = set()
     for doc in docs_files:
-        if doc in paths or _exempt(doc, exempt):
+        if doc in changed or _exempt(doc, exempt):
             continue
         text = _doc_text(worktree, doc)
         if text is None:

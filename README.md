@@ -143,6 +143,8 @@ Read this before you run the pipeline unattended.
   `python3 -I scripts/pipeline_auto.py run --stage S` starts a stage in auto permission mode.
   Claude decides each action; the allowlist prompt is gone. The script keeps the other
   default flags and then runs `cs-wave`. Use it only on a stage you have read.
+  claude-safe stages need it: the default `acceptEdits` mode blocks edits under `.claude/`.
+  The lead never widens the allowlist to get past a prompt.
 - Container: it starts as root only for the setup steps (see Users and ownership above),
   then runs as the `node` user. It has network access.
 - Mounts: the folders you mount are read-write, including `./.claude` when you mount the
@@ -194,6 +196,11 @@ Decisions of the pipeline-hardening stage, one section per problem: `docs/decisi
 - Retry without a new dev run: `orch.py retry --verify` runs the task's Test lines and Done checks on the existing job commit and writes the report. Red records nothing.
 - Cleanup step (finish phase): removes merged or gone job worktrees and run temp dirs. Preview with `python3 -I .claude/tools/pipeline/cleanup.py --dry-run`; it changes nothing.
 - Public-words baseline: the pipeline.json key `public_words_baseline` (default `docs/public-words-baseline.txt`, repo-relative) lists accepted public-words hits, one per line. A hit key is `file TAB word TAB line text stripped`, with no line number, so the key stays the same when lines above the hit move. Blank lines and `#` lines are ignored; a missing file is an empty baseline. A key listed once covers every identical line. The generator is `.claude/tools/public_words_baseline.py`: `--write` rewrites the file from the current hits, `--dry-run` prints how many lines would change, `--check` exits 1 when a hit is not in the baseline, `--words a,b` overrides the configured words.
+- Job retry with picks: `orch.py retry --pick <sha>...` rebuilds the job branch from the stage tip and cherry-picks the listed own commits; the old tip is kept under `refs/orch-pick-backup/`.
+- Plan gaps: `cs-plan run` exits 3 when the plan is valid but plan-review gaps remain; the `GAPS:` block is its last output and goes to `GAPS.md`.
+- Dev audit wrapper: `cs-devtools <tool> [PATH...]` runs one audit-tools tool over paths in the current worktree.
+- Report preflight: a dev report is checked against the task's `Done:` line before review; a FAIL goes back to the dev with no review round.
+- Docs gate: a `Docs gate: off` line in TASKS.md turns the docs impact check off for that stage.
 - Public-words gate: on a public repo, a hit whose key is not in the baseline fails the gate. The output prints `file:line: word` and `add to <baseline>: <key line>` for each new hit; add that key line to the baseline file. A baseline entry with no hit is reported as `stale: <key>` and does not fail the gate.
 
 ### Setting up a new machine
@@ -205,6 +212,15 @@ Decisions of the pipeline-hardening stage, one section per problem: `docs/decisi
    environment or an untracked `~/.config/secrets.env` (`chmod 600`), never from the repo.
 5. Privacy blocklist: copy `.claude/git/privacy.gitconfig.example` to `.claude/git/privacy.gitconfig` (untracked) and set
    your own regex; optionally add the same regex as repo secret `PRIVACY_BLOCKLIST` for the CI `privacy` job.
+
+### Browser checks: chrome-devtools MCP on the host
+
+`web-tester` and `ux-reviewer` drive Chrome through the `chrome-devtools` MCP server. The MCP server runs as root, and Chrome must not run as root, so the server starts Chrome through a wrapper that switches to the unprivileged `browser` user.
+
+1. Create the `browser` user, then the wrapper `/usr/local/bin/chrome-nonroot`. Its text comes from `wrapper_text` in `.claude/tools/pipeline/extra_tools.py`: it runs `runuser -u browser -- env HOME=<home> ... google-chrome` with `"$@"`.
+2. Register the server with the wrapper as Chrome binary and `--no-sandbox`:
+   `claude mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest --executablePath /usr/local/bin/chrome-nonroot --no-sandbox`
+3. Check with `claude mcp list`: the `chrome-devtools:` line says `Connected` and contains `--no-sandbox` and `chrome-nonroot`. `browser_ok()` in `extra_tools.py` reads that same line.
 
 ## License
 

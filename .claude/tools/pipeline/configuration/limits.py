@@ -322,6 +322,7 @@ SEARCH_TOOL_NAMES = (
 EV_REPORT, EV_DISPATCH, EV_SKIP, EV_SESSION, EV_RETRY = "report", "dispatch", "skip", "session", "retry"  # orch.jsonl / metrics.jsonl event names
 GATE_KIND_TASK, GATE_KIND_MERGE = "task", "merge"  # `kind` of a gate_cmd record: the task gates, a wave merge
 EV_GATE_CMD = "gate_cmd"  # metrics.jsonl: one record per gate command run by the task gates or a wave merge (gate name, exit code, seconds)
+EV_RETRY_REFRESH = "retry_refresh"  # orch.jsonl: `retry` rebased the job branch (or dropped leftovers); no verdict, so history() must not end on it
 LEAD_EV = "lead"  # metrics.jsonl event of one lead session of a stage (not a "session" row, so session totals stay the agents' sum)
 LEAD_AGENT_EV = "lead-agent"  # metrics.jsonl event of one agent a lead session spawned (subagents/ log) inside the stage window
 LEAD_AGENT_UNMATCHED_EV = "lead-agent-unmatched"  # metrics.jsonl event: how many such logs could not be tied to the stage (partly outside its window)

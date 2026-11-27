@@ -13,7 +13,7 @@ claude-safe/                      git repo (this repo only: master + dev); push 
       pipeline/                   core package; configuration/ holds HOME, TOOLS_DIR, AGENTS_DIR, PRACTICES_DIR, tool_cmd()
       localmodel/                 optional local-model (Strata) tools + eval/ + data/ (localdev policy and profiles)
       tests/                      unit and synthetic tests; tests/support builds throwaway projects; tests/integration needs a real project
-      ptest.py                    THE entry point for the pipeline test suite: one file per process, in parallel (~20 s for all files on the host, ~22 s in the container); also the container entry point. Never use serial `unittest discover`
+      ptest.py                    THE entry point for the pipeline test suite: one file per process, in parallel (~45 s for all files, measured); also the container entry point. Files named in `merge_only_tests` (pipeline.json; default `test_lsp_e2e.py`) run only in the merge gate: a bare `dev.sh test` skips them, a PATTERN that names one selects it. Never use serial `unittest discover`
     agents/ commands/ practices/ skills/ githooks/ git/   as before
     parked/MANIFEST.md            the only place parked features live (rules inside)
 ```
@@ -54,7 +54,16 @@ Agent (a file in `agents/`):
 | `scripts/dev.sh itest` | opt-in: needs `PIPELINE_PROJECT_DIR=<project dir with pipeline.json>` (no default; exits 2 without it); the real project's settings are used read-only, the project is not modified |
 | `scripts/dev.sh cov` | tests with branch coverage; fails below `fail_under` (90) |
 | `scripts/dev.sh dead` / `sec` | vulture / bandit (reviewed skips and `# nosec Bxxx  # reason` markers) |
+| `scripts/dev.sh gate [--ext\|--pytest]` | the task gate split in two calls that fit one step timeout: `--ext` = check, dead, sec, ccn; `--pytest` = the unit suite (`dev.sh test`); no flag runs both |
 | `scripts/dev.sh clean` | delete `./.uv` and all caches: the host is clean again |
+
+Cache: every dev.sh tool (uv cache, venv, interpreter choice) lives in `./.uv`, or in `DEV_UV_DIR` when set (worktrees share one venv through a symlink; `sync` refuses there).
+
+Gate timing: each gate run is timed against `gate_time_warn_s` in pipeline.json (seconds per kind: `unit` 120, `merge` 300, `full` 540 by default). A run over its limit writes a warning line to the gate metrics; the exit code never changes. `dev_gate_audit` reads a dev's tool-call log and warns on a full-gate run (`dev_gate_full_cmds`), repeated runs (`dev_gate_repeat_max`) or a slow Bash call; the DONE verdict stands.
+
+Merge-only tests: test files in `merge_only_tests` (pipeline.json) run only by the merge gate. A bare `dev.sh test` and the unit gates skip them; a PATTERN that names one selects it.
+
+Docs impact: `docs_impact_gate` in pipeline.json (default true) makes the stage gate fail when a changed file or top-level def that a doc cites is not changed in the same job diff. It takes a dict `{"default": bool, <stage>: bool}` to switch per stage.
 In the container the full suite also runs as `cs-ptest`. After a stage-sequence change read `cs-wave run S --dir D --dry-run` and add a case to `tests/test_stage_sequence.py`.
 
 ## Commands and paths

@@ -95,21 +95,29 @@ def module_headings(root, docs_dir="docs"):
     return modules_of(root, docs_dir)
 
 
+def _prune_dirs(root, dirpath, dirnames):
+    """Narrow DIRNAMES in place to the subdirectories a walk should enter."""
+    dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in IGNORE_DIRS)
+    skip = ignored_paths(root, [os.path.relpath(os.path.join(dirpath, d), root) for d in dirnames])
+    dirnames[:] = [d for d in dirnames if os.path.relpath(os.path.join(dirpath, d), root) not in skip]
+
+
+def _source_files(root, dirpath, filenames):
+    """Source files of one directory, relative to ROOT, sorted by name, not ignored and not over MAX_FILE_BYTES."""
+    cands = []
+    for name in sorted(filenames):
+        path = os.path.join(dirpath, name)
+        if os.path.splitext(name)[1] in SOURCE_EXTS and os.path.getsize(path) <= MAX_FILE_BYTES:
+            cands.append(os.path.relpath(path, root))
+    skip = ignored_paths(root, cands)
+    return [rel for rel in cands if rel not in skip]
+
+
 def walk(root, module):
     base = os.path.join(root, module)
     for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in IGNORE_DIRS)
-        skip = ignored_paths(root, [os.path.relpath(os.path.join(dirpath, d), root) for d in dirnames])
-        dirnames[:] = [d for d in dirnames if os.path.relpath(os.path.join(dirpath, d), root) not in skip]
-        cands = []
-        for name in sorted(filenames):
-            path = os.path.join(dirpath, name)
-            if os.path.splitext(name)[1] in SOURCE_EXTS and os.path.getsize(path) <= MAX_FILE_BYTES:
-                cands.append(os.path.relpath(path, root))
-        skip = ignored_paths(root, cands)
-        for rel in cands:
-            if rel not in skip:
-                yield rel
+        _prune_dirs(root, dirpath, dirnames)
+        yield from _source_files(root, dirpath, filenames)
 
 
 def scan(root, rel):
@@ -210,35 +218,40 @@ def _is_address(rel, port):
     return "/" not in rel and port in COMMON_PORTS
 
 
+def _line_count(path, line_counts):
+    if path not in line_counts:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            line_counts[path] = sum(1 for _ in f)
+    return line_counts[path]
+
+
+def _reference_problems(root, doc, mods, line_counts):
+    """Problems with the `path:line` references in the doc file DOC (path relative to ROOT)."""
+    problems = []
+    with open(doc, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    for m in REF_RE.finditer(text):
+        rel, first, last = m.group(1), int(m.group(2)), m.group(3)
+        if _is_address(rel, first):
+            continue
+        candidates = [os.path.join(root, rel)] + [os.path.join(root, mod, rel) for mod in mods]
+        path = next((c for c in candidates if os.path.isfile(c)), None)
+        where = os.path.relpath(doc, root)
+        if path is None:
+            problems.append(f"{where}: reference {m.group(0)} - file not found")
+        elif max(first, int(last or first)) > _line_count(path, line_counts):
+            problems.append(f"{where}: reference {m.group(0)} - file has only {_line_count(path, line_counts)} lines")
+    return problems
+
+
 def check_references(root, mods, docs_dir="docs"):
     """Every `path:line[-line]` cited in docs/ must name an existing file and a line inside it."""
-    problems, docs = [], os.path.join(root, docs_dir)
-    line_counts = {}
-
-    def length(path):
-        if path not in line_counts:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                line_counts[path] = sum(1 for _ in f)
-        return line_counts[path]
-
-    for dirpath, _, names in os.walk(docs):
+    problems: list[str] = []
+    line_counts: dict[str, int] = {}
+    for dirpath, _, names in os.walk(os.path.join(root, docs_dir)):
         for name in sorted(names):
-            if not name.endswith(".md") or name == "INDEX.md":
-                continue
-            doc = os.path.join(dirpath, name)
-            with open(doc, encoding="utf-8", errors="replace") as f:
-                text = f.read()
-            for m in REF_RE.finditer(text):
-                rel, first, last = m.group(1), int(m.group(2)), m.group(3)
-                if _is_address(rel, first):
-                    continue
-                candidates = [os.path.join(root, rel)] + [os.path.join(root, mod, rel) for mod in mods]
-                path = next((c for c in candidates if os.path.isfile(c)), None)
-                where = os.path.relpath(doc, root)
-                if path is None:
-                    problems.append(f"{where}: reference {m.group(0)} - file not found")
-                elif max(first, int(last or first)) > length(path):
-                    problems.append(f"{where}: reference {m.group(0)} - file has only {length(path)} lines")
+            if name.endswith(".md") and name != "INDEX.md":
+                problems += _reference_problems(root, os.path.join(dirpath, name), mods, line_counts)
     return problems
 
 

@@ -1,3 +1,6 @@
+import contextlib
+import fcntl
+import io
 import os
 import sys
 import threading
@@ -68,6 +71,16 @@ class T(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(localq.DIR, "call1.lock")))  # the free slot was taken
         self.assertEqual(ran, [True])
         self.assertTrue(os.path.isdir(blocker))  # the foreign entry is left alone
+
+    def test_unopenable_count_is_per_pass_so_busy_slot_still_waits(self):  # one unopenable + one busy slot: count resets each pass, as base
+        os.makedirs(os.path.join(localq.DIR, "call0.lock"))  # unopenable: a directory at the lock path
+        busy = open(os.path.join(localq.DIR, "call1.lock"), "a+")  # handle held for the whole test
+        self.addCleanup(busy.close)
+        fcntl.flock(busy, fcntl.LOCK_EX | fcntl.LOCK_NB)  # a live holder of the other slot
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(TimeoutError), localq.slot("call", timeout=1):
+            self.fail("slot body must not run while the only openable slot is busy")
+        self.assertNotIn("running without a slot", err.getvalue())
 
     def test_status_lists_slots(self):
         with localq.slot("call"):

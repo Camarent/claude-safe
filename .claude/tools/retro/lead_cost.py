@@ -76,6 +76,31 @@ def _usd(model, parts):
     return {k: parts[k] * p[k] / 1e6 for k in parts}
 
 
+def _price_turn(r, usd, tok, model, parts):
+    """Add one turn's tokens to tok and its priced cost to usd; an unpriced turn only counts in r["unpriced"]."""
+    for k, v in parts.items():
+        tok[k] += v
+    cost = _usd(model, parts)
+    if cost is None:
+        r["unpriced"] += 1
+    else:
+        for k, v in cost.items():
+            usd[k] += v
+
+
+def _gap(r, gap, model, parts):
+    """Count one gap between turns: active time within the cache TTL, else a gap with a cache rewrite."""
+    if gap <= CACHE_TTL_S:
+        r["active"] += gap
+        return
+    r["gaps"] += 1
+    r["long_gaps"] += gap > LONG_GAP_S
+    p = prices.lookup(model)
+    if p:
+        r["rewrite"] += parts["cache_write"] * (p["cache_write"] - p["cache_read"]) / 1e6
+        r["rewrite_tokens"] += parts["cache_write"]
+
+
 def analyse_lead(path, lo=0.0, hi=float("inf")):
     """-> dict for one lead transcript, turns inside [lo, hi] only: usd and tokens per kind, turns, wall/active seconds, gap counts, rewrite cost, peak context."""
     usd = dict.fromkeys(("input", "cache_write", "cache_read", "output"), 0.0)
@@ -100,27 +125,11 @@ def analyse_lead(path, lo=0.0, hi=float("inf")):
         r["turns"] += 1
         r["peak"] = max(r["peak"], sum(parts[k] for k in ("input", "cache_write", "cache_read")))
         r["h1"] += int((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens") or 0)
-        for k, v in parts.items():
-            tok[k] += v
-        cost = _usd(model, parts)
-        if cost is None:
-            r["unpriced"] += 1
-        else:
-            for k, v in cost.items():
-                usd[k] += v
+        _price_turn(r, usd, tok, model, parts)
         if ts:
             first = first or ts
             if prev:
-                gap = ts - prev
-                if gap <= CACHE_TTL_S:
-                    r["active"] += gap
-                else:
-                    r["gaps"] += 1
-                    r["long_gaps"] += gap > LONG_GAP_S
-                    p = prices.lookup(model)
-                    if p:
-                        r["rewrite"] += parts["cache_write"] * (p["cache_write"] - p["cache_read"]) / 1e6
-                        r["rewrite_tokens"] += parts["cache_write"]
+                _gap(r, ts - prev, model, parts)
             r["wall"] = ts - first
             prev = ts
     r.update(usd=usd, tok=tok)

@@ -234,26 +234,42 @@ def _post(messages, tools=True):
     return strata_messages(body, CALL_TIMEOUT_S)
 
 
-def parse_files(text, repos):
-    """[(repo, path, why, category)] from the model's final json; entries of an unknown repo are dropped. None when there is no json object."""
+def _category_items(obj):
+    """The `files` list, or the per-category lists (code, tests, docs, data) of the model's json, each tagged with its category."""
+    return obj.get("files") or [
+        {**i, "category": k} for k in ("code", "tests", "docs", "data") for i in (obj.get(k) or [])[:MAX_PER_CATEGORY] if isinstance(i, dict)
+    ]
+
+
+def _json_items(text):
+    """Entries of the model's final json object. Cut off by max_tokens: the complete `{...}` entries. None when there are none."""
     try:
-        obj = json.JSONDecoder().raw_decode(text[text.index("{") :])[0]
-        items = obj.get("files") or [
-            {**i, "category": k} for k in ("code", "tests", "docs", "data") for i in (obj.get(k) or [])[:MAX_PER_CATEGORY] if isinstance(i, dict)
-        ]
+        return _category_items(json.JSONDecoder().raw_decode(text[text.index("{") :])[0])
     except (ValueError, AttributeError):  # cut off by max_tokens: keep the complete entries
         items = []
         for m in re.finditer(r"\{[^{}]*\}", text):
             with contextlib.suppress(ValueError):
                 items.append(json.loads(m.group(0)))
-        if not items:
-            return None
+        return items or None
+
+
+def _known_entry(i, repos):
+    """True when entry I names a known repo and a path that is a file of it."""
+    if not (isinstance(i, dict) and i.get("repo") in repos and isinstance(i.get("path"), str)):
+        return False
+    rel = _repo_rel(repos[i["repo"]], i["path"])
+    return rel is not None and os.path.isfile(os.path.join(repos[i["repo"]], rel))
+
+
+def parse_files(text, repos):
+    """[(repo, path, why, category)] from the model's final json; entries of an unknown repo are dropped. None when there is no json object."""
+    items = _json_items(text)
+    if items is None:
+        return None
     out = []
     for i in items:
-        if not (isinstance(i, dict) and i.get("repo") in repos and isinstance(i.get("path"), str)):
-            continue
-        rel = _repo_rel(repos[i["repo"]], i["path"])
-        if rel is not None and os.path.isfile(os.path.join(repos[i["repo"]], rel)):
+        if _known_entry(i, repos):
+            rel = _repo_rel(repos[i["repo"]], i["path"])
             out.append((i["repo"], rel, str(i.get("why", ""))[:80], str(i.get("category", ""))))
     return out
 

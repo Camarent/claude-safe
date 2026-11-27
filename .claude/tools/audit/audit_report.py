@@ -6,6 +6,23 @@ import collections
 import json
 
 
+def _print_list(fl, top):
+    """One line per finding (the first TOP), with its `check` when audit_enrich wrote one."""
+    for f in fl[:top]:
+        print(
+            "{}:{} {} {} {}{}".format(
+                f["file"], f.get("line", ""), f["tool"], f["rule"], f["message"][:100], ("  [check: {}]".format(f["check"])) if f.get("check") else ""
+            )
+        )
+
+
+def _print_top(fl, top, group):
+    """The TOP (tool, GROUP) pairs by finding count."""
+    print(f"top {top} by {group}:")
+    for (t, k), n in collections.Counter((f["tool"], f[group]) for f in fl).most_common(top):
+        print(f"  {n:5d} {t} {k}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("findings")
@@ -24,18 +41,10 @@ def main():
         return
     print(f"total {len(fl)}; by tool: {dict(collections.Counter(f['tool'] for f in fl))}")
     print("by severity: {}".format(dict(collections.Counter(f["severity"] for f in fl))))
-    g = collections.Counter((f["tool"], f[a.group]) for f in fl)
     if a.list:
-        for f in fl[: a.top]:
-            print(
-                "{}:{} {} {} {}{}".format(
-                    f["file"], f.get("line", ""), f["tool"], f["rule"], f["message"][:100], ("  [check: {}]".format(f["check"])) if f.get("check") else ""
-                )
-            )
+        _print_list(fl, a.top)
         return
-    print(f"top {a.top} by {a.group}:")
-    for (t, k), n in g.most_common(a.top):
-        print(f"  {n:5d} {t} {k}")
+    _print_top(fl, a.top, a.group)
 
 
 if __name__ == "__main__":

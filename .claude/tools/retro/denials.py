@@ -71,6 +71,19 @@ def family(text, cmd=""):
     return "other: " + text[:45]
 
 
+MULTI_FIX = "one command per Bash call; qrun form: cs-qrun -- <cmd> && <read-only cmd>"
+CLASSIFIER_FIX = "split the command; run reads separately"
+
+
+def fix_for(label):
+    """-> the allowed form for a family label, or "" when no fix is known (the harness texts have no hook to change)."""
+    if label.startswith("multi: "):
+        return MULTI_FIX
+    if label.startswith("other: ") and "classifier" in label.lower():
+        return CLASSIFIER_FIX
+    return ""
+
+
 def result_text(block):
     c = block.get("content")
     if isinstance(c, list):
@@ -95,24 +108,31 @@ def blocks(ev):
     return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
 
 
+def _note_block(b, day, cmds, calls, denials):
+    """Record one content block: a Bash call (into cmds and calls) or a denied result (into denials)."""
+    if b.get("type") == "tool_use" and b.get("name") == "Bash":
+        cmds[b.get("id")] = (b.get("input") or {}).get("command", "")
+        calls.append(day)
+    elif b.get("type") == "tool_result" and b.get("is_error") and b.get("tool_use_id") in cmds:
+        text = result_text(b)
+        if DENY_RE.search(text):
+            denials.append((day, text, cmds[b["tool_use_id"]]))
+
+
 def scan_file(path, cutoff):
     """Return (call days, denials) of one transcript; a denial is (day, text, cmd)."""
     events = list(read_events(path))
     if any(e.get("entrypoint") == "cli" for e in events):
         return [], []
-    cmds, calls, denials = {}, [], []
+    cmds: dict[str, str] = {}
+    calls: list[str] = []
+    denials: list[tuple[str, str, str]] = []
     for ev in events:
         day = str(ev.get("timestamp", ""))[:10]
         if day < cutoff:
             continue
         for b in blocks(ev):
-            if b.get("type") == "tool_use" and b.get("name") == "Bash":
-                cmds[b.get("id")] = (b.get("input") or {}).get("command", "")
-                calls.append(day)
-            elif b.get("type") == "tool_result" and b.get("is_error") and b.get("tool_use_id") in cmds:
-                text = result_text(b)
-                if DENY_RE.search(text):
-                    denials.append((day, text, cmds[b["tool_use_id"]]))
+            _note_block(b, day, cmds, calls, denials)
     return calls, denials
 
 
@@ -157,6 +177,8 @@ def render(s, examples):
     out.append("Families:")
     for f in s["families"]:
         out.append(f"  {f['count']:5d}  {100 * f['share']:5.1f}%  {f['family']}")
+        if fix_for(f["family"]):
+            out.append("          fix: " + fix_for(f["family"]))
         if examples:
             out.append("          e.g. " + f["example"][:160].replace("\n", " "))
     return "\n".join(out)

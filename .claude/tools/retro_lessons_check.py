@@ -19,7 +19,7 @@ HEADER_CELL, DIVIDER_PREFIX = "stage", "---"
 ROW_CELLS = 4  # stage | task | report | cause
 
 
-def parse(text):
+def parse(text: str) -> tuple[dict[str, list[list[str]]], tuple[int, int] | None]:
     """-> ({section: [cells, ...]}, (stuck, useless) totals or None). Header and divider rows are skipped."""
     sections: dict[str, list[list[str]]] = {}
     totals = None
@@ -49,23 +49,30 @@ def problems(path, check_files=True):
     except OSError as exc:
         return [f"cannot read {path}: {exc.strerror}"]
     sections, totals = parse(text)
+    out = [f"missing section: ## {name}" for name in SECTIONS if name not in sections]
+    out += _row_problems(sections, check_files)
+    out += _totals_problems(sections, totals)
+    return out
+
+
+def _row_problems(sections, check_files):
     out = []
-    for name in SECTIONS:
-        if name not in sections:
-            out.append(f"missing section: ## {name}")
     for name in SECTIONS:
         for cells in sections.get(name, []):
             if len(cells) != ROW_CELLS or not all(cells):
                 out.append(f"{name}: row needs {ROW_CELLS} non-empty cells: {cells}")
             elif check_files and not os.path.isfile(cells[2]):
                 out.append(f"{name}: report file missing: {cells[2]}")
-    if totals is None:
-        out.append("missing totals footer: Totals: stuck causes N, useless escalations M.")
-    else:
-        rows = tuple(len(sections.get(name, [])) for name in SECTIONS)
-        if totals != rows:
-            out.append(f"totals {totals[0]}, {totals[1]} do not match rows {rows[0]}, {rows[1]}")
     return out
+
+
+def _totals_problems(sections, totals):
+    if totals is None:
+        return ["missing totals footer: Totals: stuck causes N, useless escalations M."]
+    rows = tuple(len(sections.get(name, [])) for name in SECTIONS)
+    if totals != rows:
+        return [f"totals {totals[0]}, {totals[1]} do not match rows {rows[0]}, {rows[1]}"]
+    return []
 
 
 def main(argv=None):

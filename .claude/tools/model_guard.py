@@ -54,7 +54,7 @@ def verdict(tool_input):
         return f"`{kind}` is a mechanical agent: use model haiku. Escalation goes to dev/general-purpose with a reason."
     if not REASON_LINE.search(tool_input.get("prompt") or ""):
         return (
-            f"model {model} needs a line `MODEL-REASON: <what new logic is written or changed>` in the prompt. "
+            f"Use model haiku, or add a line `MODEL-REASON: <what new logic is written or changed>` to the prompt for model {model}. "
             "Transcription, extraction, counting, running tools and diffing are mechanical: use haiku (ops for bulk)."
         )
     return ""

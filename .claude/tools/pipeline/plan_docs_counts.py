@@ -3,6 +3,7 @@
 import os
 import re
 
+from . import task_text
 from .configuration import DOCS_COUNT_MSG, DOCS_COUNT_PREFIX, DOCS_COUNT_RE, DOCS_INDEX_PATH, HAND_DOC_DIRS, HAND_DOC_NAMES
 from .plan_files import paths_in
 from .plan_rules import _is_docs_path
@@ -21,7 +22,7 @@ def check_docs_counts(d, tid) -> list[str]:
     text = read_text(os.path.join(d, tid + ".md"))
     if not any(_is_hand_written(p) for p in paths_in(text)):
         return []
-    goal_done = "\n".join(ln for ln in text.splitlines() if ln.startswith(("Goal:", "Done:")))
+    goal_done = "\n".join(value for _, value in task_text.lines(text, "Goal", "Done"))
     if not re.search(DOCS_COUNT_RE, goal_done):
         return []
     return [f"{DOCS_COUNT_PREFIX} {tid}: its Goal or Done pins a count or line number in a hand-written doc: {DOCS_COUNT_MSG}"]

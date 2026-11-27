@@ -126,6 +126,24 @@ def _request(argv, kind, cwd):
     return req
 
 
+def _recv_reply(c):
+    """One newline-terminated JSON reply from the server -> dict, or None when the connection closes first."""
+    buf = b""
+    while not buf.endswith(b"\n"):
+        chunk = c.recv(65536)
+        if not chunk:
+            return None
+        buf += chunk
+    return json.loads(buf)
+
+
+def _exchange(c, argv, kind, cwd):
+    """Send one request on connection `c` and read its reply (None when the server closes first)."""
+    c.settimeout(NAV_WAIT_S + NAV_REPLY_MARGIN_S if kind == "nav" else CODESRV_REPLY_TIMEOUT_S)
+    c.sendall(json.dumps(_request(argv, kind, cwd)).encode() + b"\n")
+    return _recv_reply(c)
+
+
 def daemon_call(argv, kind="find", cwd=None):
     """Run an ask_code command (kind find) or a language-server op (kind nav) in the warm server. Returns its exit code, or None when the server is unavailable or a nav reply says fallback (caller then runs it in-process). A nav timeout never kills the server."""
     nav = kind == "nav"
@@ -135,15 +153,7 @@ def daemon_call(argv, kind="find", cwd=None):
         if c is None:
             return None
         try:
-            c.settimeout(NAV_WAIT_S + NAV_REPLY_MARGIN_S if nav else CODESRV_REPLY_TIMEOUT_S)
-            c.sendall(json.dumps(_request(argv, kind, cwd)).encode() + b"\n")
-            buf = b""
-            while not buf.endswith(b"\n"):
-                chunk = c.recv(65536)
-                if not chunk:
-                    return None
-                buf += chunk
-            r = json.loads(buf)
+            r = _exchange(c, argv, kind, cwd)
         except TimeoutError:  # the server is stuck: kill it, try once with a fresh one, then give up (caller runs in-process)
             if nav:
                 return None  # a slow language server must not take `find` down with it
@@ -156,6 +166,8 @@ def daemon_call(argv, kind="find", cwd=None):
             return None
         finally:
             c.close()
+        if r is None:  # server closed before a full reply
+            return None
         if r.get("restart"):  # the server was older than the tool files: it exits, we start a fresh one
             import time
 
@@ -295,6 +307,16 @@ def cmd_judgefiles(a):
     return one_call(prompt)
 
 
+def _local_model_cmd(c, rest):
+    """judge / review / judgefiles: skipped (rc 0) when the local model is down or off, else run."""
+    from search.strata import strata_up
+
+    if not strata_up():
+        print(f"skipped: local model down or off ({c}); local-model steps are optional")
+        return 0
+    return {"judge": cmd_judge, "review": cmd_review, "judgefiles": cmd_judgefiles}[c](rest)
+
+
 def main(a):
     if not a or a[0] in ("-h", "--help"):
         sys.exit(__doc__)
@@ -306,17 +328,7 @@ def main(a):
     if c == "index":
         return cmd_index(rest)
     if c in ("judge", "review", "judgefiles"):
-        from search.strata import strata_up
-
-        if not strata_up():
-            print(f"skipped: local model down or off ({c}); local-model steps are optional")
-            return 0
-    if c == "judge":
-        return cmd_judge(rest)
-    if c == "review":
-        return cmd_review(rest)
-    if c == "judgefiles":
-        return cmd_judgefiles(rest)
+        return _local_model_cmd(c, rest)
     if c in ("bulk", "pack", "code", "log"):
         return script("localmodel/localdev.py", a)
     if c == "status":

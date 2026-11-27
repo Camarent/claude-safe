@@ -12,9 +12,9 @@ The script-step timeout (`script_timeout()` in `.claude/tools/pipeline/util.py`)
 
 ## search
 
-- `.claude/tools/search/lsp.py:117` - rg prints one JSON object per line; a non-JSON line is skipped, not an error
-- `.claude/tools/search/lsp.py:168` - checker missing or hung; the NOT CHECKED line below reports it
-- `.claude/tools/search/lsp.py:284` - pull diagnostics is optional; the push settle below covers servers without it
+- `.claude/tools/search/lsp.py:144` - rg prints one JSON object per line; a non-JSON line is skipped, not an error
+- `.claude/tools/search/lsp.py:195` - checker missing or hung; the NOT CHECKED line below reports it
+- `.claude/tools/search/lsp.py:311` - pull diagnostics is optional; the push settle below covers servers without it
 - `.claude/tools/search/lsp_client.py:99` - not a swallow; a refused or silent initialize must not leave the server running, then re-raise
 - `.claude/tools/search/codesrv.py:142` - logs the traceback to stderr and reports exit 3 to the caller
 - `.claude/tools/search/codesrv.py:146` - last resort for one connection; logs the traceback so the server keeps serving
@@ -29,8 +29,8 @@ The script-step timeout (`script_timeout()` in `.claude/tools/pipeline/util.py`)
 ## audit
 
 - `.claude/tools/audit/audit_parsers.py:27` - not a plain JSON document (log noise first); scan_json finds the document
-- `.claude/tools/audit/audit_run.py:115` - returned as status "crash" with the text; the caller reports it
-- `.claude/tools/audit/audit_run.py:133` - no git means no short sha in the stamp; the date stays
+- `.claude/tools/audit/audit_run.py:123` - returned as status "crash" with the text; the caller reports it
+- `.claude/tools/audit/audit_run.py:141` - no git means no short sha in the stamp; the date stays
 - `.claude/tools/audit/gatewatch.py:25` - the file was removed between the walk and this stat, a normal race
 
 ## top-level

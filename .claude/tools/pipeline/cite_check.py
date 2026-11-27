@@ -125,15 +125,23 @@ def _inside(worktree, path):
     return full if os.path.commonpath([root, full]) == root else None
 
 
-def _resolve_bare(worktree, path):
-    """-> the worktree-relative path of the one file named path when path has no directory and exactly one such file exists outside CITE_SKIP_DIRS; else path unchanged."""
+def _bare_hits(worktree, path):
+    """-> every worktree-relative file named path (outside CITE_SKIP_DIRS) when path has no directory; [] when it has one."""
     if os.sep in path or "/" in path:
-        return path
+        return []
     found = []
     for root, dirs, files in os.walk(worktree):
         dirs[:] = [d for d in dirs if d not in CITE_SKIP_DIRS]
         if path in files:
             found.append(os.path.relpath(os.path.join(root, path), worktree))
+    return found
+
+
+def _resolve_bare(worktree, path):
+    """-> the worktree-relative path of the one file named path when path has no directory and exactly one such file exists outside CITE_SKIP_DIRS; else path unchanged."""
+    if os.sep in path or "/" in path:
+        return path
+    found = _bare_hits(worktree, path)
     return found[0] if len(found) == 1 else path
 
 
@@ -192,19 +200,30 @@ def _cite_msg(worktree, where, path, line, end, before, relaxed=False):
 def check(worktree, added, report_text, split=()) -> list[str]:
     """-> [message] for the cites in the added lines and in the dev report text that do not hold: path outside the worktree, missing file, line past the end, or a symbol named before the cite that is not within CITE_WINDOW_LINES of it. A report cite into a split file (split_files) skips the line-past-end and symbol tests only."""
     rows = [(CITE_REPORT_NAME, ln, text) for ln, text in _prose(enumerate(report_text.splitlines(), 1))]
+    msgs = []
+    for src, ln, text in _kept_lines(worktree, added) + rows:
+        msgs += _line_msgs(worktree, src, ln, text, split)
+    return msgs
+
+
+def _kept_lines(worktree, added) -> list:
+    """The added lines (src, ln, text) that are not in the prose of a markdown source: markdown counts only its prose lines."""
     prose = {}
     for src in {s for s, _, _ in added if os.path.splitext(s)[1] in CITE_MD_EXTENSIONS}:
         prose[src] = _prose_numbers(worktree, src)
-    kept = [(s, ln, t) for s, ln, t in added if prose.get(s) is None or ln in prose[s]]
+    return [(s, ln, t) for s, ln, t in added if prose.get(s) is None or ln in prose[s]]
+
+
+def _line_msgs(worktree, src, ln, text, split) -> list[str]:
+    """The messages for the cites in one line that do not hold (quoted fixed cites are skipped)."""
+    skip = _quoted_fixed(text)
     msgs = []
-    for src, ln, text in kept + rows:
-        skip = _quoted_fixed(text)
-        for path, line, end, before in cites(text):
-            if (path, line, end) in skip:
-                continue
-            where = f"{src}:{ln} cites {path}:{line}" + (f"-{end}" if end else "")
-            relaxed = src == CITE_REPORT_NAME and path in split
-            msg = _cite_msg(worktree, where, path, line, end, before, relaxed)
-            if msg:
-                msgs.append(msg)
+    for path, line, end, before in cites(text):
+        if (path, line, end) in skip:
+            continue
+        where = f"{src}:{ln} cites {path}:{line}" + (f"-{end}" if end else "")
+        relaxed = src == CITE_REPORT_NAME and path in split
+        msg = _cite_msg(worktree, where, path, line, end, before, relaxed)
+        if msg:
+            msgs.append(msg)
     return msgs

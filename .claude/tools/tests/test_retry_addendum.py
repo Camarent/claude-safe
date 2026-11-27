@@ -48,13 +48,13 @@ class RetryAddendum(unittest.TestCase):
             cli_orch.cmd_reset(a)
 
     def test_addendum_appended_once_and_sets_note(self):
-        self.retry(note="fix the import", addendum="Use the new helper, not the old one.")
+        self.retry(note="fix the import in .claude/tools/pipeline/cli_orch.py:523", addendum="Use the new helper, not the old one.")
         txt = self.task()
         self.assertTrue(txt.startswith("Test: true\n"))
         self.assertEqual(len(HEADING_RE.findall(txt)), 1)
         self.assertIn("Use the new helper, not the old one.", txt)
         ev = [e for e in self.log() if e["ev"] == "retry"][-1]
-        self.assertEqual(ev["note"], "fix the import\nUse the new helper, not the old one.")
+        self.assertEqual(ev["note"], "fix the import in .claude/tools/pipeline/cli_orch.py:523\nUse the new helper, not the old one.")
 
     def test_second_addendum_appends_again(self):
         self.retry(addendum="first hint")
@@ -73,10 +73,10 @@ class RetryAddendum(unittest.TestCase):
         self.assertEqual(self.log(), log_before)
 
     def test_note_unchanged_without_flag(self):
-        self.retry(note="only the note")
+        self.retry(note="only the note in .claude/tools/pipeline/cli_orch.py:523")
         self.assertNotIn("ADDENDUM", self.task())
         ev = [e for e in self.log() if e["ev"] == "retry"][-1]
-        self.assertEqual(ev["note"], "only the note")
+        self.assertEqual(ev["note"], "only the note in .claude/tools/pipeline/cli_orch.py:523")
 
 
 if __name__ == "__main__":

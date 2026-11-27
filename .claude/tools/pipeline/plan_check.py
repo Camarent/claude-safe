@@ -15,17 +15,17 @@ from .cite_check import _cite_msg as _cite_msg  # re-exported: pre-split name of
 from .cite_check import _resolve_bare as _resolve_bare  # re-exported: pre-split name of pipeline.plan_check
 from .cite_check import cites as cites  # re-exported: pre-split name of pipeline.plan_check
 from .configuration import (
-    AFFECTED_WARN_PREFIX,
+    AFFECTED_WARN_PREFIX as AFFECTED_WARN_PREFIX,
+)
+from .configuration import (
     CARRIED_NOT_NEEDED,
     CARRIED_SECTION,
     FINAL_GATES_KEY,
     GATE_LABELS,
     GATES_KEY,
-    GENERATED_WARN_PREFIX,
+    LATER_NOTES_PATH,
     MERGE_GATES_KEY,
-    NEG_WARN_PREFIX,
     PLAN_FILE,
-    PREREQ_WARN_PREFIX,
     PUBLISH_BUILD,
     PUBLISH_CWD,
     PUBLISH_FILES,
@@ -35,10 +35,7 @@ from .configuration import (
     PUBLISH_RE,
     REQUEST_FILE,
     SHARED_MIN,
-    SKIP_GATE_WARN_PREFIX,
     TASKS_FILE,
-    TESTCMD_WARN_PREFIX,
-    WEBTEST_WARN_PREFIX,
     ConfigError,
     project,
     publish_entries,
@@ -50,7 +47,25 @@ from .configuration import (
     CITE_BACKTICK_FILE_RE as CITE_BACKTICK_FILE_RE,
 )
 from .configuration import (
+    GENERATED_WARN_PREFIX as GENERATED_WARN_PREFIX,
+)
+from .configuration import (
+    NEG_WARN_PREFIX as NEG_WARN_PREFIX,
+)
+from .configuration import (
+    PREREQ_WARN_PREFIX as PREREQ_WARN_PREFIX,
+)
+from .configuration import (
     SCOPE_TEST_RE as SCOPE_TEST_RE,
+)
+from .configuration import (
+    SKIP_GATE_WARN_PREFIX as SKIP_GATE_WARN_PREFIX,
+)
+from .configuration import (
+    TESTCMD_WARN_PREFIX as TESTCMD_WARN_PREFIX,
+)
+from .configuration import (
+    WEBTEST_WARN_PREFIX as WEBTEST_WARN_PREFIX,
 )
 from .configuration import (
     WORK_DIR as WORK_DIR,
@@ -62,7 +77,7 @@ from .plan_check_task import (  # re-exported: callers and tests import the per-
     ANCHOR_RE as ANCHOR_RE,
 )
 from .plan_check_task import (
-    CITE_LINE_PREFIXES as CITE_LINE_PREFIXES,
+    CITE_LINE_FIELDS as CITE_LINE_FIELDS,
 )
 from .plan_check_task import (
     CREATE_RE as CREATE_RE,
@@ -218,9 +233,13 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
-from .plan_parallel import PARALLEL_WARN_PREFIX, parallel_candidates
+from .plan_parallel import PARALLEL_WARN_PREFIX as PARALLEL_WARN_PREFIX
+from .plan_parallel import parallel_candidates
+from .plan_problem import ERROR, Problem
 from .plan_ptest import ptest_selector_problems
+from .plan_quotes import check_quotes
 from .plan_report import check_report_validator, check_type_inputs
+from .plan_research_hint import check_research_hint
 from .plan_rules import (
     _same,
     acceptance_problems,
@@ -252,6 +271,8 @@ from .plan_rules import (
     nested_repo as nested_repo,  # re-exported: pre-split name of pipeline.plan_check
 )
 from .plan_testcmd import check_bare_test_runner, check_qrun_operator, check_test_ban
+from .plan_toolblock import check_toolblock
+from .plan_wiring import check_wiring
 from .shellwords import split_commands as split_commands  # re-exported: pre-split name of pipeline.plan_check
 from .stagedir import workspace_of as workspace_of  # re-exported: pre-split name of pipeline.plan_check
 from .tasks import parse_flags, parse_tasks
@@ -449,6 +470,11 @@ def ux_flows_findings(d, ents, repo) -> list[str]:
     flows, probs = read_flows(path)
     if probs:
         return [f"ux_flows: {p}" for p in probs]
+    return _uncovered_ui_warning(cfg, rel, produced, flows)
+
+
+def _uncovered_ui_warning(cfg, rel, produced, flows) -> list[str]:
+    """-> the `ux-flows:` warning naming the UI files of the plan that no flow covers, [] when all are covered."""
     globs = ui_paths(cfg)
     changed = [p for p in produced if any(fnmatch.fnmatch(p, g) or fnmatch.fnmatch(os.path.basename(p), g) for g in globs) and not _same(p, rel)]
     _, loose = covering(flows, changed)
@@ -496,17 +522,19 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
         d, ents
     ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(
         d, ents
-    )
+    ) + check_research_hint(d, ents) + check_wiring(d, ents) + check_toolblock(d, ents) + check_quotes(d, ents)
 
 
 def _carried_problems(d, ents):
-    """A phase after the first: TASKS.md needs a `## Carried from earlier phases` section; each bullet in it names a task of this stage or says `not needed: reason`."""
+    """A phase after the first: TASKS.md needs a `## Carried from earlier phases` section; each bullet in it names a task of this stage or says `not needed: reason`.
+    The later-notes file (workspace root) adds: each of its bullets naming a path of this stage needs such a bullet too (`carried-notes:`)."""
     if not is_later_phase(tasks_path(d)):
         return []
     heading = f"## {CARRIED_SECTION}"
     lines = Path(tasks_path(d)).read_text(encoding="utf-8", errors="replace").splitlines()
     if heading not in lines:
-        return [f"{heading} section missing: list each item carried from earlier phases as a task or `{CARRIED_NOT_NEEDED} reason`"]
+        missing = f"{heading} section missing: list each item carried from earlier phases as a task or `{CARRIED_NOT_NEEDED} reason`"
+        return [missing, *_later_notes_problems(d, ents, [])]
     body = []
     for x in lines[lines.index(heading) + 1 :]:
         if x.startswith("## "):
@@ -514,16 +542,40 @@ def _carried_problems(d, ents):
         if x.startswith("- "):
             body.append(x)
     if not body:
-        return [f"{heading} section has no items: write one `- task-N ...` or `- {CARRIED_NOT_NEEDED} reason` line per carried item"]
+        empty = f"{heading} section has no items: write one `- task-N ...` or `- {CARRIED_NOT_NEEDED} reason` line per carried item"
+        return [empty, *_later_notes_problems(d, ents, [])]
     ids = {e["id"] for e in ents}
-    probs = []
-    for x in body:
-        named = {t for t in re.findall(r"task-\d+", x) if t in ids}
-        if CARRIED_NOT_NEEDED in x and x.split(CARRIED_NOT_NEEDED, 1)[1].strip():
-            continue
-        if not named:
-            probs.append(f"{heading}: `{x[2:]}` is neither a task of this stage nor `{CARRIED_NOT_NEEDED} reason`")
-    return probs
+    probs = [f"{heading}: `{x[2:]}` is neither a task of this stage nor `{CARRIED_NOT_NEEDED} reason`" for x in body if not _carried_ok(x, ids)]
+    return probs + _later_notes_problems(d, ents, [x for x in body if _carried_ok(x, ids)])
+
+
+def _carried_ok(x, ids) -> bool:
+    """True when a Carried bullet X names a task of the stage (IDS) or says `not needed: reason`."""
+    if CARRIED_NOT_NEEDED in x and x.split(CARRIED_NOT_NEEDED, 1)[1].strip():
+        return True
+    return any(t in ids for t in re.findall(r"task-\d+", x))
+
+
+def _later_notes_problems(d, ents, ok_bullets) -> list[str]:
+    """Each bullet of the later-notes file that names a path (or its file name) of this stage's tasks needs one valid Carried bullet (OK_BULLETS); the file absent gives none.
+    The match is count-based: Carried bullets name no path, so N valid bullets cover N notes items and the rest are flagged."""
+    path = os.path.join(_workspace(d), LATER_NOTES_PATH)
+    if not os.path.isfile(path):
+        return []
+    items = [x for x in Path(path).read_text(encoding="utf-8", errors="replace").splitlines() if x.startswith("- ")]
+    named = _notes_naming_paths(d, ents, items)
+    return [
+        f"carried-notes: `{x[2:]}` names a path of this stage: add a `- task-N ...` or `- {CARRIED_NOT_NEEDED} reason` line to `## {CARRIED_SECTION}`"
+        for x in named[len(ok_bullets) :]
+    ]
+
+
+def _notes_naming_paths(d, ents, items) -> list[str]:
+    """-> the later-notes bullets that name a path (or its file name) of this stage's tasks, in file order."""
+    paths = {p for e in ents for p in task_paths(d, e["id"]) if p}
+    # whole-token match of the path or its file name, never a substring (`a` must not match `data`)
+    names = {n for p in paths for n in (p, os.path.basename(p)) if n}
+    return [x for x in items if any(re.search(rf"(?<![\w.-]){re.escape(n)}(?![\w-])", x) for n in names)]
 
 
 GATE_RE = re.compile(r"^gate:\s*(uncertainty gate|owner step or real-data run|separate repo|30-task cap)\b", re.I)
@@ -531,33 +583,8 @@ MIN_PHASE, MAX_COMBINED = 10, 25
 
 
 def errors_of(probs) -> list[str]:
-    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check). `ci-drift:` is an error."""
-    return [
-        p
-        for p in probs
-        if not p.startswith(
-            (
-                "combine:",
-                "size:",
-                "shared:",
-                "gate:",
-                "release:",
-                "done:",
-                "cmd:",
-                "open-edit:",
-                "repos:",
-                UX_FLOWS_WARN_PREFIX,
-                PARALLEL_WARN_PREFIX,
-                AFFECTED_WARN_PREFIX,
-                NEG_WARN_PREFIX,
-                SKIP_GATE_WARN_PREFIX,
-                PREREQ_WARN_PREFIX,
-                WEBTEST_WARN_PREFIX,
-                GENERATED_WARN_PREFIX,
-                TESTCMD_WARN_PREFIX,
-            )
-        )
-    ]
+    """PROBS whose kind is an error in plan_problem.KIND_LEVELS: the warning kinds (`combine:`, `size:`, `neg:`, `tests-use:`, ...) never fail a check; an unknown kind is an error."""
+    return [p for p in probs if Problem.parse(p).level == ERROR]
 
 
 def ci_drift_warnings(d) -> list[str]:

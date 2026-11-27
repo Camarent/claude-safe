@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402  (sys.path set above)
 from localmodel.prereview import job_diff  # noqa: E402  (sys.path set above)
-from pipeline import cite_check, docs_impact, empty_tests, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
+from pipeline import cite_check, dev_gate_audit, docs_impact, empty_tests, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
 from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     ADD_REPO_CMD,
     BLOCKED,
@@ -36,6 +36,7 @@ from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     FAIL,
     GATE_TIMEOUT_S,
     GIT_TIMEOUT_S,
+    TASKS_FILE,
     WORK_DIR,
     docs_dir_of,
     project,
@@ -204,11 +205,13 @@ def _cite_findings(cwd, d, report, diff):
     return "\n".join(["FAIL cite check: a path:line cite does not hold:", *msgs, *bare]), ""
 
 
-def _docs_impact_findings(cwd, d, diff):
-    """-> (FAIL note naming each doc the job diff leaves stale (docs_impact.check), skip note). Off when the `docs_impact_gate` key of pipeline.json is false or `docs_dir` is empty (no docs folder, no root walk). No job diff -> no finding, the skip note NO_DIFF_NOTE."""
+def _docs_impact_findings(cwd, d, stage, diff):
+    """-> (FAIL note naming each doc the job diff leaves stale (docs_impact.check), skip note). Off when the `docs_impact_gate` key of pipeline.json is false for `stage` (a dict gives each stage its own switch, docs_impact.gate_on), when the stage's TASKS.md holds a `Docs gate: off` line (docs_impact.plan_off), or when `docs_dir` is empty (no docs folder, no root walk). No job diff -> no finding, the skip note NO_DIFF_NOTE."""
     cfg = project(d)
     docs = docs_dir_of(cfg)
-    if not cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT) or not docs:
+    if not docs_impact.gate_on(cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT), stage) or not docs:
+        return "", ""
+    if docs_impact.plan_off(read_text(os.path.join(d, WORK_DIR, stage, TASKS_FILE))):
         return "", ""
     if diff is None:
         return "", NO_DIFF_NOTE
@@ -272,7 +275,8 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
     fail, skips = _diff_findings(cwd, d, stage, task, report, diff_fn)
     if fail:
         return FAIL, fail
-    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes, *skips])
+    dev_warns = dev_gate_audit.warn_task(d, stage, task)  # warnings only: the DONE verdict stands
+    return DONE, "\n".join([f"{len(cmds)} Test line(s) green in {cwd}", *gate_notes, *skipped, *lead_notes, *skips, *dev_warns])
 
 
 def _diff_findings(cwd, d, stage, task, report, diff_fn):
@@ -281,7 +285,7 @@ def _diff_findings(cwd, d, stage, task, report, diff_fn):
     cite, cite_note = _cite_findings(cwd, d, report, diff)
     if cite:
         return cite, []
-    docs, docs_note = _docs_impact_findings(cwd, d, diff)
+    docs, docs_note = _docs_impact_findings(cwd, d, stage, diff)
     if docs:
         return docs, []
     empty, empty_note = _empty_test_findings(cwd, d, diff)

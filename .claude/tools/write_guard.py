@@ -64,8 +64,8 @@ def deny_reason(path, main, worktree):
     rel = os.path.relpath(path, main)
     retry = os.path.join(worktree, rel)
     text = (
-        f"write_guard: {path} is in the main checkout {main}; this dev session works in the job worktree {worktree}. "
-        f"Retry once with the same relative path under the worktree: {retry}."
+        f"Write {retry} (not {path}): this dev session works in the job worktree {worktree}; "
+        f"the main checkout {main} is not for writes. Retry once with that path."
     )
     if SCRATCH_PARTS.intersection(rel.split(os.sep)):
         text += f" Scratch files go to the ${ENV_SCRATCH_DIR} dir, not the repo."

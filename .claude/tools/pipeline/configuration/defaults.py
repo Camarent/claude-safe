@@ -59,6 +59,10 @@ AUDITOR_REMIT = {
 AUDITOR_MAX_TURNS = 40  # `claude --max-turns` for an auditor session (sec-auditor ran 64 turns, 116 tool calls, 57% of a phase's cost); pipeline.json `auditor_max_turns`, 0 = no cap
 AUDITOR_ESCALATE_MAX_TURNS = 80  # `--max-turns` of the Opus rerun after an auditor ESCALATE; pipeline.json `auditor_escalate_max_turns`, 0 = no cap
 REMIT_MATCH_CHARS = 30  # a report line names a checklist item when it holds the first this-many characters of the item text (case-insensitive)
+GATE_TIME_WARN_DEFAULT = {"unit": 120, "merge": 300, "full": 540}  # seconds per gate kind; the `gate_time_warn_s` default
+MERGE_ONLY_TESTS_DEFAULT = ["test_lsp_e2e.py"]  # the `merge_only_tests` default: test files only the merge gate runs
+DEV_GATE_FULL_CMDS_DEFAULT = ["scripts/dev.sh cov", "scripts/dev.sh gate"]  # the `dev_gate_full_cmds` default: the dev gate's full commands
+DEV_GATE_REPEAT_MAX_DEFAULT = 1  # the `dev_gate_repeat_max` default: a red dev gate run repeats no more than this many times
 PROJECT_DEFAULTS: dict = {
     "auditor_max_turns": AUDITOR_MAX_TURNS,  # see above
     "auditor_escalate_max_turns": AUDITOR_ESCALATE_MAX_TURNS,  # see above
@@ -66,7 +70,7 @@ PROJECT_DEFAULTS: dict = {
     "sec_audit_paths": SEC_AUDIT_PATHS,  # see above; a project list replaces it
     "repo": None,  # repo folder below the workspace; None = autodetect the one that holds AUDIT.md
     "repos": None,  # all repo folders below the workspace for the phase digest (git diff --stat each); None = just `repo`
-    "test_command_hint": None,  # the project's real test command, e.g. a wrapper that sets up the environment; a task `Test:` line that runs bare pytest/python -m pytest gets a `testcmd:` warning naming it; None = take the first `gates` command that runs pytest behind a wrapper
+    "test_command_hint": None,  # the project's real test command, e.g. a wrapper that sets up the environment; a task `Test:` line that runs bare pytest/python -m pytest gets a `testcmd:` error naming it; None = take the first `gates` command that runs pytest behind a wrapper
     "test_ban": [],  # list of {"pattern": regex, "use": text}: a task `Test:` command part matching a pattern is a plan error naming `use`; a malformed entry is ignored
     "scope_guard": "strict",  # off | warn | strict: files a job changed outside the task's Predicted paths (and not named in the task text) go to the reviewer brief; strict = must-address, FAIL unless the task text justifies them; warn = mention only
     "scope_allow": [
@@ -82,7 +86,7 @@ PROJECT_DEFAULTS: dict = {
     "webtest_requires_tools": ["mcp__chrome-devtools"],  # tool-name prefixes the browser check needs; [] = never skip it
     "webtest_build": None,  # optional build command: the web-tester runs it first on the stage branch checkout and serves only that fresh build, naming the commit in its report; None = brief unchanged
     "docs_dir": "docs",  # folder below the repo that prepare-repo names in a `## Docs` section of CLAUDE.md (written only when the folder exists)
-    "docs_impact_gate": True,  # docs impact check (pipeline/docs_impact.py, after the cite check): a changed file or top-level def a doc cites needs that doc changed too; false = off
+    "docs_impact_gate": True,  # docs impact check (pipeline/docs_impact.py, after the cite check): a changed file or top-level def a doc cites needs that doc changed too; false = off; a dict {"default": bool, <stage>: bool} switches it per stage (docs_impact.gate_on)
     # cite check over the whole docs folder at every stage end (steps_finaltest.py --doc-cites), not only the docs the stage changed; false = no step
     "docs_cite_final": True,
     # docs freshness audit (freshness-auditor, Haiku): once per feature, in its finish phase, beside sec and arch; false = no audit
@@ -123,10 +127,19 @@ PROJECT_DEFAULTS: dict = {
     "acceptance_timing_flag": None,  # flag appended to the project test command in the acceptance command lines (timing output goes to the stage reports folder); None = no flag
     "pipeline_install_check": None,  # command the driver runs after each phase merge, before the next phase; a failure blocks the stage; None = no check
     "ci_available": True,  # false where no CI runs for the repo: pr-ready and master-merged skip the CI waits and merge on green local gates, and say so
+    "wiring_dirs": [],  # repo folders whose new source files must be imported by another tracked file (orphan check, plan_wiring_orphans.py); [] = no check
+    "gate_time_warn_s": GATE_TIME_WARN_DEFAULT,  # seconds per gate kind {"unit", "merge", "full"} above which a gate run is slow
+    "merge_only_tests": MERGE_ONLY_TESTS_DEFAULT,  # test files run only by the merge gate (gates_merge), never by a task's Test line or the unit gates
+    "dev_gate_full_cmds": DEV_GATE_FULL_CMDS_DEFAULT,  # commands the dev gate runs in full (dev_gate_audit); [] = none
+    "dev_gate_repeat_max": DEV_GATE_REPEAT_MAX_DEFAULT,  # most times the dev gate repeats a red run; 1 = no repeat
 }
 GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
 GATE_COLLISION_RERUNS_KEY = "gate_collision_reruns"  # the PROJECT_DEFAULTS key above
+GATE_TIME_WARN_KEY = "gate_time_warn_s"  # the PROJECT_DEFAULTS key above: seconds per gate kind before a gate run is noted as slow
+MERGE_ONLY_TESTS_KEY = "merge_only_tests"  # the PROJECT_DEFAULTS key above: test files only the merge gate runs
+DEV_GATE_FULL_CMDS_KEY = "dev_gate_full_cmds"  # the PROJECT_DEFAULTS key above: the dev gate's full commands
+DEV_GATE_REPEAT_MAX_KEY = "dev_gate_repeat_max"  # the PROJECT_DEFAULTS key above: most repeats of a red dev gate run
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above
 EMPTY_TEST_KEY = "empty_test_gate"  # the PROJECT_DEFAULTS key (empty_tests.py gate switch)
 EMPTY_TEST_DEFAULT = True  # the key when pipeline.json does not set it
@@ -137,3 +150,17 @@ GITLEAKS_TOOL = "gitleaks"  # the secret scanner binary (gate_secrets.scan_diff)
 GITLEAKS_CLEAN_RC = 0  # gitleaks exit code: no leak found
 GITLEAKS_LEAKS_RC = 1  # gitleaks exit code: at least one leak found
 SECRET_SCAN_TIMEOUT_S = 120  # seconds for one gitleaks run over the task diff
+WIRING_DIRS_KEY = "wiring_dirs"  # the PROJECT_DEFAULTS key: repo folders the orphan check covers
+WIRING_SOURCE_EXTS = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")  # source files the orphan check reads and checks
+WIRING_PY_EXT = ".py"  # the Python source extension: its import lines name dotted modules, not quoted paths
+WIRING_ALIAS_PREFIXES = ("@/",)  # JS/TS path-alias prefixes of an import specifier: the rest is a repo path
+WIRING_TEST_RE = r"(^|/)(test_[^/]*|[^/]*\.(test|spec)\.[^/]+)$|(^|/)tests?/"  # regex: a test file, never an orphan
+WIRING_IMPORT_LINE_RE = r"^\s*(?:\}\s*)?(?:from\s|import\b|export\b.*\bfrom\b|(?:const|let|var)\s.*\brequire\s*\(|require\s*\(|(?:await\s+)?import\s*\()"  # regex: a line that starts an import (a comment or a string never does)
+WIRING_QUOTED_RE = r"""['"]([^'"]+)['"]"""  # regex: the module specifier of a JS/TS import line
+WIRING_PY_FROM_RE = r"^\s*from\s+([\w.]+)\s+import\s+(.+)$"  # regex: a Python `from X import Y` line
+WIRING_PY_IMPORT_RE = r"^\s*import\s+([\w.]+)"  # regex: a Python `import X` line
+WIRING_SPLIT_RE = r"[^\w-]+"  # regex: splits a module specifier into the names it is made of
+KNIP_CONFIG_FILE = "knip.json"  # the knip config at the repo root; its `entry` globs are never orphans
+KNIP_ENTRY_KEY = "entry"  # the knip.json key that lists the entry files
+WIRING_ORPHAN_LINE = "- orphan: {}"  # one line of the orphan report per orphan file
+WIRING_NONE_TEXT = "No orphans: every new file under wiring_dirs has an importer.\n"  # the report text when no orphan is found

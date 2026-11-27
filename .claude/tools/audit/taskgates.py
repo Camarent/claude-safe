@@ -26,12 +26,14 @@ from pipeline.configuration import (  # noqa: E402
     COLLISION_FILE_RE,
     DIFF_SHA_LEN,
     DONE,
+    ENV_GATE_KIND,
     FAIL,
     GATE_BASE_CHECK_KEY,
     GATE_COLLISION_RERUNS_KEY,
     GATE_FLAKE_RERUN_KEY,
     GATE_KIND_TASK,
     GATE_SKIP_PATHS,
+    GATE_TIME_WARN_KEY,
     METRICS_LOG,
     WORK_DIR,
     project,
@@ -118,6 +120,7 @@ def _collision_reruns(cfg, res, cwd, env, kw, run_id):
 
 def _run_gates(cfg, cmds, cwd, root, env, runner, stage, run_id):
     """-> (results, commands cleared, {red command: why it was not cleared}, {flaky command: test ids}, collisions). The gates run in the job worktree CWD; with `gate_base_check` (default on) a red command that is red on the stage base ROOT too is not this task's failure; with `gate_flake_rerun` (default on) a red command runs once more, unchanged, and one that is green then is a flake; a command still red whose output names one test file reruns that file alone (`gate_collision_reruns`, default 1)."""
+    env = {**env, ENV_GATE_KIND: GATE_KIND_TASK}  # qrun records the run as a task gate run (gate_timing: unit limit)
     kw = {"runner": runner} if runner else {}
     res = final_check.run_all(cmds, cwd, env, groups=final_check.gate_groups(cfg, cwd), **kw)
     cleared, why = [], {}
@@ -212,18 +215,32 @@ def _collision_line(f, ids, passed):
     return f"\ncollision: {f} failed on every rerun; run ids {', '.join(ids)}"
 
 
+def _gate_commands(cfg, d, stage, task, cwd):
+    """-> (gate commands, ""), or ([], (verdict, text)) when the gates may not run for this task here."""
+    if cwd is None:
+        return [], (BLOCKED, "no job worktree for this task: the gates would run on the main checkout, so they were not run")
+    cmds = final_check.commands(cfg, cwd)
+    if not cmds:
+        return [], (BLOCKED, "no `gates` in pipeline.json: nothing to run")
+    outside = testrun.outside_writes(d, stage, task)  # a project without the test-run step is still guarded
+    if outside:
+        return [], testrun.outside_verdict(outside)
+    return cmds, None
+
+
+def _stamp_green(d, stage, task, text, sha):
+    """Write the content hash of a green run, so an unchanged worktree is not run again."""
+    if text.startswith("VERDICT: DONE") and sha:
+        write_text(sha_file(d, stage, task), sha + "\n")
+
+
 def run(stage, task, d, runner=None, git=gitx.try_out, run_id=None):
     """-> (verdict word, text). `runner` (final_check.run_group signature) and `git` are injectable for tests; `run_id` prefixes the run ids of the collision reruns (default: this process id)."""
     cfg = project(d)
     cwd = testrun.workdir(d, stage, task)
-    if cwd is None:
-        return BLOCKED, "no job worktree for this task: the gates would run on the main checkout, so they were not run"
-    cmds = final_check.commands(cfg, cwd)
-    if not cmds:
-        return BLOCKED, "no `gates` in pipeline.json: nothing to run"
-    outside = testrun.outside_writes(d, stage, task)  # a project without the test-run step is still guarded
-    if outside:
-        return testrun.outside_verdict(outside)
+    cmds, refusal = _gate_commands(cfg, d, stage, task, cwd)
+    if refusal:
+        return refusal
     skip, sha = _skip_reason(cfg, d, stage, task, git)
     if skip:
         return DONE, skip
@@ -232,14 +249,15 @@ def run(stage, task, d, runner=None, git=gitx.try_out, run_id=None):
     before = gatewatch.snapshot(root, watch)
     res, cleared, why, flaky, collisions = _run_gates(cfg, cmds, cwd, root, env, runner, stage, run_id or str(os.getpid()))
     names = final_check.gate_names(cfg)
-    final_check.log_gate_cmds(os.path.join(d, WORK_DIR, stage, METRICS_LOG), GATE_KIND_TASK, res, names, task, [*cleared, *flaky])
+    slow = final_check.log_gate_cmds(
+        os.path.join(d, WORK_DIR, stage, METRICS_LOG), GATE_KIND_TASK, res, names, task, [*cleared, *flaky], cfg[GATE_TIME_WARN_KEY]
+    )
     text = _gate_text(res, names, cleared, why, root, flaky, collisions)
     green = text.startswith("VERDICT: DONE")
-    if green and sha:
-        write_text(sha_file(d, stage, task), sha + "\n")
+    _stamp_green(d, stage, task, text, sha)
     note = text.split("\n", 1)[1]
     extra = _extra(gatewatch.warning(cwd, before, gatewatch.snapshot(root, watch), git) if watch else "", green, env, cwd, git, test_env(cfg, d))
-    return (DONE if green else FAIL), "\n".join(x for x in (note, extra) if x)
+    return (DONE if green else FAIL), "\n".join(x for x in (note, *slow, extra) if x)  # slow: warnings only, the verdict is green or red as before
 
 
 def main(argv=None):

@@ -124,14 +124,22 @@ def _release_ref(repo, cfg):
     return rel
 
 
-def _version_bump(a_dir, repo, cfg, stage, br):
-    """-> note. Bumps the version on the stage branch (last phase only, before the PR is marked ready) through the project's `release_script`: `current [REF]` and `set OLD NEW ENTRY`. Re-running completes a partial bump in a follow-up commit."""
+def _bump_guard(repo, cfg, br):
+    """-> the note when the stage branch adds nothing to the release branch, else None. Raises Blocked when the repo is off the stage branch or has uncommitted changes."""
     if pr_base._git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() != br:
         raise pr_base.Blocked(f"{repo} is not on {br}: check out the stage branch, then retry version-bump")
     if pr_base._landed(repo, release_branch(repo, cfg), br, False) == "":
         return f"{br} adds nothing to {release_branch(repo, cfg)}: no version bump"
     if pr_base._git(repo, "status", "--porcelain", "--untracked-files=no").stdout.strip():
         raise pr_base.Blocked(f"{repo} has uncommitted changes: commit or stash them, then retry version-bump")
+    return None
+
+
+def _version_bump(a_dir, repo, cfg, stage, br):
+    """-> note. Bumps the version on the stage branch (last phase only, before the PR is marked ready) through the project's `release_script`: `current [REF]` and `set OLD NEW ENTRY`. Re-running completes a partial bump in a follow-up commit."""
+    note = _bump_guard(repo, cfg, br)
+    if note is not None:
+        return note
     rel = _release_ref(repo, cfg)
     base = _hook(repo, cfg, "current", rel)
     cur = _hook(repo, cfg, "current")
@@ -143,6 +151,11 @@ def _version_bump(a_dir, repo, cfg, stage, br):
         old, new, how = _plan_bump(a_dir, stage, base, cur, level)
         if not how:
             return f"version files already at the goal v{new}: no second bump"
+    return _write_bump(repo, cfg, a_dir, stage, br, old, new, how, have)
+
+
+def _write_bump(repo, cfg, a_dir, stage, br, old, new, how, have):
+    """-> note. Runs the `set` hook and the pin rewrite, then commits the version files."""
     files = [f for f in _hook(repo, cfg, "set", old, new, pr_base._merge_title(a_dir, stage, br)).splitlines() if f]
     files += [f for f in _rewrite_pins(repo, cfg, new) if f not in files]
     if not files:

@@ -2,7 +2,7 @@
 
 import re
 
-from .configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, EV_RETRY, EXTRA_ROUND_WHY, FAIL, MODEL_SONNET, PLAN_ERROR
+from .configuration import DONE, ESCALATE, EV_DISPATCH, EV_REPORT, EV_RETRY, EV_RETRY_REFRESH, EXTRA_ROUND_WHY, FAIL, MODEL_SONNET, PLAN_ERROR
 from .entry import name_of_stage
 from .util import read_text
 
@@ -16,17 +16,36 @@ def history(evs: list[dict], tid: str) -> list[dict]:
     return mine
 
 
-def _after_retry(mine, i):
-    """The events of a task that survive its retry marker `mine[i]` (the owner's reset, or a driver re-run)."""
+def _without_script_dispatch(mine, i):
+    """A lost script step: only its own dispatch goes, the task's events stay."""
+    return [e for e in mine[:i] if e.get("id") != mine[i].get("id")]
+
+
+def _without_reviewer(mine, i):
+    """Keep the dev events, drop the reviewer's."""
+    return [e for e in mine[:i] if e["ev"] != EV_RETRY and e.get("role") != "reviewer"]
+
+
+def _failed_review_rounds(mine, i):
+    """The reviewer reports before the marker that said FAIL or ESCALATE."""
+    return [e for e in mine[:i] if e["ev"] == EV_REPORT and e["role"] == "reviewer" and e["verdict"] in (FAIL, ESCALATE)]
+
+
+def _retry_survivors(mine, i):
+    """The events before the retry marker `mine[i]` that the marker keeps (none unless its `from` or `auto` says so)."""
     marker = mine[i]
-    if marker.get("from") == "script":  # a lost script step: only its own dispatch goes, the task's events stay
-        return [e for e in mine[:i] if e.get("id") != marker.get("id")] + mine[i + 1 :]
-    if marker.get("from") == "review":  # keep the dev events, drop the reviewer's
-        return [e for e in mine[:i] if e["ev"] != EV_RETRY and e.get("role") != "reviewer"] + mine[i + 1 :]
+    if marker.get("from") == "script":
+        return _without_script_dispatch(mine, i)
+    if marker.get("from") == "review":
+        return _without_reviewer(mine, i)
     if marker.get("auto"):  # an unclear dev report: the review rounds it was asked to fix survive
-        rounds = [e for e in mine[:i] if e["ev"] == EV_REPORT and e["role"] == "reviewer" and e["verdict"] in (FAIL, ESCALATE)]
-        return rounds + mine[i + 1 :]
-    return mine[i + 1 :]
+        return _failed_review_rounds(mine, i)
+    return []
+
+
+def _after_retry(mine, i):
+    """The events of a task that survive its retry marker `mine[i]` (the owner's reset, or a driver re-run). The rebase log `retry_refresh` has no verdict, so it never counts as the task's last event."""
+    return [e for e in _retry_survivors(mine, i) + mine[i + 1 :] if e["ev"] != EV_RETRY_REFRESH]
 
 
 def hint(a, tid: str) -> str:

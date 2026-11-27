@@ -86,6 +86,17 @@ class PtestTest(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("no test files match", out)
 
+    def test_missing_named_file_fails_even_when_another_matches(self):
+        # a named file absent from the tests dir must fail the run, not pass as one of the selected files
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "test_a.py"), "w", encoding="utf-8") as f:
+                f.write(OK)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = ptest.main(["--dir", d, "--jobs", "2", "test_a.py", "test_missing.py"])
+        self.assertEqual(rc, 1)
+        self.assertIn("no test files match: test_missing.py", buf.getvalue())
+
     def test_repo_path_pattern_selects_by_file_name(self):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "test_a.py"), "w", encoding="utf-8") as f:

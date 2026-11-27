@@ -387,27 +387,71 @@ def _merge(a_dir, repo, cfg, stage, br, clock=SystemClock):
         return f"{br} adds nothing to {release_branch(repo, cfg)}: nothing to merge"
     if state != "OPEN":
         raise Blocked(f"no open PR for {br} (state: {state}): merge by hand, then skip master-merged")
+    _mergeable_gate(repo, cfg, br, clock)
+    _checks_gate(repo, cfg, br, clock)
+    title = pr_base._merge_title(a_dir, stage, br)
+    r = pr_base._run(["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", _merge_body(cfg, stage)], repo, 300)
+    if r.returncode:
+        if pr_base._view(repo, br, "state") == "MERGED":  # merged remotely; only the local branch cleanup failed
+            return f"PR squash-merged: {title} (local cleanup failed: {(r.stderr or r.stdout).strip()[-200:]})"
+        raise Blocked(f"gh pr merge failed: {(r.stderr or r.stdout).strip()[-300:]}")
+    return _merged_text(cfg, title)
+
+
+def _mergeable_gate(repo, cfg, br, clock):
+    """Raise Blocked unless the open PR BR is not a draft and reports MERGEABLE (polls an UNKNOWN mergeability first)."""
     if pr_base._view(repo, br, "isDraft") is not False:
         raise Blocked(f"the PR of {br} is still a draft")
     got = _poll(lambda: _mergeable_read(repo, br), checks_timeout(cfg), clock, what=f"mergeability of {br}")
     mergeable = got[0] if got else None
     if mergeable != "MERGEABLE":
         raise Blocked(f"the PR of {br} is {mergeable or 'of unknown mergeability'}: resolve it by hand, then skip master-merged")
-    _checks_gate(repo, cfg, br, clock)
-    title = pr_base._merge_title(a_dir, stage, br)
-    body = (
-        f"Stage {stage}. Squash-merged by the pipeline on green local gates (CI unavailable by setting)."
-        if ci_off(cfg)
-        else f"Stage {stage}. Squash-merged by the pipeline after green CI."
-    )
-    r = pr_base._run(["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", body], repo, 300)
-    if r.returncode:
-        if pr_base._view(repo, br, "state") == "MERGED":  # merged remotely; only the local branch cleanup failed
-            return f"PR squash-merged: {title} (local cleanup failed: {(r.stderr or r.stdout).strip()[-200:]})"
-        raise Blocked(f"gh pr merge failed: {(r.stderr or r.stdout).strip()[-300:]}")
+
+
+def _merge_body(cfg, stage) -> str:
+    """The squash-commit body of the stage PR, naming the gates that ran in place of CI when CI is off."""
+    if ci_off(cfg):
+        return f"Stage {stage}. Squash-merged by the pipeline on green local gates (CI unavailable by setting)."
+    return f"Stage {stage}. Squash-merged by the pipeline after green CI."
+
+
+def _merged_text(cfg, title) -> str:
+    """-> the note after a good squash-merge; with CI off it says the pr-ready gates were relied on."""
     if ci_off(cfg):  # the gates ran at the pr-ready step; the master-merged step does not run them again
         return f"PR squash-merged: {title}; local gates of the pr-ready step relied on ({CI_OFF_NOTE})"
     return f"PR squash-merged: {title}"
+
+
+def _wt_clean(a) -> None:
+    """Run wt.py clean for the stage's job worktrees (before the branch cleanup: it force-deletes the job branches)."""
+    w = pr_base._run([sys.executable, "-I", os.path.join(TOOLS, "wt.py"), "clean", "--stage", a.stage, "--dir", a.dir], a.dir, 300)
+    if w.returncode:
+        raise Blocked(f"wt.py clean failed: {(w.stderr or w.stdout).strip()[-300:]}")
+
+
+def _nested_clean(a, repo, cfg, br) -> str:
+    """Clean BR in the local-only nested repos of REPO that hold it (no PR, no remote steps) -> note text, "" when none."""
+    res = ""
+    for n in worktree.nested_repos(repo):
+        sub = os.path.join(repo, n)
+        if pr_base._git(sub, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
+            continue
+        try:
+            res += f"; [{n}] " + _clean_repo(a, sub, cfg, br, False)
+        except Blocked as e:
+            raise Blocked(f"nested repo {n}: {e}") from None
+    return res
+
+
+def _prune_note(a_dir) -> str:
+    """Delete the merged orphan job/* branches of earlier stages; name the unmerged ones -> note text, "" when none."""
+    pruned, unmerged = cleanup.prune_branches(a_dir)
+    res = ""
+    if pruned:
+        res += "; pruned job branches: " + ", ".join(b for b, _into in pruned)
+    if unmerged:
+        res += "; kept unmerged: " + ", ".join(unmerged)
+    return res
 
 
 def _cleanup(a, repo, cfg, br):
@@ -419,24 +463,10 @@ def _cleanup(a, repo, cfg, br):
     ):  # before wt.py clean: it force-deletes the job branches
         raise Blocked(why)
     if cfg.get("worktrees"):
-        w = pr_base._run([sys.executable, "-I", os.path.join(TOOLS, "wt.py"), "clean", "--stage", a.stage, "--dir", a.dir], a.dir, 300)
-        if w.returncode:
-            raise Blocked(f"wt.py clean failed: {(w.stderr or w.stdout).strip()[-300:]}")
+        _wt_clean(a)
     res = _clean_repo(a, repo, cfg, br, True)
-    for n in worktree.nested_repos(repo):  # local-only nested repos: no PR, no remote steps
-        sub = os.path.join(repo, n)
-        if pr_base._git(sub, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
-            continue
-        try:
-            res += f"; [{n}] " + _clean_repo(a, sub, cfg, br, False)
-        except Blocked as e:
-            raise Blocked(f"nested repo {n}: {e}") from None
-    pruned, unmerged = cleanup.prune_branches(a.dir)  # orphan job/* branches of earlier stages: merged ones go, the rest is named
-    if pruned:
-        res += "; pruned job branches: " + ", ".join(b for b, _into in pruned)
-    if unmerged:
-        res += "; kept unmerged: " + ", ".join(unmerged)
-    return res
+    res += _nested_clean(a, repo, cfg, br)
+    return res + _prune_note(a.dir)
 
 
 def _to_release_branch(repo, rel, cur):
@@ -521,12 +551,25 @@ def _back(repo, was, rel):
         pr_base._git(repo, "switch", was)
 
 
-def _local_merge_repo(repo, cfg, br, name, a_dir):
-    rel = release_branch(repo, cfg)
+def _reset_back(repo, was, rel):
+    """Undo a failed squash (reset --merge) and return to the branch the user was on."""
+    pr_base._git(repo, "reset", "--merge")
+    _back(repo, was, rel)
+
+
+def _skip_note(repo, rel, br) -> str:
+    """-> why BR needs no local merge into REL (no such branch, or it adds nothing), else ""."""
     if pr_base._git(repo, "rev-parse", "--verify", "-q", f"refs/heads/{br}").returncode:
         return f"no branch {br}: skipped"
     if br == rel or pr_base._landed(repo, rel, br, False) == "":
         return f"{br} adds nothing to {rel}: already merged"
+    return ""
+
+
+def _local_merge_repo(repo, cfg, br, name, a_dir):
+    rel = release_branch(repo, cfg)
+    if note := _skip_note(repo, rel, br):
+        return note
     # untracked files count too (a squash can overwrite them), except the pipeline's own folders
     if pr_base._git(repo, "status", "--porcelain", "--", ".", ":(exclude).work", ":(exclude).wt", ":(exclude).audits").stdout.strip():
         raise Blocked("working tree is dirty: commit or stash first")
@@ -538,15 +581,13 @@ def _local_merge_repo(repo, cfg, br, name, a_dir):
     r = pr_base._git(repo, "merge", "--squash", br)
     if r.returncode:
         files = pr_base._git(repo, "diff", "--name-only", "--diff-filter=U").stdout.split()
-        pr_base._git(repo, "reset", "--merge")
-        _back(repo, was, rel)
+        _reset_back(repo, was, rel)
         raise Blocked(f"conflict squashing {br} into {rel}; files: {', '.join(files) or r.stdout.strip()[-200:]}")
     if pr_base._git(repo, "diff", "--cached", "--quiet").returncode == 0:
         return f"{br} brings no change to {rel}: already merged"
     c, subject = _squash_commit(repo, name, br, a_dir)
     if c.returncode:
-        pr_base._git(repo, "reset", "--merge")
-        _back(repo, was, rel)
+        _reset_back(repo, was, rel)
         raise Blocked(f"commit failed: {(c.stderr or c.stdout).strip()[-300:]}")
     note = f" NOTE: the checkout is now on `{rel}`, you were on `{was}`" if was and was != rel else ""
     return f"squashed {br} into {rel}: {subject}.{note}"
@@ -605,13 +646,8 @@ def _sweep_ff(repo, rel):
     return f"{rel} fast-forwarded" if u.returncode == 0 else f"{rel} not fast-forwarded: {u.stderr.strip()[-120:]}"
 
 
-def _sweep(repo, cfg):
-    rel = release_branch(repo, cfg)
-    listing = ["gh", "pr", "list", "--author", "app/dependabot", "--state", "open", "--json"]
-    r = pr_base._run([*listing, "number,title,statusCheckRollup"], repo)
-    token_gap = bool(r.returncode) and CI_DENIED_MSG in r.stdout + r.stderr
-    if token_gap:  # the token cannot read check runs: list without them and read the workflow runs of each head
-        r = pr_base._run([*listing, "number,title,headRefOid"], repo)
+def _dependabot_prs(repo, r, token_gap) -> list:
+    """Parse the gh pr list reply R; with TOKEN_GAP the checks of each head come from its workflow runs."""
     if r.returncode:
         raise Blocked(f"gh pr list failed: {r.stderr.strip()[-300:]}")
     try:
@@ -621,6 +657,11 @@ def _sweep(repo, cfg):
     if token_gap:
         for p in prs:
             p["statusCheckRollup"] = _ci_runs(repo, p.get("headRefOid"))
+    return prs
+
+
+def _sweep_lines(repo, prs):
+    """Merge each green Dependabot PR, name the red and pending ones -> (lines, merged, red, pending, failed)."""
     lines, merged, red, pending, failed = [], 0, 0, 0, 0
     for p in prs:
         n, title, roll = p.get("number"), p.get("title", ""), p.get("statusCheckRollup") or []
@@ -634,6 +675,18 @@ def _sweep(repo, cfg):
         else:
             pending += 1
             lines.append(f"#{n} skipped pending: {title}")
+    return lines, merged, red, pending, failed
+
+
+def _sweep(repo, cfg):
+    rel = release_branch(repo, cfg)
+    listing = ["gh", "pr", "list", "--author", "app/dependabot", "--state", "open", "--json"]
+    r = pr_base._run([*listing, "number,title,statusCheckRollup"], repo)
+    token_gap = bool(r.returncode) and CI_DENIED_MSG in r.stdout + r.stderr
+    if token_gap:  # the token cannot read check runs: list without them and read the workflow runs of each head
+        r = pr_base._run([*listing, "number,title,headRefOid"], repo)
+    prs = _dependabot_prs(repo, r, token_gap)
+    lines, merged, red, pending, failed = _sweep_lines(repo, prs)
     ff = _sweep_ff(repo, rel)
     counts = f"{len(prs)} Dependabot PR(s), {merged} merged, {red} skipped red, {pending} skipped pending" + (f", {failed} merge failed" if failed else "")
     lines.append(f"summary: {counts}" + (f"; {ff}" if ff else ""))
@@ -655,22 +708,33 @@ def _no_push_note(what, repo, cfg, br):
     return ""
 
 
+def _merge_step(a_dir, repo, cfg, stage, br) -> str:
+    """The merge step text: the squash-merge plus the nested repos the stage left unlanded."""
+    return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
+
+
+def _open_and_note(a_dir, repo, cfg, stage, br) -> str:
+    """Open the stage PR, then add the skipped checks and timed-out skips to its body -> the open note."""
+    opened = _open_pr(a_dir, repo, cfg, stage, br)
+    if note := "\n".join(x for x in (web_note(a_dir, stage), skipped_notes(a_dir, stage), CI_OFF_NOTE if ci_off(cfg) else "") if x):
+        append_body(repo, br, note)  # the skipped browser check and timed-out skips must show in the PR, never silent
+    return opened
+
+
 def _pr_step(what, a_dir, repo, cfg, stage, br):
     """open/push/ready/merge -> the report text (raises Blocked)."""
     if note := _no_push_note(what, repo, cfg, br):
         return note
     if what == "merge" and pr_base._view(repo, br, "state") == "MERGED":  # a re-run: --delete-branch removed the branch, nothing to push
-        return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
+        return _merge_step(a_dir, repo, cfg, stage, br)
     if what == "merge" and _idle(repo, cfg, br):  # stage work only in nested repos: no PR to merge
         return f"{br} adds nothing to the main repo release branch" + _nested_unlanded(repo, cfg, br, "; ")
     gates = _gates_gate(repo, cfg, br) if what == "ready" else ""  # red gates block before anything is pushed
     _pushed(repo, br)
     if what == "merge":
-        return _merge(a_dir, repo, cfg, stage, br) + _nested_unlanded(repo, cfg, br, "; ")
+        return _merge_step(a_dir, repo, cfg, stage, br)
     if what == "ready":
-        opened = _open_pr(a_dir, repo, cfg, stage, br)
-        if note := "\n".join(x for x in (web_note(a_dir, stage), skipped_notes(a_dir, stage), CI_OFF_NOTE if ci_off(cfg) else "") if x):
-            append_body(repo, br, note)  # the skipped browser check and timed-out skips must show in the PR, never silent
+        opened = _open_and_note(a_dir, repo, cfg, stage, br)
         return gates + "; " + opened + "; " + _ready(repo, cfg, br)
     return _open_pr(a_dir, repo, cfg, stage, br)
 

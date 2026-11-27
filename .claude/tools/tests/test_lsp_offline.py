@@ -148,13 +148,13 @@ class ArgumentTests(Base):
         self.assertEqual(self.run_main()[0], lsp.__doc__)
 
     def test_missing_file(self):
-        self.assertEqual(self.run_main("def", "nope.py", "1")[0], "nope.py: no such file")
-        self.assertEqual(self.run_main("diag", "nope.py")[0], "nope.py: no such file")
+        self.assertTrue(str(self.run_main("def", "nope.py", "1")[0]).startswith("nope.py: no such file"))
+        self.assertTrue(str(self.run_main("diag", "nope.py")[0]).startswith("nope.py: no such file"))
 
     def test_unknown_type(self):
         self.write("a.zzz", "hi\n")
-        self.assertEqual(self.run_main("def", "a.zzz", "1"), (2, ["no language server for a.zzz"]))
-        self.assertEqual(self.run_main("outline", "a.zzz"), (2, ["no language server for a.zzz"]))
+        self.assertEqual(self.run_main("def", "a.zzz", "1"), (0, ["no language server for a.zzz: use Grep or Read for this file type"]))
+        self.assertEqual(self.run_main("outline", "a.zzz"), (0, ["no language server for a.zzz: use Grep or Read for this file type"]))
         self.assertEqual(self.run_main("diag", "a.zzz"), (3, ["NOT CHECKED: no language server for a.zzz"]))
 
     def test_server_missing_non_diag(self):
@@ -178,7 +178,7 @@ class ArgumentTests(Base):
     def test_symbol_not_found(self):
         self.write("a.py", "x = 1\n")
         rc, _ = self.run_main("def", "a.py", "missing")
-        self.assertEqual(rc, "symbol 'missing' not found in a.py")
+        self.assertEqual(rc, "symbol 'missing' not found in a.py; no declarations found in the file")
 
 
 class JsDiagTests(Base):

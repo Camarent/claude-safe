@@ -66,7 +66,8 @@ commit="$(git -C "$tree" rev-parse --short HEAD)"
 if [ "$compare" = 1 ]; then
   out="$(bash "$tree/scripts/install-claude-config.sh" --dry-run)"
   say "$out"
-  if grep -q 'none: no file would be overwritten' <<<"$out"; then
+  # "already done" = the install check passed (checksums match), the same as "none: no file would be overwritten"
+  if grep -qE 'none: no file would be overwritten|skip claude-config: already done' <<<"$out"; then
     say "compare: ~/.claude matches commit $commit"
     exit 0
   fi

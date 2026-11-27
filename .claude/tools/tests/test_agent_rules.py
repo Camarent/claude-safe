@@ -14,7 +14,9 @@ AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "a
 # architect.md: 27400 (was 27000) because the UI job rule bullet (glossary, sign-off, prototype) is always-read planning guidance; it sits in the main file, not rare-rules.md.
 # architect.md: 27700 (was 27400) because the three plan-check rules (qrun-op, pins, docs-count) are always-read planning guidance; they sit in the main file, not rare-rules.md.
 # architect.md: 28000 (was 27700) because task-8 replaced the .work output bullet with the output-path rule and added the research and ops-input bullets; they are always-read planning guidance, so they sit in the main file, not rare-rules.md.
-CAPS = {"architect.md": 28000, "dev.md": 15100, "reviewer.md": 13700}
+# architect.md: 28600 (was 28000) because task-10 added the research trigger table; always-read planning guidance, so it sits in the main file, not rare-rules.md.
+# architect.md: 28800 (was 28600) because the wiring bullet (every new module mounted from the real entry, reach proof) is always-read planning guidance; it sits in the main file, not rare-rules.md.
+CAPS = {"architect.md": 28800, "dev.md": 15100, "reviewer.md": 13700}
 
 # Gate-rule keywords that existed in the agent files before the split.
 KEYWORDS = ("ccn", "mutation check", "PLAN GAP", "Predicted paths", "VERDICT")

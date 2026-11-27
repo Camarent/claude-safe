@@ -113,6 +113,37 @@ class CheckCiteExistsTest(unittest.TestCase):
         probs = self.check({"t": ("# T\nGoal: add a test\nPattern: none\nPredicted paths: src/a.py\n", [])}, tid="t")
         self.assertEqual(probs, [])
 
+    def test_bare_cite_of_file_in_subdir_is_cite_short(self):
+        # M25: `a.py` names src/a.py only by search; the cite must give the full path
+        probs = self.check({"task-1": ("# T\nPattern: `helper_x` in a.py:30\nPredicted paths: src/a.py\n", [])})
+        self.assertEqual(len(probs), 1, probs)
+        self.assertIn("cite-short: a.py has no directory", probs[0])
+        self.assertIn("src/a.py", probs[0])
+
+    def test_bare_cite_of_two_files_is_cite_short(self):
+        os.makedirs(os.path.join(self.repo, "other"))
+        with open(os.path.join(self.repo, "other", "a.py"), "w", encoding="utf-8") as f:
+            f.write("x\n")
+        probs = self.check({"task-1": ("# T\nGoal: see a.py:1 for the parser\nPredicted paths: src/a.py\n", [])})
+        self.assertEqual(len(probs), 1, probs)
+        self.assertIn("cite-short: a.py", probs[0])
+        self.assertIn("other/a.py", probs[0])
+        self.assertIn("src/a.py", probs[0])
+
+    def test_bare_backticked_file_in_subdir_is_cite_short(self):
+        probs = self.check({"task-1": ("# T\nGoal: the parser in `a.py`\nPredicted paths: src/a.py\n", [])})
+        self.assertEqual(len(probs), 1, probs)
+        self.assertIn("cite-short: a.py", probs[0])
+
+    def test_bare_cite_of_root_file_passes(self):
+        with open(os.path.join(self.repo, "README.md"), "w", encoding="utf-8") as f:
+            f.write("readme\n")
+        self.assertEqual(self.check({"solo": ("# T\nGoal: see README.md:1 for the parser\nPredicted paths: src/a.py\n", [])}, tid="solo"), [])
+
+    def test_full_path_cite_passes(self):
+        probs = self.check({"task-1": ("# T\nPattern: `helper_x` in src/a.py:30\nPredicted paths: src/a.py\n", [])})
+        self.assertEqual(probs, [])
+
 
 if __name__ == "__main__":
     unittest.main()

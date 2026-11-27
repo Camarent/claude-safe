@@ -120,7 +120,7 @@ NAMES = [
     "_created_names",
     "_exists_hit",
     "check_exists",
-    "CITE_LINE_PREFIXES",
+    "CITE_LINE_FIELDS",
     "_in_tree",
     "check_cite_exists",
     "check_test_commands",

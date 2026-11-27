@@ -280,8 +280,8 @@ def is_metrics(records):
     return any(r.get("ev") == "session" for r in records)
 
 
-def metrics_report(records, path):
-    """Per (model, agent) aggregates over session lines: recorded cost_usd next to the price-table cost."""
+def _metric_groups(records):
+    """-> {(model, agent): aggregate} over the session lines of a metrics file."""
     groups: defaultdict[tuple, dict[str, Any]] = defaultdict(lambda: {"n": 0, "turns": 0, "tok": [0, 0, 0, 0], "rec": 0.0})
     for r in records:
         if r.get("ev") != "session":
@@ -292,17 +292,30 @@ def metrics_report(records, path):
         g["rec"] += float(r.get("cost_usd") or 0)
         for i, k in enumerate(("input", "output", "cache_read", "cache_write")):
             g["tok"][i] += int(r.get(k) or 0)
+    return groups
+
+
+def _metric_row(model, agent, g):
+    """-> (table line, model when its price is an estimate or None)."""
+    usd, e = _usd(model, *g["tok"])
+    line = (
+        f"   {model[:22]:<22} {agent[:12]:<12} {g['n']:>4} {g['turns']:>5} {fmt_int(g['tok'][1]):>9} {fmt_int(g['tok'][2]):>11} "
+        f"${g['rec']:>8.2f} ${usd:>8.2f}{'*' if e else ''}"
+    )
+    return line, (model if e else None)
+
+
+def metrics_report(records, path):
+    """Per (model, agent) aggregates over session lines: recorded cost_usd next to the price-table cost."""
+    groups = _metric_groups(records)
     out = [f"agent_cost: {path} (metrics file: {sum(g['n'] for g in groups.values())} sessions)"]
     out.append(f"   {'model':<22} {'agent':<12} {'runs':>4} {'turns':>5} {'output':>9} {'cache_rd':>11} {'recorded':>9} {'table':>9}")
     est = set()
     for (model, agent), g in sorted(groups.items(), key=lambda kv: -kv[1]["rec"]):
-        usd, e = _usd(model, *g["tok"])
-        if e:
-            est.add(model)
-        out.append(
-            f"   {model[:22]:<22} {agent[:12]:<12} {g['n']:>4} {g['turns']:>5} {fmt_int(g['tok'][1]):>9} {fmt_int(g['tok'][2]):>11} "
-            f"${g['rec']:>8.2f} ${usd:>8.2f}{'*' if e else ''}"
-        )
+        line, estimated = _metric_row(model, agent, g)
+        out.append(line)
+        if estimated:
+            est.add(estimated)
     out.append(f"   total recorded ${sum(g['rec'] for g in groups.values()):.2f}; table = price table of {prices.PRICES_DATE} (re-check it)")
     if est:
         out.append(f"   * ESTIMATE: no price row for {', '.join(sorted(est))}; derived rate from one Opus run, not a price")

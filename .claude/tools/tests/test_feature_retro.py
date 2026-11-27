@@ -8,7 +8,10 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pipeline import gate_record
+from pipeline.configuration import GATE_KIND_TASK
 from retro import feature_retro
+from test_gate_record import make_repo
 
 
 class FeatureRetroTest(unittest.TestCase):
@@ -40,6 +43,19 @@ class FeatureRetroTest(unittest.TestCase):
         self.assertIn("- 2x dev verdict BLOCKED (report line)", text)
         self.assertIn("- 1x review failed 2 rounds", text)
 
+    def test_block_causes_line_comes_from_the_script_counts(self):  # no model asked: the digest carries the counts of the report events
+        import json
+
+        with open(os.path.join(self.dir, "phases", "01-a", "orch.jsonl"), "w") as fh:
+            events = [
+                {"ev": "report", "task": "task-1", "verdict": "BLOCKED", "reason": "cite check: path missing"},
+                {"ev": "report", "task": "task-2", "verdict": "FAIL", "reason": "gate red after 2 tries"},
+                {"ev": "report", "task": "task-3", "verdict": "DONE", "reason": "ok"},
+            ]
+            fh.writelines(json.dumps(e) + "\n" for e in events)
+        text = feature_retro.render("f", feature_retro.gather(self.dir))
+        self.assertIn("## Block causes (script, no model)\n- block causes (2 BLOCKED/FAIL reports): cite 1, gate 1, ignored path 0, tooling 0, other 0", text)
+
     def test_out_file_run_prints_a_done_line(self):  # a silent --out run was recorded as FAIL ("no clear verdict") 4 of 4 times
         out = os.path.join(self.dir, "problems.md")
         rc, text = self.run_main("--out", out)
@@ -70,6 +86,20 @@ class FeatureRetroTest(unittest.TestCase):
         self.assertIn("lead-session sid1: 1100000 tokens", text)
         self.assertIn("lead-spawned agent-x", text)
         self.assertIn("$3.00", text)  # 1M in at $2 + 0.1M out at $10
+
+    def test_gate_time_section_lists_an_over_limit_unit_run(self):
+        repo = make_repo(os.path.join(self.dir, "ws"), {"a.txt": "x\n"})
+        gate_record.record(repo, ["scripts/dev.sh", "test"], 0, secs=200.0, level="parallel", kind=GATE_KIND_TASK)
+        text = feature_retro.render("f", feature_retro.gather(self.dir), feature_retro.gate_lines(self.dir, repo))
+        self.assertIn("## Gate time and dev gate warnings", text)
+        self.assertIn("- gate time: unit gate run 200s over the", text)
+        self.assertNotIn("## Gate time and dev gate warnings\n(none)", text)
+
+    def test_gate_time_section_is_none_within_the_limit(self):
+        repo = make_repo(os.path.join(self.dir, "ws"), {"a.txt": "x\n"})
+        gate_record.record(repo, ["scripts/dev.sh", "test"], 0, secs=10.0, level="serial", kind=GATE_KIND_TASK)
+        text = feature_retro.render("f", feature_retro.gather(self.dir), feature_retro.gate_lines(self.dir, repo))
+        self.assertIn("## Gate time and dev gate warnings\n(none)", text)
 
 
 if __name__ == "__main__":

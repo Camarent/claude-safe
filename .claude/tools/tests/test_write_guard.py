@@ -66,7 +66,7 @@ class WriteGuardTest(unittest.TestCase):
     def test_main_path_denied(self):
         why = self.assert_denied(run_hook(self.payload(f"{self.main}/README.md"), self.env))["permissionDecisionReason"]
         self.assertIn(self.wt, why)
-        self.assertIn(f"Retry once with the same relative path under the worktree: {self.wt}/README.md.", why)
+        self.assertTrue(why.startswith(f"Write {self.wt}/README.md (not {self.main}/README.md)"), why)
         self.assertNotIn(ENV_SCRATCH_DIR, why)
 
     def test_main_scratch_path_names_scratch_dir(self):

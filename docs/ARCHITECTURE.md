@@ -2,7 +2,7 @@
 
 ## What it is
 claude-safe runs Claude Code in a throwaway Docker container. Only the folder you mount is reachable from the host (`README.md:5-6`).
-The repo builds the base image and optional toolchain layers, provides host-side dev and release scripts, and carries the pipeline under `.claude/` (agents, tools, practices; not an index module, see `README.md` and `docs/decisions.md`).
+The repo builds the base image and optional toolchain layers, provides host-side dev and release scripts, and carries the pipeline under `.claude/` (agents, tools, practices; not an index module, see `README.md` and `docs/decisions.md`, whose "Cite verify" section records the orch.jsonl cite check).
 
 ## Modules
 - [scripts](modules/scripts.md) - host-side dev checks, pre-PR gate, config install and sync, agent rendering.
@@ -35,13 +35,16 @@ The repo builds the base image and optional toolchain layers, provides host-side
 
 ## Pipeline model route and tool settings
 - Model route: `.claude/tools/pipeline/e1.py:102` (`model_for`) decides every dev and reviewer model. Each dispatch starts on Haiku. Sonnet runs only when an E1 event holds (`.claude/tools/pipeline/e1.py:91`, `e1_event`): (a) the dev gate stayed red after the Haiku tries, (b) the dev reported ESCALATE, (c) a reviewer reported ESCALATE, (d) a fix-gate dev ended BLOCKED or its re-merge FAILed.
+- Configuration facade: `pipeline.configuration` resolves names lazily via module `__getattr__`; the first submodule in `_SUBMODULES` that defines a name wins, and a new topic file must be listed there (guarded by `tests/test_configuration_facade_guard.py`).
 - Tool settings: `.claude/tools/pipeline/configuration/literals.py:80` (`_SETTINGS`) holds the named settings (timeouts, the usage-limit recheck slice `limit_recheck_s`, origin remote, price table), each with a default. An env override `CS_<NAME>` (`.claude/tools/pipeline/configuration/literals.py:15`) or the `tool_settings` object in `pipeline.json` (`.claude/tools/pipeline/configuration/literals.py:14`) replaces the default. Read them with `tool_setting` (`.claude/tools/pipeline/configuration/literals.py:100`).
+- Research hint: `.claude/tools/pipeline/plan_research_hint.py` (`check_research_hint`) warns (`research-hint:`, never an error) on each task whose Goal or Done names a fact the repo may lack and that depends on no `Type: research` task. `.claude/tools/pipeline/plan_check.py` (`check_stage`) runs it with the other task-file checks. The architect trigger table sits under the Research task bullet in `.claude/agents/architect.md`.
+- Carried notes: `.claude/tools/pipeline/plan_check.py` (`_carried_problems`) requires a `## Carried from earlier phases` bullet per item. The later-notes file in the workspace root (`LATER_NOTES_PATH`, `.claude/tools/pipeline/configuration/layout.py`) also feeds it: `_later_notes_problems` reports `carried-notes:` for each of its bullets that names a path of the stage with no task-N or not-needed bullet.
 
 ## Pipeline module splits
 Five pipeline modules hold code moved out of older modules. Each old module re-exports the moved names, so old import paths keep working.
-- `.claude/tools/pipeline/worktree_base.py:25` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:21`).
+- `.claude/tools/pipeline/worktree_base.py:24` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:21`).
 - `.claude/tools/pipeline/worktree_merge.py:35` (`_git_version`): git version and `merge-tree` checks, unmerged-file queries. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:78`).
-- `.claude/tools/pipeline/plan_check_task.py:38` (`_lint`): per-task plan checks (test refs, cites, commands, paths). `plan_check.py` re-exports them (`.claude/tools/pipeline/plan_check.py:58`).
+- `.claude/tools/pipeline/plan_check_task.py` (`_lint`): per-task plan checks (test refs, cites, existence of named defs/files, commands, paths). `plan_check.py` re-exports them (`.claude/tools/pipeline/plan_check.py`, `from .plan_check_task import`).
 - `.claude/tools/pipeline/steps_history.py:9` (`history`): event history, retry and report queries. `steps.py` re-exports them (`.claude/tools/pipeline/steps.py:57`).
 - `.claude/tools/pipeline/pr_ops.py` (`_ready`, `_merge`): with `ci_available` false the pr-ready and master-merged steps skip the CI wait and merge on the green local gates.
 - `.claude/tools/pipeline/pr_release.py:15` (`_release_level`): version bump, release tag and GitHub release of a stage branch. `pr_ops.py` re-exports them (`.claude/tools/pipeline/pr_ops.py:44`). Shared git and gh helpers sit in `.claude/tools/pipeline/pr_base.py`, which both import. `pr_ops.skipped_notes` lists the timed-out steps skipped with a note, for the PR body. `pr_release.py` imports only `pr_base` and `pr_mode`, never `pr_ops`, so there is no import cycle.

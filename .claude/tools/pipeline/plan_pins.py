@@ -4,7 +4,7 @@ import glob
 import os
 import re
 
-from . import gitx
+from . import gitx, task_text
 from .configuration import (
     AFFECTED_CODE_EXTS,
     AFFECTED_MAX_TESTS,
@@ -39,7 +39,7 @@ def _referencing_tests(repo, rels, stem):
 
 def _goal_lines(text):
     """The Goal and Done lines of a task file: the only text that may give a .py file its data role."""
-    return "\n".join(ln for ln in text.splitlines() if ln.startswith(("Goal:", "Done:")))
+    return "\n".join(value for _, value in task_text.lines(text, "Goal", "Done"))
 
 
 def _is_pinnable(p, goal):

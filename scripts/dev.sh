@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Dev checks for the pipeline tools. Everything lands in ./.uv (cache, venv): delete it and the host is clean.
-#   scripts/dev.sh sync | check | fix | test | pytest | covserial | itest (needs PIPELINE_PROJECT_DIR) | cov | dead | sec | ccn | clean
+#   scripts/dev.sh sync | check | fix | test | pytest | covserial | itest (needs PIPELINE_PROJECT_DIR) | cov | dead | sec | ccn | gate [--ext|--pytest] | clean
+#   gate: --ext runs check, dead, sec, ccn; --pytest runs the unit suite; no flag runs both (two commands fit one step timeout)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,6 +16,14 @@ export UV_NO_PROGRESS=1
 
 run() { uv run --frozen --no-sync "$@"; }
 
+# ccn [-C N] [PATH...]: lizard CCN check; default limit 15 over .claude/tools, a given -C N and PATHs replace them
+ccn_check() {
+  local limit=15 paths=()
+  if [ "${1:-}" = -C ]; then limit="${2:?usage: scripts/dev.sh ccn [-C N] [PATH...]}"; shift 2; fi
+  if [ $# -eq 0 ]; then paths=(.claude/tools); else paths=("$@"); fi
+  run lizard "${paths[@]}" -l python -C "$limit" -x "*/tests/*" -w
+}
+
 case "${1:-}" in
   sync)  [ ! -L "$uvdir" ] || { echo "shared venv: sync in the main checkout" >&2; exit 2; }   # a worktree's .uv is a symlink to the main checkout's venv: syncing there would rewrite it
          uv sync --frozen 2>/dev/null || { uv lock && uv sync --frozen; } ;;
@@ -28,7 +37,13 @@ case "${1:-}" in
   covserial) ORCH_AGENTS_DIR="$root/.claude/agents" run pytest -q --cov --cov-report=term-missing:skip-covered "${@:2}" ;;
   dead)  run vulture .claude/tools scripts --min-confidence 80 ;;
   sec)   run bandit -q -r .claude/tools scripts -x .claude/tools/tests -s B404,B603,B606,B607 ;;   # B404/B603/B606/B607: the tools drive git, node, lp by design; B604/B608 are reviewed with an inline nosec + reason
-  ccn)   run lizard .claude/tools -l python -C 15 -x "*/tests/*" -w ;;   # complexity limit: fails (exit 1) and lists every function over CCN 15; every function is under it since 2026-11-09, so there is no baseline
+  ccn)   ccn_check "${@:2}" ;;   # complexity limit: fails (exit 1) and lists every function over CCN 15; every function is under it since 2026-11-09, so there is no baseline
+  gate)  case "${2:-}" in   # the recursion uses the absolute path: the script cd's to its root
+           --ext)    "$root/scripts/dev.sh" check && "$root/scripts/dev.sh" dead && "$root/scripts/dev.sh" sec && "$root/scripts/dev.sh" ccn ;;
+           --pytest) "$root/scripts/dev.sh" test ;;
+           "")       "$root/scripts/dev.sh" gate --ext && "$root/scripts/dev.sh" gate --pytest ;;
+           *)        echo "usage: scripts/dev.sh gate [--ext|--pytest]" >&2; exit 2 ;;
+         esac ;;
   clean) rm -rf "$uvdir" "$root/.ruff_cache" "$root/.mypy_cache" "$root/.pytest_cache" "$root/.coverage" ;;
   *)     sed -n '2,3p' "$0"; exit 2 ;;
 esac

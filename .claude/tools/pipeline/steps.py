@@ -5,7 +5,7 @@ import os
 import re
 import shlex
 
-from . import maincheck
+from . import gitx, maincheck, webtest_report
 from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, research_prompt, testrun_on, webtest_prompt
 from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
@@ -52,6 +52,8 @@ from .configuration import (
 )
 from .e1 import model_for
 from .plan_files import paths_in, task_type
+from .report_preflight import PREFLIGHT_WHY, diff_paths, done_line
+from .routing_log import UNLOGGED_WHY, unlogged_routes
 from .stagedir import resolve_stage
 from .steps_docfix import DOCFIX_WHY, repeated_pair
 from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
@@ -113,6 +115,8 @@ def _disp(a, task, rid, role, rework=None, free=False, mine=()):
     }
     if why:
         d["why"] = why
+    if unlogged_routes([{"ev": EV_DISPATCH, **d}]):  # a Sonnet route with no E1 letter: named in the log, never silent
+        d["why"] = UNLOGGED_WHY
     return d
 
 
@@ -140,14 +144,25 @@ def _disp_reviewer(a, task, rid, mine=()):
     return d
 
 
-def _no_commit_ask(a, task, mine):
-    """An ask_main when the job HEAD is the one the last reviewer FAIL saw (the rework added no commit), else None: no second paid review of the same code."""
+def _same_head_fail(a, task, mine):
+    """The last reviewer report when it is a FAIL and the job HEAD is still the one it saw (no commit since), else None."""
     fail = next((e for e in reversed(mine) if e["ev"] == EV_REPORT and e.get("role") == "reviewer"), None)
     if not fail or fail["verdict"] != FAIL:
         return None
-    disp = next((e for e in mine if e["ev"] == EV_DISPATCH and e["id"] == fail["id"]), None)
-    old = (disp or {}).get("head") or ""
-    if not old or old != job_heads(a, task["id"]):
+    old = _dispatch_head(mine, fail)
+    return fail if old and old == job_heads(a, task["id"]) else None
+
+
+def _dispatch_head(mine, rep) -> str:
+    """The job HEAD logged on the dispatch of report REP ("" when none)."""
+    disp = next((e for e in mine if e["ev"] == EV_DISPATCH and e["id"] == rep["id"]), None)
+    return (disp or {}).get("head") or ""
+
+
+def _no_commit_ask(a, task, mine):
+    """An ask_main when the job HEAD is the one the last reviewer FAIL saw (the rework added no commit), else None: no second paid review of the same code."""
+    fail = _same_head_fail(a, task, mine)
+    if fail is None:
         return None
     return {
         "action": "ask_main",
@@ -227,6 +242,34 @@ def _quality_or_review(a, task, mine, rid, s):
 
 
 def _to_review(a, task, mine, rid):
+    """The report preflight (script, when the task has a Done line), then the local pre-review and the paid reviewer."""
+    return _preflight_script(a, task, mine, rid) or _prereview_or_review(a, task, mine, rid)
+
+
+def _preflight_script(a, task, mine, rid):
+    """The report preflight dispatch: the dev report checked against the task's Done line by script. None when the task has no Done line,
+    no dev report, or the preflight already sent the task back PREREVIEW_FREE_ROUNDS times (the same cap as the pre-review)."""
+    brief = work_path(os.path.join(getattr(a, "dir", "."), WORK_DIR, a.stage), task["id"] + ".md")
+    rep = next((e["file"] for e in reversed(mine) if e["ev"] == EV_REPORT and e.get("role") == "dev" and e.get("file")), "")  # the dev report, not a script's
+    if not rep or not done_line(read_text(brief)) or len(_script_fails(a, task, mine, PREFLIGHT_WHY)) >= PREREVIEW_FREE_ROUNDS:
+        return None
+    changed = "".join(f" --changed {shlex.quote(p)}" for p in diff_paths(_pre_review_diff(a, task)))
+    return _script(
+        task,
+        rid,
+        PREFLIGHT_WHY,
+        f"{tool_cmd('pipeline/report_preflight.py')} --brief {shlex.quote(brief)} --report {shlex.quote(rep)}{changed}",
+    )
+
+
+def _script_fails(a, task, mine, word):
+    """The FAIL reports of this task's script dispatches whose `why` starts with `word`, over the whole event log (an auto-retry does not reset them)."""
+    full = [e for e in (getattr(a, "orch_events", None) or mine) if e.get("task") == task["id"]]
+    ids = script_ids(full, word)
+    return [e for e in full if e["ev"] == EV_REPORT and e["id"] in ids and e["verdict"] == FAIL]
+
+
+def _prereview_or_review(a, task, mine, rid):
     """The local pre-review (if on) before each paid review, then the paid reviewer. The pre-review is skipped once the dev used its last try, so
     the local model can never keep a task away from the paid reviewer (Haiku, Haiku, Sonnet, Sonnet: each earlier try faces the gate)."""
     if prereview_on(a) and _tries(mine, "dev") < MAX_TRIES and not _prereview_done(a, task, mine):
@@ -245,23 +288,25 @@ DIFF_SHA_RE = re.compile(r"^diff-sha: (\w+)", re.M)
 def _prereview_done(a, task, mine):
     """True when another pre-review is pointless: it already sent the task back PREREVIEW_FREE_ROUNDS times (counted over the whole event log, an auto-retry does
     not reset it), or the dev's rework left the diff as it was when the last pre-review FAILed (no new commit)."""
-    full = [e for e in (getattr(a, "orch_events", None) or mine) if e.get("task") == task["id"]]
-    ids = script_ids(full, "local pre-review")
-    fails = [e for e in full if e["ev"] == EV_REPORT and e["id"] in ids and e["verdict"] == FAIL]
+    fails = _script_fails(a, task, mine, "local pre-review")
     if len(fails) >= PREREVIEW_FREE_ROUNDS:
         return True
     m = DIFF_SHA_RE.search(read_text(fails[-1]["file"])) if fails else None
-    diff = ""
-    if m:  # the same diff pre-review hashed: the job worktree's, else the uncommitted one in the main checkout
-        diff = job_diff(a, task["id"], PREREVIEW_DIFF_CHARS)
-        if not diff:
-            repo = getattr(a, "dir", ".")
-            diff = uncommitted_diff(repo, paths_in(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))))
     if not m:
         return False
+    diff = _pre_review_diff(a, task)
     if diff and hashlib.sha256(diff.encode("utf-8")).hexdigest()[:DIFF_SHA_LEN] == m.group(1):
         return True
     return _files_unchanged(a, task, m.group(1))
+
+
+def _pre_review_diff(a, task) -> str:
+    """The diff the pre-review hashed: the job worktree's, else the uncommitted one in the main checkout."""
+    diff = job_diff(a, task["id"], PREREVIEW_DIFF_CHARS)
+    if diff:
+        return diff
+    repo = getattr(a, "dir", ".")
+    return uncommitted_diff(repo, paths_in(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))))
 
 
 def _files_unchanged(a, task, sha):
@@ -389,6 +434,12 @@ def _reviewer_before(mine, dev_report):
 
 def _script_followup(a, task, mine, rid, s, last):
     """The script steps that name a follow-up (escalation gate, checks after a BLOCKED dev, environment repair). None for the others."""
+    if last["id"] in script_ids(
+        mine, PREFLIGHT_WHY
+    ):  # FAIL -> the dev reworks, a free round (no review round); otherwise on to the pre-review and the reviewer
+        if last["verdict"] == FAIL:
+            return _disp(a, task, rid, "dev", rework=last["file"], free=True, mine=mine)
+        return _prereview_or_review(a, task, mine, rid)
     if last["id"] in script_ids(
         mine, "escalation gate"
     ):  # the gate only guards the step before it: plan that step again without the gate events (`_gate` then reads the verdict)
@@ -622,6 +673,11 @@ def _gate(a, task, mine, rid, r):
     f = failed_event(mine) if _judge_applies(a, task, mine, r) else None
     if not f:
         return r
+    return _gate_after_failure(a, task, mine, rid, f, r)
+
+
+def _gate_after_failure(a, task, mine, rid, f, r):
+    """The judge step after the live failure F: dispatch the gate script first, then veto on its FAIL, else `r` as it was."""
     after = _events_after(mine, f)
     gate = next((e for e in after if e["ev"] == EV_DISPATCH and (e.get("why") or "").startswith("escalation gate")), None)
     if gate is None:
@@ -684,8 +740,13 @@ def _lead_retry_prefix(a, task):
     i = next((k for k in range(len(raw) - 1, -1, -1) if raw[k]["ev"] == EV_RETRY), None)
     if i is None or i != len(raw) - 1 or not _is_lead_retry(raw[i]):
         return None
-    rep = next((e for e in reversed(raw[:i]) if e["ev"] == EV_REPORT and e.get("role") in ("dev", "reviewer")), None)
-    return raw[:i] if rep is not None and rep["role"] == "dev" and rep["verdict"] == ESCALATE else None
+    return raw[:i] if _last_report_is_dev_escalate(raw[:i]) else None
+
+
+def _last_report_is_dev_escalate(evs) -> bool:
+    """True when the last dev or reviewer report in EVS is a dev ESCALATE."""
+    rep = next((e for e in reversed(evs) if e["ev"] == EV_REPORT and e.get("role") in ("dev", "reviewer")), None)
+    return rep is not None and rep["role"] == "dev" and rep["verdict"] == ESCALATE
 
 
 def is_webtest(a, task) -> bool:
@@ -694,8 +755,20 @@ def is_webtest(a, task) -> bool:
     return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "webtest"
 
 
+def _branch_head(a) -> str:
+    """-> the HEAD sha of the stage checkout (the commit head_note puts in the web-tester brief), "" when git cannot read it."""
+    return gitx.try_text(os.path.abspath(getattr(a, "dir", ".")), "rev-parse", "HEAD").strip()
+
+
+def _stale_web_report(a, rep) -> str | None:
+    """-> the reason the web-tester report REP is stale (no HEAD line, or a HEAD other than the branch HEAD), or None when it is for the branch HEAD. The dry walk has no HEAD line and no git checkout: None there."""
+    if os.environ.get(ENV_DRY_NO_CCN):
+        return None  # the dry-run stub report carries no HEAD line; the scratch dir is no git repo
+    return webtest_report.stale(read_text(rep["file"]), _branch_head(a))
+
+
 def _next_webtest(a, task, mine, rid):
-    """The steps of a `Type: webtest` task: web-tester (PASS) -> the task's Test lines by script (they validate its report) -> done. Anything else goes to the lead once."""
+    """The steps of a `Type: webtest` task: web-tester (PASS) -> the task's Test lines by script (they validate its report) -> done. Anything else goes to the lead once; a stale report goes to the lead too."""
     if any(e["ev"] == EV_SKIP for e in mine):
         return None
     last = mine[-1] if mine else None
@@ -712,6 +785,9 @@ def _next_webtest(a, task, mine, rid):
                 "action": "ask_main",
                 "message": f"{task['id']}: web-tester verdict {last['verdict']} ({last.get('reason', '')}); report {last['file']}" + hint(a, task["id"]),
             }
+        why = _stale_web_report(a, last)
+        if why:
+            return {"action": "ask_main", "message": f"{why}; report {last['file']}" + hint(a, task["id"])}
         if testrun_on(a) and not script_ids(mine, "test run"):
             return _test_run_script(a, task, rid, "test run (the task's Test lines check the web-tester's report on the stage branch checkout)")
         return None
@@ -733,33 +809,49 @@ def _research_ask(a, task, what, rep) -> dict:
     return {"action": "ask_main", "message": f"{task['id']}: {what}; report {rep['file']}" + hint(a, task["id"])}
 
 
+def _never_reported(a, task, last) -> dict:
+    return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
+
+
+def _research_start(a, task, rid) -> dict:
+    d = _disp(a, task, rid, SCOUT)
+    d["prompt"] = research_prompt(a, task, rid)
+    d["why"] = "research task (Type: research): the scout answers it on Haiku, research_apply.py commits the answer, the task's Test lines check it"
+    return d
+
+
+def _research_after_scout(a, task, rid, last) -> dict:
+    if last["verdict"] != DONE:
+        return _research_ask(a, task, f"scout verdict {last['verdict']} ({last.get('reason', '')})", last)
+    return _script(
+        task,
+        rid,
+        "research apply (the scout's report committed to the task's Outputs path by research_apply.py)",
+        f"{tool_cmd('research_apply.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')} --report {last['file']}",
+    )
+
+
+def _research_after_apply(a, task, mine, rid, last):
+    if last["verdict"] != DONE:
+        return _research_ask(a, task, f"research apply {last['verdict']}: the scout's report was not committed to the task's Outputs path", last)
+    if testrun_on(a) and not script_ids(mine, "test run"):
+        return _test_run_script(a, task, rid, "test run (the task's Test lines check the scout's report on the stage branch checkout)")
+    return None
+
+
 def _next_research(a, task, mine, rid):
     """The steps of a `Type: research` task: scout (DONE) -> research_apply.py (commits the report) -> the task's Test lines by script -> done. Anything else goes to the lead once."""
     if any(e["ev"] == EV_SKIP for e in mine):
         return None
     last = mine[-1] if mine else None
     if last is None:
-        d = _disp(a, task, rid, SCOUT)
-        d["prompt"] = research_prompt(a, task, rid)
-        d["why"] = "research task (Type: research): the scout answers it on Haiku, research_apply.py commits the answer, the task's Test lines check it"
-        return d
+        return _research_start(a, task, rid)
     if last["ev"] == EV_DISPATCH:
-        return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
+        return _never_reported(a, task, last)
     if last.get("role") == SCOUT:
-        if last["verdict"] != DONE:
-            return _research_ask(a, task, f"scout verdict {last['verdict']} ({last.get('reason', '')})", last)
-        return _script(
-            task,
-            rid,
-            "research apply (the scout's report committed to the task's Outputs path by research_apply.py)",
-            f"{tool_cmd('research_apply.py')} --stage {a.stage} --task {task['id']} --dir {getattr(a, 'dir', '.')} --report {last['file']}",
-        )
+        return _research_after_scout(a, task, rid, last)
     if last.get("role") == "script" and last["id"] in script_ids(mine, "research apply"):
-        if last["verdict"] != DONE:
-            return _research_ask(a, task, f"research apply {last['verdict']}: the scout's report was not committed to the task's Outputs path", last)
-        if testrun_on(a) and not script_ids(mine, "test run"):
-            return _test_run_script(a, task, rid, "test run (the task's Test lines check the scout's report on the stage branch checkout)")
-        return None
+        return _research_after_apply(a, task, mine, rid, last)
     if last["verdict"] in (DONE, SKIPPED):
         return None
     return _research_ask(a, task, "the Test lines failed on the scout's report", last)
@@ -777,8 +869,13 @@ def _next_step(a, task, mine, rid):
     if last is None:
         prefix = _lead_retry_prefix(a, task)  # the lead's retry after a dev ESCALATE: E1(b) reads the events before the marker
         return _disp(a, task, rid, "dev", mine=mine if prefix is None else prefix)
+    return _after_last(a, task, mine, rid, s, last)
+
+
+def _after_last(a, task, mine, rid, s, last):
+    """The next step after the task's last event LAST (a dispatch, or a report by role)."""
     if last["ev"] == EV_DISPATCH:
-        return {"action": "ask_main", "message": f"{last['id']} ({last['agent']} on {task['id']}) was dispatched but never reported" + hint(a, task["id"])}
+        return _never_reported(a, task, last)
     if last.get("role") == ARCHITECT:
         return _after_plan_fix(a, task, mine, rid, s, last)
     if last.get("role") == "dev":
@@ -843,25 +940,41 @@ def _phase_failed_ask(a, st, rep):
     )
 
 
+def _phase_passed(a, st, rep):
+    """A passing report REP of a parallel step: None when it stands, else the ask. The web-check gate: a report not for the branch HEAD is no pass."""
+    why = _stale_web_report(a, rep) if st["agent"] == WEB_TESTER else None
+    return None if why is None else ("ask", f"{why}; report {rep['file']}" + hint(a, st["id"]))
+
+
+def _phase_step(a, evs, st) -> tuple[str, str] | None:
+    """One parallel step: ("ask", message), ("dispatch", "") when it still needs a dispatch, None when satisfied."""
+    mine = history(evs, st["id"])
+    if st.get("pause"):  # lead action: satisfied only by `orch.py skip --step <id>`
+        return None if any(e["ev"] == EV_SKIP for e in mine) else ("ask", st["prompt"])
+    reps = [e for e in mine if e["ev"] == EV_REPORT]
+    if any(e["ev"] == EV_SKIP for e in mine):
+        return None
+    if reps and reps[-1]["verdict"] in st["ok"]:
+        return _phase_passed(a, st, reps[-1])
+    if not mine:
+        return ("dispatch", "")
+    if mine[-1]["ev"] == EV_DISPATCH:
+        return ("ask", f"{st['id']} ({st['agent']}) was dispatched but never reported" + hint(a, st["id"]))
+    return ("ask", _phase_failed_ask(a, st, reps[-1]))
+
+
 def run_phase(a, evs, steps, n) -> dict | None:
     """Parallel steps. -> dispatch dict (steps not yet satisfied and not failed), ask_main dict, or None when every step is satisfied."""
     ds: list = []
     asks: list = []
     for st in steps:
-        mine = history(evs, st["id"])
-        if st.get("pause"):  # lead action: satisfied only by `orch.py skip --step <id>`
-            if not any(e["ev"] == EV_SKIP for e in mine):
-                asks.append(st["prompt"])
+        r = _phase_step(a, evs, st)
+        if r is None:
             continue
-        reps = [e for e in mine if e["ev"] == EV_REPORT]
-        if any(e["ev"] == EV_SKIP for e in mine) or (reps and reps[-1]["verdict"] in st["ok"]):
-            continue
-        if not mine:
-            ds.append(_phase_dispatch(st, f"a{n + 1 + len(ds)}"))
-        elif mine[-1]["ev"] == EV_DISPATCH:
-            asks.append(f"{st['id']} ({st['agent']}) was dispatched but never reported" + hint(a, st["id"]))
+        if r[0] == "ask":
+            asks.append(r[1])
         else:
-            asks.append(_phase_failed_ask(a, st, reps[-1]))
+            ds.append(_phase_dispatch(st, f"a{n + 1 + len(ds)}"))
     if ds:
         return {"action": "dispatch", "dispatches": ds}
     if asks:

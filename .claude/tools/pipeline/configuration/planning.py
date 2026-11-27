@@ -158,7 +158,30 @@ QRUN_OP_PREFIX = "qrun-op:"  # error prefix of plan_testcmd.check_qrun_operator
 QRUN_OPS = ("!", "&&", "||", "|", ";")  # a word right after `cs-qrun --` that is a shell operator: cs-qrun runs a program, not a shell (exit 127)
 QRUN_OP_RE = r"\bcs-qrun\s+--\s+(\S+)"  # the first word after `cs-qrun --` in a Test: line (plan_testcmd.check_qrun_operator)
 OUTPUT_PATH_PREFIX = "outputs:"  # error prefix of plan_outputs.check_output_paths: a code task's Predicted path is scratch output under the work folder or git-ignored (never committed)
+IGNORED_DONE_PREFIX = "ignored-done:"  # error prefix of plan_outputs.check_output_paths: a path-like token on a Done/Goal/Test line is git-ignored
+IGNORED_DONE_FIELDS = ("Done", "Goal", "Test")  # the task fields whose path-like tokens plan_outputs scans
+IGNORED_DONE_EXT_RE = r"\.[A-Za-z0-9]{1,8}$"  # a token with a file extension is a path (a token with a slash is one too)
+IGNORED_DONE_URL = "://"  # a token with this mark is a URL, never a path
+IGNORED_DONE_TRIM = "`'\"()[]<>,;:."  # punctuation stripped from both ends of a token before the path test
 RESEARCH_PREFIX = "research:"  # error prefix of plan_research.check_research: a research task has one tracked Outputs: path and a later task that depends on it names that path
+RESEARCH_HINT_PREFIX = "research-hint:"  # warning prefix of plan_research_hint.check_research_hint: a Goal/Done with a trigger word and no research dependency
+WIRING_DIRS_KEY = "wiring_dirs"  # pipeline.json key: list of source dirs; a new module under one needs a mount (plan_wiring.check_wiring); absent = no check
+WIRING_PREFIX = "wiring:"  # error prefix of plan_wiring.check_wiring: a new module under a wiring dir has no tracked mount point in its task and no dependent `Mounts:` header
+REACH_PREFIX = "reach:"  # warning prefix of plan_wiring.check_wiring: a task with a `Mounts:` header has no Done line naming an entry proof
+MOUNTS_FIELD = "Mounts"  # task header field: `Mounts: task-N` names the new-module task this task mounts
+REACH_PROOF_RE = r"\b(?:entry|bundle|built|cli|route|e2e)s?\b"  # a Done line naming one of these proves the mount is reached (not only a harness, mock or fake)
+TOOLBLOCK_PREFIX = (
+    "tool-block:"  # error prefix of plan_toolblock.check_toolblock: a Test/Done names a JS tool whose smoke probe fails and the task has no ops-N dependency
+)
+KNIP_PROD_PREFIX = "knip-prod:"  # error prefix of plan_toolblock.check_toolblock: a Test/Done runs knip --production while the knip config has no entry key
+QUOTE_MISSING_PREFIX = (
+    "quote-missing:"  # error prefix of plan_quotes.check_quotes: a quoted message in a Done line is in no tracked file and the task text does not create it
+)
+QUOTE_WORDS = ("warning", "message", "text", "prints")  # the Done words that introduce a quoted message (plan_quotes)
+QUOTE_MIN_LEN = 12  # a quoted string shorter than this is not checked (plan_quotes)
+TOOLBLOCK_TOOLS = ("madge", "knip", "eslint")  # JS tools whose Test/Done use plan_toolblock probes (a word match, not a file name)
+KNIP_PROD_CMD = "knip --production"  # the Test/Done text that marks a knip production run (plan_toolblock)
+OPS_DEP_PREFIX = "ops-"  # task-id prefix of a manual ops row: a task that depends on one is exempt from tool-block (plan_toolblock)
 PINS_PREFIX = "pins:"  # error prefix of plan_pins.check_pinned_tests: a task edits a data or setting file that a test pins, and does not list that test
 PIN_DATA_EXTS = (".json", ".txt", ".csv", ".toml", ".yaml", ".yml")  # a Predicted path with one of these ends is a data file a test may pin
 PIN_DATA_DIR = "configuration"  # a Predicted path under a folder of this name is a setting file (plan_pins)
@@ -171,7 +194,7 @@ DOCS_COUNT_MSG = "describe the behaviour instead; counts and line numbers belong
 DOCS_INDEX_PATH = "docs/INDEX.md"  # generated docs index: its counts are not hand-written (plan_docs_counts)
 HAND_DOC_DIRS = ("docs/", ".claude/practices/")  # a hand-written doc is a .md path under one of these folders (plan_docs_counts)
 HAND_DOC_NAMES = ("ORCHESTRATOR.md",)  # a hand-written doc by file name (plan_docs_counts)
-TESTCMD_WARN_PREFIX = "testcmd:"  # warning prefix of plan_testcmd.check_bare_test_runner; plan_check.errors_of never fails on it
+TESTCMD_WARN_PREFIX = "testcmd:"  # prefix of plan_testcmd.check_bare_test_runner, an error since the M25 retro (the name stays: plan_check re-exports it)
 TESTCMD_HINT_KEY = "test_command_hint"  # pipeline.json: the project's real test command (what a `Test:` line should run instead of bare pytest); when unset a `gates` command that runs pytest through a wrapper is used
 BARE_RUNNER_RE = r"^(?:pytest|py\.test|(?:python[\d.]*)(?:\s+-\w+)*\s+-m\s+pytest)(?:\s|$)"  # a command that starts pytest with no wrapper
 AFFECTED_MIN_STEM = 4  # a file name stem shorter than this (`io`, `app`) matches too much to say which tests use it
@@ -185,6 +208,9 @@ AFFECTED_CODE_EXTS = (
     ".rs",
 )  # only code files and code tests are matched by name (data, docs and styles are named by far too many tests)
 AFFECTED_TEST_DIRS = {"test", "tests"}  # a file under a directory of this name is a test file
+AFFECTED_SOURCE_ROOT = (
+    ".claude/tools"  # import root of the pipeline package: a planned path maps to its dotted module under it; its `tests` dir is scanned for importers
+)
 AFFECTED_SHOWN = 5  # tests named in one `affected:` line
 NEG_WARN_PREFIX = "neg:"  # warning prefix of that rule; plan_check.errors_of never fails on it
 SKIP_GATE_RE = r"pytest\.mark\.skipif|pytest\.skip\("  # a task file that skips a test: cs-qrun exits 3 on it (plan_rules.check_skip_gate)

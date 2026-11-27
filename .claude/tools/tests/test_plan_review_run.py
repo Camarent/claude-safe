@@ -9,7 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import claude, plan_run
-from pipeline.configuration import PLAN_FILE, PLAN_REVIEW_MODEL_HEAVY, PLAN_REVIEW_MODEL_LIGHT, PLAN_REVIEW_REPORT_FILE, WORK_DIR
+from pipeline.configuration import EXIT_LIMIT, PLAN_FILE, PLAN_REVIEW_MODEL_HEAVY, PLAN_REVIEW_MODEL_LIGHT, PLAN_REVIEW_REPORT_FILE, WORK_DIR
 from tests.support.tmpdirs import tracked_mkdtemp
 
 
@@ -77,7 +77,7 @@ class PlanReviewRunTest(unittest.TestCase):
         report = "GAP: task 3 has no test line\nVERDICT: FAIL\n"
         with mock.patch.object(claude, "session", side_effect=self.fake_reviewer(report)):
             rc = self.run_plan()
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, EXIT_LIMIT)
         self.assertEqual(len(self.reviews), 1)
         self.assertEqual(self.tags, ["plan", "plan-fix"])
         self.assertIn(self.report, self.fix_prompts[-1])

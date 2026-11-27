@@ -229,6 +229,16 @@ def _test_leads(repo, files):
     return tests
 
 
+def _unique_hit_files(hits):
+    """The files of the `lp find` hit lines HITS, each once, in hit order."""
+    files = []
+    for h in hits:
+        f = hit_file(h)
+        if f not in files:
+            files.append(f)
+    return files
+
+
 def _lead_sections(repo, text, t0):
     """Sections from `lp`: find, symbols, outline of the top files, tests. -> (lines, t_index)."""
     lines = ["# Code context for this request (by script, lp)", "", "Unverified leads: confirm in code. `keyword` hits are a word search, not proof."]
@@ -241,11 +251,7 @@ def _lead_sections(repo, text, t0):
     sym = symbol_lines(repo, text)
     if sym:
         lines += ["", "## symbols named in the request (nav symbols)", *sym]
-    files = []
-    for h in hits:
-        f = hit_file(h)
-        if f not in files:
-            files.append(f)
+    files = _unique_hit_files(hits)
     out = outline_lines(repo, files[:5])
     if out:
         lines += ["", "## outline of the top files", *out]
@@ -269,16 +275,23 @@ def _goal_one(repo, text, cfg):
     return lines
 
 
+def _why_lines(whys):
+    """The 'why each file was picked' section: the model's reasons, grouped by its category, in its order. [] when none."""
+    if not whys:
+        return []
+    lines = ["", "## why each file was picked"]
+    for cat in dict.fromkeys(c for _, _, c in whys):  # grouped by the model's category, in its order
+        got = [f"- {p}: {w}" for p, w, c in whys if w and c == cat]
+        if got:
+            lines += ([f"### {cat}"] if cat else []) + got[:30]
+    return lines
+
+
 def _explore_one(root, files, whys):
     lines = ["", f"## files the local model found by exploring (repo {os.path.basename(root)}; exist, read the ones you need)"]
     named = list(with_tests(root, with_docs(root, files)))
     lines += digest(root, named) or ["(none)"]
-    if whys:
-        lines += ["", "## why each file was picked"]
-        for cat in dict.fromkeys(c for _, _, c in whys):  # grouped by the model's category, in its order
-            got = [f"- {p}: {w}" for p, w, c in whys if w and c == cat]
-            if got:
-                lines += ([f"### {cat}"] if cat else []) + got[:30]
+    lines += _why_lines(whys)
     out = outline_lines(root, [f for f in files if f.endswith((".py", ".js", ".rs", ".ts"))][:OUTLINED])
     if out:
         lines += ["", "## outline of the first named files", *out]

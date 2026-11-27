@@ -67,6 +67,15 @@ class BriefRulesTest(unittest.TestCase):
         prompt = self._dev_prompt("Predicted paths: x.py\nGoal: tidy parse\nDone: C1: CCN of parse is under 10\nTest: true\n")
         self.assertIn(CCN_PHRASE, prompt)
 
+    def test_done_naming_tool_output_brief_names_cs_devtools(self):
+        prompt = self._dev_prompt("Predicted paths: x.py\nGoal: tidy parse\nDone: C1: vulture reports nothing on parse.py\nTest: true\n")
+        self.assertIn("cs-devtools <tool> <paths>", prompt)
+        self.assertIn(CCN_PHRASE, prompt)
+
+    def test_non_tool_output_done_brief_has_no_cs_devtools_line(self):
+        prompt = self._dev_prompt("Predicted paths: x.py\nGoal: rename foo\nDone: C1: foo is bar\nTest: true\n")
+        self.assertNotIn("cs-devtools", prompt)
+
     def test_non_ccn_task_brief_has_no_cs_audit_line(self):
         prompt = self._dev_prompt("Predicted paths: x.py\nGoal: rename foo\nDone: C1: foo is bar\nTest: true\n")
         self.assertNotIn("cs-audit", prompt)

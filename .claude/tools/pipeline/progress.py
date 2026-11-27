@@ -66,12 +66,17 @@ def planning_lines(c) -> list[str]:
     out = []
     for name in sorted(last, key=lambda n: PLAN_STEPS.index(n) if n in PLAN_STEPS else len(PLAN_STEPS)):
         e = last[name]
-        fields = {}
-        if name in started:
-            fields["started"] = time.strftime("%H:%M:%S", time.localtime(started[name]))
-        if e["state"] == "done" and name in started and "secs" not in e:
-            fields["secs"] = round(e["ts"] - started[name])
-        fields.update({k: e[k] for k in ("model", "verdict", "secs", "local_model_secs", "code_files", "tasks", "errors", "usd") if k in e})
-        extra = " ".join(f"{k}={v}" for k, v in fields.items())
+        extra = " ".join(f"{k}={v}" for k, v in _step_fields(name, e, started).items())
         out.append(f"   plan/{name}: {'running' if e['state'] == 'start' else 'done'}" + (f" ({extra})" if extra else ""))
     return out
+
+
+def _step_fields(name, e, started) -> dict:
+    """-> the `key: value` fields shown after a planning step: its start time, secs, and the event's own reported fields."""
+    fields = {}
+    if name in started:
+        fields["started"] = time.strftime("%H:%M:%S", time.localtime(started[name]))
+    if e["state"] == "done" and name in started and "secs" not in e:
+        fields["secs"] = round(e["ts"] - started[name])
+    fields.update({k: e[k] for k in ("model", "verdict", "secs", "local_model_secs", "code_files", "tasks", "errors", "usd") if k in e})
+    return fields

@@ -40,6 +40,7 @@ from .configuration import (
     STALE_REPORT_NOTE,
     STALE_RETRY_STEP,
     TASKS_FILE,
+    WIRING_DIRS_KEY,
     WORK_DIR,
     allowed,
     tool_cmd,
@@ -92,6 +93,11 @@ def sec_path_hit(path, pats) -> bool:
     return False
 
 
+def _risky_hunk_line(ln) -> bool:
+    """True for a removed line, or an added line matching SEC_AUDIT_CONTENT."""
+    return ln.startswith("-") or (ln.startswith("+") and bool(re.search(SEC_AUDIT_CONTENT, ln[1:], re.I)))
+
+
 def sec_diff_hit(diff) -> bool:
     """True when a unified -U0 DIFF (with -M) adds a line matching SEC_AUDIT_CONTENT in a code file, or deletes any line of a non-test code file (a removed check or guard). Pure renames have no hunks."""
     cur, in_hunk = "", False
@@ -99,15 +105,13 @@ def sec_diff_hit(diff) -> bool:
         if ln.startswith("diff --git "):
             in_hunk = False
             cur = ln.rsplit(" b/", 1)[-1].strip('"')
-        elif not in_hunk and ln.startswith("@@"):
+        elif in_hunk:
+            if _is_code_path(cur.lower()) and _risky_hunk_line(ln):
+                return True
+        elif ln.startswith("@@"):
             in_hunk = True
-        elif not in_hunk and ln.startswith("+++ ") and ln[4:] != "/dev/null":
+        elif ln.startswith("+++ ") and ln[4:] != "/dev/null":
             cur = ln[4:].removeprefix("b/").strip('"')
-        elif in_hunk and _is_code_path(cur.lower()):
-            if ln.startswith("-"):
-                return True
-            if ln.startswith("+") and re.search(SEC_AUDIT_CONTENT, ln[1:], re.I):
-                return True
     return False
 
 
@@ -355,6 +359,8 @@ def _audit_step(a, cfg, flags, has_audit_md, small, k, ag, ok, suffix="", why="a
     effort, model = _audit_effort_model(flags, ag, suffix, small)
     if esc:
         model = AUDITOR_ESCALATE_MODEL
+    elif model == MODEL_OPUS:  # Opus from the effort flag: a logged route too (routing_log.unlogged_routes)
+        why = f"route: audit effort high -> opus; {why}"
     return step(
         k + suffix + (AUDIT_ESCALATE_SUFFIX if esc else ""),
         ag,
@@ -377,12 +383,24 @@ def _audit_tool_phases(a, cfg, flags, audit_dir, has_audit_md):
             "tools-check",
             "script",
             None,
-            f"{tool_cmd('xtools.py')} check --install --proj {shlex.quote(audit_dir)} --needed-by {shlex.quote(os.path.join(audit_dir, cfg['audit_file']))}{' --browser' if flags['ui'] else ''} --report .work/{S}/audits/tools-check.md",
+            f"{tool_cmd('xtools.py')} check --install --proj {shlex.quote(audit_dir)} --needed-by {shlex.quote(os.path.join(audit_dir, cfg['audit_file']))} --stage-dir .work/{S}{' --browser' if flags['ui'] else ''} --report .work/{S}/audits/tools-check.md",
             {DONE},
             None,
             "before the audits: extra tools present",
         )
     ]
+    if cfg.get(WIRING_DIRS_KEY):  # no wiring_dirs in pipeline.json: no orphan check
+        yield [
+            step(
+                "orphan-check",
+                "script",
+                None,
+                f"{tool_cmd('pipeline/plan_wiring_orphans.py')} --workspace {shlex.quote(os.path.abspath(a.dir))} --base {audit_base(a, cfg)} --out .work/{S}/audits/orphans.md",
+                {DONE},
+                None,
+                "after the last wave: new source files that nothing imports, by script (a finding never blocks)",
+            )
+        ]
     if has_audit_md:  # no model: the audit tools run once, the auditors read the compact result
         yield [
             step(
@@ -505,7 +523,19 @@ def _first_audits(a, cfg, audit_dir, has_ux):
 def _escalated_steps(a, cfg, flags, has_audit_md, small, evs, kinds):
     """-> the one Opus rerun step for each audit in KINDS whose first pass said ESCALATE (none yet run); an Opus rerun never escalates again."""
     return [
-        _audit_step(a, cfg, flags, has_audit_md, small, k, ag, {CLEAN, FIXES}, "", "first pass said ESCALATE (areas left UNKNOWN): rerun once on Opus", True)
+        _audit_step(
+            a,
+            cfg,
+            flags,
+            has_audit_md,
+            small,
+            k,
+            ag,
+            {CLEAN, FIXES},
+            "",
+            "route: auditor ESCALATE -> opus; first pass said ESCALATE (areas left UNKNOWN): rerun once",
+            True,
+        )
         for k, ag in kinds
         if ag in AUDITOR_ESCALATE and last_verdict(evs, k) == ESCALATE
     ]
@@ -555,16 +585,25 @@ def docs_beside_audits(a, cfg, audit_dir, writes=DOCS_WRITES) -> bool:
     return bool(names) and not docs_overlap(writes, names)
 
 
+def _has_ux_block(flags, audit_md) -> bool:
+    """UX review is project specific: no UI flag or no `ux` block in AUDIT.md, no UX review."""
+    return bool(flags["ui"] and re.search(r"^```ux\s*$", audit_md, re.M))
+
+
+def _small_fix(tasks, flags) -> bool:
+    """True when the fix wave (the highest wave) has no Sonnet owner or reviewer and the effort is not high: small, mechanical fixes get a Haiku re-check."""
+    top = [t for t in tasks if t["wave"] == max(t["wave"] for t in tasks)]  # the fix wave when this is a re-audit
+    return not any(t["owner_sonnet"] or t["review_sonnet"] for t in top) and flags["effort"] != "high"
+
+
 def audit_rounds(a, cfg, flags, tasks, evs, beside=()) -> Iterator[list[dict]]:
     """Tool scripts, the audits (sec, ux and arch in one batch) and, when some said FIXES, the fix round and the re-audits."""
     audit_dir = audit_dir_of(a, cfg)
     audit_md = read_text(os.path.join(audit_dir, cfg["audit_file"]))
-    has_ux = flags["ui"] and re.search(r"^```ux\s*$", audit_md, re.M)  # UX review is project specific: no `ux` block in AUDIT.md, no UX review
+    has_ux = _has_ux_block(flags, audit_md)
     first = _first_audits(a, cfg, audit_dir, has_ux)
     kinds = [*first, ("audit-arch", "arch-auditor")]
-
-    top = [t for t in tasks if t["wave"] == max(t["wave"] for t in tasks)]  # the fix wave when this is a re-audit
-    small = not any(t["owner_sonnet"] or t["review_sonnet"] for t in top) and flags["effort"] != "high"  # small, mechanical fixes: Haiku re-check
+    small = _small_fix(tasks, flags)
 
     has_audit_md = "```audit-tools" in audit_md
 

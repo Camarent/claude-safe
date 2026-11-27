@@ -4,13 +4,33 @@ import os
 import re
 
 from . import gitx
-from .configuration import GIT_QUICK_TIMEOUT_S, GIT_SAFE_ENV, PUBLIC_BINARY_SNIFF_BYTES
+from .configuration import GIT_QUICK_TIMEOUT_S, GIT_SAFE_ENV, PUBLIC_BINARY_SNIFF_BYTES, release_branch
 
 _HIT = "{file}:{line}: {word}"  # one hit line: path, 1-based line number, the word found
 
 
 class ScanError(Exception):
     """The tracked files could not be listed, so the scan cannot say it is clean."""
+
+
+def stage_added_lines(repo, cfg) -> dict[str, list[tuple[int, str]]]:
+    """-> {file: [(line, text)]} for the lines the stage adds: `git diff -U0` from the merge-base of the release branch and HEAD. Raises ScanError when the base or the diff cannot be read (the gate then fails closed)."""
+    rel = release_branch(repo, cfg)
+    mb = gitx.try_run(repo, "merge-base", rel, "HEAD", timeout=GIT_QUICK_TIMEOUT_S)
+    if mb is None or mb.returncode != 0 or not mb.stdout.strip():
+        raise ScanError(f"scan failed: no stage base: cannot find the merge-base of {rel} and HEAD")
+    diff = gitx.try_run(repo, "diff", "-U0", "--no-color", mb.stdout.strip(), "HEAD", timeout=GIT_QUICK_TIMEOUT_S)
+    if diff is None or diff.returncode != 0:
+        raise ScanError("scan failed: git could not diff the stage against its base")
+    return gitx.added_lines(diff.stdout)
+
+
+def split_on_stage(new, added) -> tuple[list[tuple[str, int, str, str]], list[tuple[str, int, str, str]]]:
+    """-> (blocking, on_base) from `new` records: `blocking` are the hits on a line the stage adds, `on_base` the hits on lines that were already there."""
+    added_at = {(rel, n) for rel, rows in added.items() for n, _text in rows}
+    blocking = [rec for rec in new if (rec[0], rec[1]) in added_at]
+    on_base = [rec for rec in new if (rec[0], rec[1]) not in added_at]
+    return blocking, on_base
 
 
 def hits(repo, words) -> list[str]:
@@ -63,16 +83,25 @@ def records(repo, words, skip=()) -> list[tuple[str, int, str, str]]:
         # a tracked symlink names a target outside the repo: it is not repo text, so it is not scanned
         if os.path.islink(os.path.join(repo, rel)):
             continue
-        try:
-            with open(os.path.join(repo, rel), "rb") as f:
-                head = f.read(PUBLIC_BINARY_SNIFF_BYTES)
-                if b"\0" in head:
-                    continue
-                raw = head + f.read()
-        except OSError:
-            raise ScanError(f"scan failed: cannot read tracked file {rel}") from None
-        for n, text in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
-            for w in needles:
-                if re.search(re.escape(w), text, re.IGNORECASE):
-                    found.append((rel, n, w, text))
+        lines = _text_lines(repo, rel)
+        if lines is not None:
+            found.extend(_hits(rel, lines, needles))
     return found
+
+
+def _text_lines(repo, rel) -> list[str] | None:
+    """The lines of a tracked file, or None for a binary file (NUL byte in the first PUBLIC_BINARY_SNIFF_BYTES). Raises ScanError when it cannot be read."""
+    try:
+        with open(os.path.join(repo, rel), "rb") as f:
+            head = f.read(PUBLIC_BINARY_SNIFF_BYTES)
+            if b"\0" in head:
+                return None
+            raw = head + f.read()
+    except OSError:
+        raise ScanError(f"scan failed: cannot read tracked file {rel}") from None
+    return raw.decode("utf-8", errors="replace").splitlines()
+
+
+def _hits(rel, lines, needles) -> list[tuple[str, int, str, str]]:
+    """-> (file, line, word, text) for each line that contains a needle, case-insensitive."""
+    return [(rel, n, w, text) for n, text in enumerate(lines, 1) for w in needles if re.search(re.escape(w), text, re.IGNORECASE)]

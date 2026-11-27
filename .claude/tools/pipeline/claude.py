@@ -175,7 +175,7 @@ def kill_on_signal() -> Iterator[None]:
         yield
         return
 
-    def stop(signum, frame) -> NoReturn:
+    def stop(signum, _frame) -> NoReturn:
         global STOPPING
         STOPPING = True
         kill_all()
@@ -281,16 +281,7 @@ def run_claude(args, cwd, timeout, done_file=None, env_extra=None, pgid_file=Non
                 kill_group(p)  # unrecorded session would outlive the driver: kill it, then report the failure
                 raise
         out, err, closed, timed_out = _wait(p, timeout, done_file)
-        if STOPPING:  # killed by the stop signal: no answer, no report
-            return {"stopped": True, "is_error": True, "result": "wave: driver stopped, session killed"}
-        if timed_out:
-            return {"is_error": True, "result": "wave: session timeout"}
-        try:
-            return json.loads(out)
-        except ValueError:
-            if closed:
-                return {"is_error": False, "result": "wave: report written, hung session closed"}
-            return {"is_error": True, "result": f"wave: claude rc={p.returncode}: {(err or out)[:300]}"}
+        return _session_result(p, out, err, closed, timed_out)
     except Exception as e:
         return {"is_error": True, "result": f"wave: claude call failed: {e}"}
     finally:
@@ -298,6 +289,36 @@ def run_claude(args, cwd, timeout, done_file=None, env_extra=None, pgid_file=Non
             untrack(p)
             if pgid_file:
                 pgid_forget(pgid_file, p.pid)
+
+
+def _session_result(p, out, err, closed, timed_out) -> dict[str, Any]:
+    """-> the parsed json of a finished session, or the error dict for a stop, a timeout or a bad answer (`p` is the session process)."""
+    if STOPPING:  # killed by the stop signal: no answer, no report
+        return {"stopped": True, "is_error": True, "result": "wave: driver stopped, session killed"}
+    if timed_out:
+        return {"is_error": True, "result": "wave: session timeout"}
+    try:
+        return json.loads(out)
+    except ValueError:
+        if closed:
+            return {"is_error": False, "result": "wave: report written, hung session closed"}
+        return {"is_error": True, "result": f"wave: claude rc={p.returncode}: {(err or out)[:300]}"}
+
+
+def _transcript_tool_uses(path, c) -> None:
+    """Add the tool_use names of one session transcript (JSONL) to the counter `c`; unreadable or bad lines are skipped."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    m = (json.loads(line).get("message") or {}).get("content")
+                except ValueError:
+                    continue
+                for b in m if isinstance(m, list) else []:
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name"):
+                        c[b["name"]] += 1
+    except OSError:
+        pass
 
 
 def tool_counts(session_id) -> dict[str, int]:
@@ -309,18 +330,7 @@ def tool_counts(session_id) -> dict[str, int]:
         return {}
     c: collections.Counter[str] = collections.Counter()
     for f in glob.glob(os.path.join(os.path.expanduser("~/.claude/projects"), "*", f"{session_id}.jsonl")):
-        try:
-            with open(f, encoding="utf-8") as fh:
-                for line in fh:
-                    try:
-                        m = (json.loads(line).get("message") or {}).get("content")
-                    except ValueError:
-                        continue
-                    for b in m if isinstance(m, list) else []:
-                        if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name"):
-                            c[b["name"]] += 1
-        except OSError:
-            pass
+        _transcript_tool_uses(f, c)
     return dict(c)
 
 

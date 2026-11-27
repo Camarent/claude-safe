@@ -9,6 +9,7 @@ A newer version is a new tool for sec-auditor: vet it, bump the row, then `check
 
 import argparse
 import contextlib
+import glob
 import os
 import pwd
 import re
@@ -197,9 +198,17 @@ def outdated(rs) -> None:
         )
 
 
-def split_needed(bad, needed_text) -> tuple[list[str], list[str]]:
-    """-> (really failed, warnings). A tool that did not install only fails the check when the project's AUDIT.md names it; `bad` items are `name version`."""
-    need = (needed_text or "").lower()
+def task_text(stage_dir) -> str:
+    """The Test and Done lines of every task-N.md in the stage dir: a tool a task runs or checks counts as needed."""
+    lines: list[str] = []
+    for path in sorted(glob.glob(os.path.join(stage_dir, "task-*.md"))):
+        lines += [ln for ln in read_text(path).splitlines() if ln.startswith(("Test:", "Done:"))]
+    return "\n".join(lines)
+
+
+def split_needed(bad, needed_text, stage_text="") -> tuple[list[str], list[str]]:
+    """-> (really failed, warnings). A tool that did not install only fails the check when the project's AUDIT.md or a task of the stage (`stage_text`) names it; `bad` items are `name version`."""
+    need = f"{needed_text or ''}\n{stage_text or ''}".lower()
     return [b for b in bad if b.split()[0].lower() in need], [b for b in bad if b.split()[0].lower() not in need]
 
 
@@ -232,10 +241,26 @@ def _parser():
     c.add_argument(
         "--needed-by", help="AUDIT.md of the project: a tool that failed to install only fails the check when this file names it (others are warnings)"
     )
+    c.add_argument("--stage-dir", help="stage dir of task-N.md files: a tool a task's Test or Done line names fails the check too (with --needed-by)")
     c.add_argument("--proj", help="project dir: also (re)create the /opt/jstools/proj eslint/knip scaffold for it")
     c.add_argument("--browser", action="store_true", help="UI stage: also require the chrome-devtools MCP server (fails, never skips)")
     s.add_parser("outdated")
     return p
+
+
+def _needed_by_checks(a, bad) -> tuple[list, list[str], str]:
+    """-> (bad, warn, note) of the `--needed-by` file: the failures the stage does not need (split_needed) and the audit tools note."""
+    stage = task_text(a.stage_dir) if a.stage_dir else ""
+    bad, warn = split_needed(bad, read_text(a.needed_by) if os.path.exists(a.needed_by) else "", stage)
+    return bad, warn, audit_tools_note(a.needed_by)
+
+
+def _proj_note(proj) -> str:
+    """-> the `--proj` part of the verdict note: (re)creates the eslint/knip scaffold, then the ci-drift warnings of the project."""
+    ensure_proj(proj)
+    with contextlib.suppress(ValueError):
+        return "".join(f"warning: ci-drift: {w}\n" for w in drift(proj, project(proj)))
+    return ""
 
 
 def main(argv=None) -> None:
@@ -249,12 +274,9 @@ def main(argv=None) -> None:
     warn: list[str] = []
     note = ""
     if a.needed_by is not None:
-        bad, warn = split_needed(bad, read_text(a.needed_by) if os.path.exists(a.needed_by) else "")
-        note = audit_tools_note(a.needed_by)
+        bad, warn, note = _needed_by_checks(a, bad)
     if a.proj:
-        ensure_proj(a.proj)
-        with contextlib.suppress(ValueError):
-            note += "".join(f"warning: ci-drift: {w}\n" for w in drift(a.proj, project(a.proj)))
+        note += _proj_note(a.proj)
     if a.browser:
         ensure_browser_user()
         (ok if browser_ok() else bad).append("chrome-devtools MCP")

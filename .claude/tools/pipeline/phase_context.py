@@ -146,31 +146,37 @@ def _under(path, folders):
     return any(path == f or path.startswith(f.rstrip("/") + "/") for f in folders)
 
 
+def _changed_in_repos(repos, span):
+    """-> (repo basename, path) for every file the span changed in each repo."""
+    return [
+        (os.path.basename(repo), p) for repo in repos for p in git_text(["diff", "--name-only", f"{span[0]}..{span[1]}"], repo, 30).splitlines() if p.strip()
+    ]
+
+
+def _row_deviations(phase, predicted, changed):
+    """The deviation lines of one earlier phase: changed files outside its predicted paths, and predicted paths nothing changed."""
+    out = []
+    off = [f"{name}/{p}" for name, p in changed if not _under(p, predicted)]
+    unused = [p for p in predicted if not any(_under(p2, [p]) for _, p2 in changed)]
+    if off:
+        out.append(f"{DEVIATION_TAG} {phase}: changed outside predicted paths: {', '.join(off[:DIGEST_LINES_CAP])}")
+    if unused:
+        out.append(f"{DEVIATION_TAG} {phase}: predicted, not changed: {', '.join(unused[:DIGEST_LINES_CAP])}")
+    return out
+
+
 def _deviation_lines(fdir, rows, head, workspace):
     """Per earlier phase: changed files outside the predicted paths, and predicted paths nothing changed. Changes come from every repo of the project."""
     out = []
     repos = repo_dirs(workspace, project(workspace))
     for i, r in enumerate(rows):
         span = _phase_span(fdir, rows, i, head)
-        folder = os.path.join(fdir, PHASES_DIR, r["dir"])
         if span is None:
             out.append(f"(no {BASE_FILE} for {r['dir']}: deviations not checked)")
             continue
-        predicted = _predicted(folder)
-        changed = [
-            (os.path.basename(repo), p)
-            for repo in repos
-            for p in git_text(["diff", "--name-only", f"{span[0]}..{span[1]}"], repo, 30).splitlines()
-            if p.strip()
-        ]
-        if not predicted:
-            continue
-        off = [f"{name}/{p}" for name, p in changed if not _under(p, predicted)]
-        unused = [p for p in predicted if not any(_under(p2, [p]) for _, p2 in changed)]
-        if off:
-            out.append(f"{DEVIATION_TAG} {r['dir']}: changed outside predicted paths: {', '.join(off[:DIGEST_LINES_CAP])}")
-        if unused:
-            out.append(f"{DEVIATION_TAG} {r['dir']}: predicted, not changed: {', '.join(unused[:DIGEST_LINES_CAP])}")
+        predicted = _predicted(os.path.join(fdir, PHASES_DIR, r["dir"]))
+        if predicted:
+            out.extend(_row_deviations(r["dir"], predicted, _changed_in_repos(repos, span)))
     return out
 
 

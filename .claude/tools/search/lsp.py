@@ -9,8 +9,9 @@
 Positions are 1-based. Give a SYMBOL name instead of LINE:COL and the first whole-word match in FILE is used.
 Servers: pyright (py), tsc --lsp (TypeScript 7 native, js/ts), clangd (c/cpp, needs compile_commands.json), rust-analyzer (rs).
 Output is `path:line:col  text`, paths relative to the project root (nearest .git / config file above FILE, else cwd).
-Exit 2 = no server for that file type, 3 = server failed. diag: never a false clean: NOT CHECKED (exit 3) if nothing was checked; falls back to py_compile / node --check. `lp nav` runs these ops on the warm pool (lsp_pool.py); this file is the per-call fallback and the path for `symbols`."""
+Exit 0 = no server for that file type (def/refs/hover/outline: a hint to use Grep or Read), 3 = server failed. diag: never a false clean: NOT CHECKED (exit 3) if nothing was checked; falls back to py_compile / node --check. `lp nav` runs these ops on the warm pool (lsp_pool.py); this file is the per-call fallback and the path for `symbols`."""
 
+import difflib
 import json
 import os
 import re
@@ -85,7 +86,33 @@ def position(f, spec):
         m = re.search(r"(?<![\w$])" + re.escape(spec) + r"(?![\w$])", line)
         if m:
             return i, m.start() + 1
-    sys.exit(f"symbol '{spec}' not found in {f}")
+    names = file_symbols(text)
+    shown = f"; symbols in the file: {', '.join(names)}" if names else "; no declarations found in the file"
+    sys.exit(f"symbol '{spec}' not found in {f}{shown}")
+
+
+DECL = re.compile(r"^\s*(?:(?:export|pub|async|static)\s+)*(?:def|class|function|fn|struct|enum|trait|impl|const|let|var|type)\s+([A-Za-z_$][\w$]*)")
+
+
+def file_symbols(text, limit=5):
+    """First LIMIT distinct declared names in TEXT (a regex over common declaration keywords, not a parser)."""
+    names = []
+    for line in text.split("\n"):
+        m = DECL.match(line)
+        if m and m.group(1) not in names:
+            names.append(m.group(1))
+            if len(names) == limit:
+                break
+    return names
+
+
+def missing_file_hint(f):
+    """Message for a path that does not exist: the nearest existing name in its folder, else how to search."""
+    d = os.path.dirname(f) or "."
+    near = difflib.get_close_matches(os.path.basename(f), os.listdir(d), n=1) if os.path.isdir(d) else []
+    if near:
+        return f"{f}: no such file; nearest existing path: {os.path.join(os.path.dirname(f), near[0])}"
+    return f'{f}: no such file; search for it with lp find "<question>"'
 
 
 CTAGS_LANG = {"py": "Python", "js": "JavaScript", "ts": "TypeScript", "cpp": "C,C++", "rs": "Rust"}
@@ -183,8 +210,8 @@ def _no_server(op, f):
     if op == "diag":
         print(f"NOT CHECKED: no language server for {f}")
         return 3
-    print(f"no language server for {f}")
-    return 2
+    print(f"no language server for {f}: use Grep or Read for this file type")
+    return 0
 
 
 RUST_LOAD_WAIT = 22  # seconds added to the poll budget; poll() returns as soon as the answer arrives
@@ -275,14 +302,19 @@ def _print_diag(d, f, lang, root):
     )
 
 
-def _cmd_diag(c, a, f, lang, root):
-    _open_for(c, "diag", f, lang, root)
-    try:  # pull model first (pyright publishes nothing for a clean file)
+def _pull_diags(c, f, lang):
+    """Pull model first (pyright publishes nothing for a clean file): store the items in c.diags. Optional: a failure falls through to settle."""
+    try:
         pulled = c.req("textDocument/diagnostic", {"textDocument": {"uri": uri(f)}}, 20) if lang in ("py", "js", "ts") else None
         if pulled and "items" in pulled:
             c.diags[uri(f)] = pulled["items"]
     except (RuntimeError, TimeoutError):  # KEEP: pull diagnostics is optional; the push settle below covers servers without it
         pass
+
+
+def _cmd_diag(c, a, f, lang, root):
+    _open_for(c, "diag", f, lang, root)
+    _pull_diags(c, f, lang)
     if (lang not in ("py", "js", "ts") or uri(f) not in c.diags) and not c.settle(15 if lang != "rs" else 60, uri(f)):
         return not_checked(f, lang, "language server sent no diagnostics")
     ds = c.diags.get(uri(f), [])
@@ -320,7 +352,7 @@ def main(a):
     f = a[1]
     lang = EXT.get(os.path.splitext(f)[1].lower())
     if not os.path.exists(f):
-        sys.exit(f"{f}: no such file")
+        sys.exit(missing_file_hint(f))
     if not lang:
         return _no_server(op, f)
     root = root_of(f, os.getcwd())

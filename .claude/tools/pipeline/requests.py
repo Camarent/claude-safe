@@ -51,6 +51,9 @@ def _request_action(a, log, name, r, types, n, limit, opus_used, ndisp):
         }
     rid = f"a{ndisp + 1}"  # ids are numbered from ALL dispatches (graph.py), not the heavy ones
     bp = os.path.realpath(os.path.join(a.dir, brief))
+    why = f"requested by file {name}: {brief}"
+    if eff == MODEL_OPUS:  # Opus only behind a logged route (routing_log.unlogged_routes): the lead's reason, or none given
+        why = f"route: lead request {r.get('reason') or 'no reason given'}; {why}"
     return {
         "action": "dispatch",
         "id": rid,
@@ -58,7 +61,7 @@ def _request_action(a, log, name, r, types, n, limit, opus_used, ndisp):
         "model": model,
         "task": None,
         "role": "other",
-        "why": f"requested by file {name}: {brief}",
+        "why": why,
         "prompt": f"Read {os.path.relpath(bp, a.dir)} and do what it says. Write your full report to .work/{a.stage}/reports/report-{rid}.md, then reply with exactly: REPORT {rid}",
     }
 
@@ -68,6 +71,23 @@ def _load_request(p):
         return json.loads(Path(p).read_text(encoding="utf-8"))
     except ValueError:
         return {}
+
+
+def _valid_requests(a, w, rd, log, types, rejected):
+    """Yield (name, path, request) of each request file that is valid and not rejected since its last edit; a bad one stays in place and its reject is logged once per edit."""
+    for name in sorted(os.listdir(rd)):
+        p = os.path.join(rd, name)
+        if not name.endswith(".json") or not os.path.isfile(p):
+            continue
+        mtime = os.path.getmtime(p)
+        if rejected.get(name) == mtime:  # rejected before and not edited since: no re-parse
+            continue
+        r = _load_request(p)
+        why = _invalid_reason(a, w, r, types)
+        if why:  # a bad request stays where it is (only an accepted one moves to done/); the reject is logged once per edit
+            append_event(log, {"ev": "reject", "request": name, "why": why, "mtime": mtime})
+            continue
+        yield name, p, r
 
 
 def take_request(a, w, log) -> dict | None:
@@ -81,18 +101,7 @@ def take_request(a, w, log) -> dict | None:
     opus_used = sum(1 for e in evs if e["ev"] == EV_DISPATCH and e.get("model") == MODEL_OPUS)
     ndisp = sum(1 for e in evs if e["ev"] == EV_DISPATCH)
     rejected = {e.get("request"): e.get("mtime") for e in evs if e["ev"] == "reject"}  # name -> mtime of the file when it was rejected
-    for name in sorted(os.listdir(rd)):
-        p = os.path.join(rd, name)
-        if not name.endswith(".json") or not os.path.isfile(p):
-            continue
-        mtime = os.path.getmtime(p)
-        if rejected.get(name) == mtime:  # rejected before and not edited since: no re-parse
-            continue
-        r = _load_request(p)
-        why = _invalid_reason(a, w, r, types)
-        if why:  # a bad request stays where it is (only an accepted one moves to done/); the reject is logged once per edit
-            append_event(log, {"ev": "reject", "request": name, "why": why, "mtime": mtime})
-            continue
+    for name, p, r in _valid_requests(a, w, rd, log, types, rejected):
         os.makedirs(os.path.join(rd, "done"), exist_ok=True)
         os.replace(p, os.path.join(rd, "done", name))
         action = _request_action(a, log, name, r, types, n, limit, opus_used, ndisp)

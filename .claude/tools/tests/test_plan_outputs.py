@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import plan_kinds, plan_outputs
+from pipeline import plan_check, plan_kinds, plan_outputs
 
 TID = "task-1"  # task id; asserts use this name, not the literal (path-dependent check)
 
@@ -70,6 +70,23 @@ class OutputPathsTest(unittest.TestCase):
         probs = plan_outputs.check_output_paths(self.d, TID, self.root)
         self.assertEqual(len(probs), 1)
         self.assertIn("output `.work/s/out.md` is under the work folder", probs[0])
+
+    def test_done_ignored_path_fails_ignored_done(self):
+        self.task(f"{TID}.md", "Predicted paths: src/a.py\nDone: write the later notes to build/notes.md\n")
+        probs = plan_outputs.check_output_paths(self.d, TID, self.root)
+        self.assertEqual(len(probs), 1)
+        self.assertTrue(probs[0].startswith(f"ignored-done: {TID}: path `build/notes.md`"))
+        self.assertEqual(plan_check.errors_of(probs), probs)
+
+    def test_done_tracked_and_covered_work_paths_pass_ignored_done(self):
+        self.task(f"{TID}.md", "Predicted paths: src/a.py\nOutputs: .work/s/out.md\nDone: edit src/a.py and write .work/s/out.md\n")
+        probs = plan_outputs.check_output_paths(self.d, TID, self.root)
+        self.assertEqual(len(probs), 1)
+        self.assertTrue(probs[0].startswith(f"outputs: {TID}: output `.work/s/out.md`"))
+
+    def test_url_on_done_line_is_not_a_path(self):
+        self.task(f"{TID}.md", "Predicted paths: src/a.py\nDone: cite https://x/build/y.md in the summary\n")
+        self.assertEqual(plan_outputs.check_output_paths(self.d, TID, self.root), [])
 
     def test_tracked_decoy_with_work_in_name_passes(self):
         self.task(f"{TID}.md", "Predicted paths: docs/networking.work.md\n")

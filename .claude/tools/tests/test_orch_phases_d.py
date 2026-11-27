@@ -155,7 +155,7 @@ class PhaseTest(PhaseHarness, unittest.TestCase):
         r = self.go("next")
         self.assertEqual(r["action"], "ask_main")
         self.assertIn(f"retry s --step {step}", r["message"])
-        self.go("retry", "--step", step, "--note", "I fixed the env var")
+        self.go("retry", "--step", step, "--note", "I fixed the env var in scripts/dev.sh:1")
         d = self.batch()
         self.assertTrue(d[0]["prompt"].startswith("Lead note (read first): the findings of the last try are in "))
         self.assertIn("I fixed the env var", d[0]["prompt"])

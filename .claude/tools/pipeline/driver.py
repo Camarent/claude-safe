@@ -198,6 +198,43 @@ def safe_run_one(c, d) -> tuple[dict, dict, dict]:
         return d, u, orch("report", c.stage, c.dir, "--id", d["id"])
 
 
+def _dev_session(c, d, f, args) -> dict:
+    """One dev session in its job worktree, with the write guard env."""
+    return claude.session(
+        args,
+        session_cwd(c, d),
+        done_file=f,
+        env_extra={**scratch_env(c), ENV_AGENT_KIND: d["agent"], **guard_env(c, d)},
+        pgid_file=os.path.join(c.w, PGID_FILE_NAME),
+    )
+
+
+def _review_session(c, d, f, args) -> tuple[dict, bool]:
+    """One reviewer session with mutation checks in the job worktree; the script puts it back whatever the session does. -> (usage, reset failed)."""
+    task = dispatch_task(c, d) or ""
+    why = review_begin(c, task)
+    if why:
+        return dict(claude.usage({}), error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview not started: {why}"), False
+    try:
+        u = claude.session(
+            args,
+            c.dir,
+            done_file=f,
+            env_extra={
+                **scratch_env(c),
+                ENV_AGENT_KIND: d["agent"],
+                ENV_REVIEW_DIR: review_root(c, task),
+                ENV_GATE_KIND: GATE_KIND_MUTATION,
+            },
+            pgid_file=os.path.join(c.w, PGID_FILE_NAME),
+        )
+    finally:
+        bad = review_reset(c, task)
+    if bad:
+        return dict(u, error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview reset failed: {bad}"), True
+    return u, False
+
+
 def run_one(c, d) -> tuple[dict, dict, dict]:
     f = work_path(c.w, f"report-{d['id']}.md", create=True)
     reset_failed = False
@@ -212,37 +249,9 @@ def run_one(c, d) -> tuple[dict, dict, dict]:
             d["agent"], d["model"], d.get("effort"), d["prompt"], dir=c.dir, max_turns=turns, scratch=scratch_env(c)[ENV_SCRATCH_DIR], add_dirs=dev_dirs
         )
         if d["agent"] != REVIEWER:  # dev runs in its job worktree with the write guard env; the read-only roles keep the project dir
-            u = claude.session(
-                args,
-                session_cwd(c, d),
-                done_file=f,
-                env_extra={**scratch_env(c), ENV_AGENT_KIND: d["agent"], **guard_env(c, d)},
-                pgid_file=os.path.join(c.w, PGID_FILE_NAME),
-            )
-        else:  # mutation checks run in the job worktree; the script puts it back whatever the session does
-            task = dispatch_task(c, d) or ""
-            why = review_begin(c, task)
-            if why:
-                u = dict(claude.usage({}), error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview not started: {why}")
-            else:
-                try:
-                    u = claude.session(
-                        args,
-                        c.dir,
-                        done_file=f,
-                        env_extra={
-                            **scratch_env(c),
-                            ENV_AGENT_KIND: d["agent"],
-                            ENV_REVIEW_DIR: review_root(c, task),
-                            ENV_GATE_KIND: GATE_KIND_MUTATION,
-                        },
-                        pgid_file=os.path.join(c.w, PGID_FILE_NAME),
-                    )
-                finally:
-                    bad = review_reset(c, task)
-                if bad:
-                    reset_failed = True
-                    u = dict(u, error=True, result=f"{VERDICT_PREFIX}BLOCKED\nreview reset failed: {bad}")
+            u = _dev_session(c, d, f, args)
+        else:
+            u, reset_failed = _review_session(c, d, f, args)
     if u.get("stopped"):  # the driver is stopping: the session has no answer, so the report is not written
         return d, u, {}
     if not read_text(f).strip():

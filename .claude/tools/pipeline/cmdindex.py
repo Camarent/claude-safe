@@ -117,16 +117,30 @@ def gen_bin(home=None, check=False) -> list[str]:
     want = planned(load(home), home)
     problems = []
     for path, text in sorted(want.items()):
-        have = None
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                have = f.read()
-        if have != text:
-            problems.append(("missing: " if have is None else "differs: ") + path)
-            if not check:
-                write_text(path, text)  # atomic: a hook exec'ing the wrapper never sees an empty or half-written one
+        problems += _sync_wrapper(path, text, check)
+    problems += _prune_stale(home, want, check)
+    return problems
+
+
+def _sync_wrapper(path, text, check) -> list[str]:
+    """Write one wrapper whose text differs (unless check); returns its problem line, if any."""
+    have = None
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            have = f.read()
+    problems = []
+    if have != text:
+        problems.append(("missing: " if have is None else "differs: ") + path)
         if not check:
-            os.chmod(path, WRAPPER_MODE)
+            write_text(path, text)  # atomic: a hook exec'ing the wrapper never sees an empty or half-written one
+    if not check:
+        os.chmod(path, WRAPPER_MODE)
+    return problems
+
+
+def _prune_stale(home, want, check) -> list[str]:
+    """Remove generated wrappers that are no longer planned (unless check); returns their problem lines."""
+    problems = []
     for d in BIN_DIRS.values():
         folder = os.path.join(home, d)
         for fn in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:

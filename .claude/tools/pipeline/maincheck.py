@@ -155,15 +155,12 @@ def _listing(repo, changed, owner, started):
 def check(a_dir, stage, task) -> str:
     """-> "" or the MAIN-DIRT note naming the files that are new or changed in the main checkout since the snapshot. The dev's own tracked writes are saved to a patch and reverted; the rest is only named. A path the guard log attributes to another job is left to that job's check. No snapshot: no verdict."""
     try:
-        path = _base_path(a_dir, stage, task)
-        cfg, repo, _root, _branch = layout(a_dir, stage, task)
-        base = _base(path)
-        if base is None or merging(repo):
-            return ""
-        cur = _state(repo, _globs(cfg))
-        started = _iso(os.path.getmtime(path))  # the snapshot is written when the job's first dev starts
+        inputs = _check_inputs(a_dir, stage, task)
     except ERRORS:
         return ""
+    if inputs is None:
+        return ""
+    cfg, repo, base, cur, started = inputs
     changed = sorted(p for p, h in cur.items() if base.get(p) != h)
     owner = _owners(a_dir, stage, task, repo, changed) if changed else {}
     changed = [p for p in changed if p in owner]
@@ -174,6 +171,18 @@ def check(a_dir, stage, task) -> str:
     )  # the stamps are read before any revert
     mine = [p for p in changed if p not in base and _tracked(repo, p)]  # clean at the snapshot, in HEAD: the dev's own edit
     return note + " " + _revert_state(a_dir, stage, task, repo, cfg, mine)
+
+
+def _check_inputs(a_dir, stage, task):
+    """-> (cfg, repo, base, cur, started) for check(), or None when there is no snapshot verdict to give (no snapshot, or a merge runs). Raises ERRORS as the reads do."""
+    path = _base_path(a_dir, stage, task)
+    cfg, repo, _root, _branch = layout(a_dir, stage, task)
+    base = _base(path)
+    if base is None or merging(repo):
+        return None
+    cur = _state(repo, _globs(cfg))
+    started = _iso(os.path.getmtime(path))  # the snapshot is written when the job's first dev starts
+    return cfg, repo, base, cur, started
 
 
 def dirt(note) -> bool:

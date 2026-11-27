@@ -2,7 +2,6 @@
 
 import os
 import re
-import subprocess
 import sys
 
 from . import gitx
@@ -59,14 +58,6 @@ def shared_file_errors(listings) -> list[str]:
     return out
 
 
-def _ignored(repo, rel):
-    """True when git (run in REPO) reports REL as ignored; any git failure -> False."""
-    try:
-        return gitx.run(repo, "check-ignore", "-q", "--", rel).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
 LITERAL_RE = re.compile(
     r"""["'`]((?:\.\./|\./)?[\w@-]+(?:\.[\w@-]+)+|(?:\.\./|\./)?[\w.@-]+(?:/[\w.@-]+)+/?)["'`]"""
 )  # a quoted name with an extension, or with a slash
@@ -88,7 +79,7 @@ def _ignored_literals(repo, test_file):
             full = os.path.realpath(os.path.join(base, lit))
             if not full.startswith(root + os.sep) or not os.path.exists(full):
                 continue
-            if _ignored(repo, os.path.relpath(full, root)):
+            if gitx.ignored(repo, [os.path.relpath(full, root)]):
                 hits.append(lit)
             break
     return hits

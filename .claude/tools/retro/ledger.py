@@ -159,6 +159,41 @@ def find_transcript(sid, root=None):
     return None
 
 
+def _read_meta(path):
+    """-> parsed `.meta.json` at path, or {} when missing or not valid JSON."""
+    meta = {}
+    if os.path.exists(path):
+        with contextlib.suppress(ValueError):
+            meta = json.loads(Path(path).read_text(encoding="utf-8"))
+    return meta
+
+
+def _agent_logs(root, files):
+    """-> [(agent_log, meta)] for the `agent-*.jsonl` files of one subagents dir."""
+    agents = []
+    for fn in sorted(files):
+        if fn.startswith("agent-") and fn.endswith(".jsonl"):
+            meta = _read_meta(os.path.join(root, fn[:-6] + ".meta.json"))
+            agents.append((os.path.join(root, fn), meta))
+    return agents
+
+
+def _add_subagents_session(root, files, sessions):
+    """Record the session that owns the subagents dir `root`; its lead log replaces a bare entry for it."""
+    sdir = os.path.dirname(root)
+    sid = os.path.basename(sdir)
+    lead = os.path.join(os.path.dirname(sdir), sid + ".jsonl")
+    sessions.pop(lead, None)
+    sessions[sdir] = (sid, lead if os.path.exists(lead) else None, _agent_logs(root, files))
+
+
+def _add_headless_sids(root, files, sids, sessions):
+    """Add top-level `<sid>.jsonl` logs whose id is in sids as sessions of their own."""
+    for fn in sorted(files):
+        if sids and fn.endswith(".jsonl") and fn[:-6] in sids:
+            sessions.setdefault(os.path.join(root, fn), (fn[:-6], os.path.join(root, fn), []))
+
+
 def find_sessions(paths, sids=None):
     """-> list of (session_id, lead_log or None, [(agent_log, meta)]).
     `sids`: ids of a stage's headless sessions (see metrics_sids); top-level `<sid>.jsonl` logs with those ids are
@@ -169,25 +204,10 @@ def find_sessions(paths, sids=None):
             sessions[p] = (os.path.basename(p), p if "/subagents/" not in p else None, [])
             continue
         for root, _dirs, files in os.walk(p):
-            if os.path.basename(root) != "subagents":
-                for fn in sorted(files):
-                    if sids and fn.endswith(".jsonl") and fn[:-6] in sids:
-                        sessions.setdefault(os.path.join(root, fn), (fn[:-6], os.path.join(root, fn), []))
-                continue
-            sdir = os.path.dirname(root)
-            sid = os.path.basename(sdir)
-            lead = os.path.join(os.path.dirname(sdir), sid + ".jsonl")
-            agents = []
-            for fn in sorted(files):
-                if fn.startswith("agent-") and fn.endswith(".jsonl"):
-                    meta = {}
-                    mp = os.path.join(root, fn[:-6] + ".meta.json")
-                    if os.path.exists(mp):
-                        with contextlib.suppress(ValueError):
-                            meta = json.loads(Path(mp).read_text(encoding="utf-8"))
-                    agents.append((os.path.join(root, fn), meta))
-            sessions.pop(lead, None)
-            sessions[sdir] = (sid, lead if os.path.exists(lead) else None, agents)
+            if os.path.basename(root) == "subagents":
+                _add_subagents_session(root, files, sessions)
+            else:
+                _add_headless_sids(root, files, sids, sessions)
     return list(sessions.values())
 
 

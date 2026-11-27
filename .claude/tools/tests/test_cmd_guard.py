@@ -127,7 +127,7 @@ class CmdGuardTest(unittest.TestCase):
 
     def test_qrun_message_names_the_rule(self):
         why = cmd_guard.verdict(f"{Q} x ; ls")
-        self.assertIn("One qrun per Bash call", why)
+        self.assertIn("one qrun per Bash call", why)
         self.assertIn("`&&` is allowed only before another qrun call or a read-only command", why)
         self.assertIn("(ls, echo, wc, cat, head, tail, test)", why)
 
@@ -429,11 +429,12 @@ class CdGitRewriteTest(unittest.TestCase):
     def test_cd_elsewhere_still_denied(self):
         wt = self._enter_cwd_worktree()
         other = os.path.dirname(wt)
-        self.assertIn("No `cd", cmd_guard.verdict(f"cd {other} && git status"))
+        self.assertIn("of `cd", cmd_guard.verdict(f"cd {other} && git status"))
 
     def test_cd_git_denial_text_gives_git_c_not_cd(self):  # C2: the replacement is `git -C D args`, never a cd
         why = cmd_guard.verdict("cd /wt/x && git status --short")
-        self.assertIn("Run `git -C /wt/x status --short` instead", why)
+        self.assertIn("Run `git -C /wt/x status --short`", why)  # the "(or plain ...)" clause depends on the cwd, not asserted here
+        self.assertIn("instead of `cd /wt/x` before git", why)
         self.assertNotIn("Run `cd", why)
 
     def _run(self, cmd, extra=None):

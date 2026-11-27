@@ -320,6 +320,17 @@ def _plan_only(c):
 
 def _run_locked(a, c):
     """The stage run under the stage lock taken by cmd_run: guards, recovery, then the loop."""
+    if (code := _run_guards(a, c)) is not None:
+        return code
+    if (code := _run_preflights(a, c)) is not None:
+        return code
+    for s in ops_preflight.later_ops(c):  # the run goes on: the lead does these after the task they wait for
+        print(f"lead step {s['id']} (after {', '.join(s['after'])}): {s['text']}")
+    return run_loop(a, c)
+
+
+def _run_guards(a, c):
+    """-> EXIT_BLOCKED when the stage cannot start (after printing why), else None. Clears stale state and recovers unreported steps."""
     if _plan_only(c):  # a feature plan with no tasks yet: the loop would say `done: no tasks` with exit 0
         print(f"blocked: no TASKS.md in {c.w}, only Plan.md: run `{NO_TASKS_HINT.format(stage=a.stage)}`")
         return EXIT_BLOCKED
@@ -340,6 +351,11 @@ def _run_locked(a, c):
     n = recover_unreported(c)
     if n:
         print(f"recovered {n} step(s) that were running when the driver stopped: they run again once")
+    return None
+
+
+def _run_preflights(a, c):
+    """-> EXIT_BLOCKED when a probe, review reset, env check or manual step blocks the run (after printing why), else None."""
     from search.strata import preflight
 
     preflight()  # one probe; if the model is down it sets STRATA=0: `lp find` uses keyword/symbol search, local-model steps skip
@@ -356,9 +372,7 @@ def _run_locked(a, c):
             print(f"blocked: manual step {s['id']} is open: {s['text']} (dependents: {', '.join(s['dependents']) or 'none'}; skip: {s['skip']})")
         entry.write_blocked(c.w, ops_preflight.blocked_text(steps) + "\n")
         return EXIT_BLOCKED
-    for s in ops_preflight.later_ops(c):  # the run goes on: the lead does these after the task they wait for
-        print(f"lead step {s['id']} (after {', '.join(s['after'])}): {s['text']}")
-    return run_loop(a, c)
+    return None
 
 
 def _env_preflight(a, c):
@@ -376,11 +390,21 @@ def _limit_hit(a, c, ds):
     heavy = [d for d in model if is_heavy(d)]  # only Sonnet and Opus sessions are limited; Haiku and scripts are cheap
     if heavy and a.max_waves and c.mwave + 1 > a.max_waves:
         return f"limit: max-waves {a.max_waves} (waves with a Sonnet or Opus session)"
+    return _dispatch_limit_msg(a, c, heavy) or _session_limit_msg(a, c, model)
+
+
+def _dispatch_limit_msg(a, c, heavy):
+    """-> the 'limit: ...' message when the Sonnet and Opus dispatches would pass the stage limit. Sets c.limit."""
     c.limit = a.max_dispatches or limits.stage_limit(
         os.path.join(c.w, TASKS_FILE), project(a.dir)
     )  # not given: fixed part + multiplier per task (pipeline/limits.py)
     if c.disp + len(heavy) > c.limit:
         return f"limit: {c.limit} Sonnet and Opus sessions ({'--max-dispatches' if a.max_dispatches else 'from the task list, pipeline/limits.py'})"
+    return None
+
+
+def _session_limit_msg(a, c, model):
+    """-> the 'limit: ...' message when the model sessions would pass the loop guard, else None."""
     guard = a.max_sessions or limits.session_guard(os.path.join(c.w, TASKS_FILE))
     if c.sessions + len(model) > guard:
         return f"limit: {guard} model sessions in all (loop guard)"
@@ -575,27 +599,46 @@ def _feature_status(a):
     if phases and not any(pf.is_finish_dir(p["dir"]) for p in phases):  # the driver adds it on the next run; show it now
         with contextlib.suppress(ValueError):  # phase 99 has no finish row: the driver refuses it with the reason
             phases.append({"dir": f"{pf.next_phase_no(phases):02d}-finish", "status": "todo", "tasks": 0})
-    rows = []  # (phase, folder, planned, waves [(label, names)], task states)
-    for p in phases:
-        folder = os.path.join(pf.feature_dir(fa), "phases", p["dir"])
-        planned = os.path.exists(pf.tasks_path(folder))
-        waves, state = [], {}
-        if planned:
-            c = Ctx(Run.of(a).at(stage=pf.stage_of(a.stage, p)))
-            state = _task_states(read_jsonl(c.log))
-            waves = _task_waves(pf.read_text(pf.tasks_path(folder)))
-        rows.append((p, planned, waves, state))
+    rows = [_phase_row(a, fa, p) for p in phases]  # (phase, planned, waves [(label, names)], task states)
     print(_feature_overview(rows))
     _print_planning(a)
+    _print_phase_rows(rows)
+    return True
+
+
+def _phase_row(a, fa, p):
+    """-> (phase, planned, waves, task states) for one phase of the feature: waves and states come from its TASKS.md and log when planned."""
+    from . import plan_files as pf
+
+    folder = os.path.join(pf.feature_dir(fa), "phases", p["dir"])
+    planned = os.path.exists(pf.tasks_path(folder))
+    waves, state = [], {}
+    if planned:
+        c = Ctx(Run.of(a).at(stage=pf.stage_of(a.stage, p)))
+        state = _task_states(read_jsonl(c.log))
+        waves = _task_waves(pf.read_text(pf.tasks_path(folder)))
+    return (p, planned, waves, state)
+
+
+def _phase_label(p, planned):
+    """-> the planning state shown after a phase's status: planned, the closing phase, or not planned yet."""
+    from . import plan_files as pf
+
+    if planned:
+        return "planned"
+    if pf.is_finish_dir(p["dir"]):
+        return "closing phase (tests, audits, merge, push, cleanup, retro)"
+    return "not planned yet"
+
+
+def _print_phase_rows(rows):
+    """Print one block per phase: its status line, its task waves, then steps outside the waves."""
     for i, (p, planned, waves, state) in enumerate(rows, 1):
-        print(
-            f"p{i}/{len(rows)} {p['dir']}: {p['status']}, {'planned' if planned else 'closing phase (tests, audits, merge, push, cleanup, retro)' if pf.is_finish_dir(p['dir']) else 'not planned yet'}"
-        )
+        print(f"p{i}/{len(rows)} {p['dir']}: {p['status']}, {_phase_label(p, planned)}")
         for num, names in waves:
             print(f"   {num} ({len(names)} task{'s' * (len(names) != 1)}): " + ", ".join(f"{t} {state.pop(t, 'todo')}" for t in names))
         for t, st in state.items():  # steps outside the task waves (merge-w1, ...)
             print(f"   {t} {st}")
-    return True
 
 
 def cmd_status(a) -> int:

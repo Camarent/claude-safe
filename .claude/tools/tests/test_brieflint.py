@@ -74,6 +74,18 @@ class T(unittest.TestCase):
         decoy = brieflint.lint(base + "bash -c 'node --test a.js && node --test b.js'\n")
         self.assertEqual(decoy, [])
 
+    def test_test_line_chain_outside_qrun_flagged(self):
+        bad_lines = ("pytest tests/ && ls out", "cs-qrun -- a ; cs-qrun -- b", "cs-qrun -- a | cs-qrun -- b", "cd X && cs-qrun -- pytest")
+        for line in (*bad_lines, "cs-qrun -- a && cat x > y"):
+            msgs = brieflint.lint(GOOD + "Test: " + line + "\n")
+            self.assertTrue(any("Test line" in m for m in msgs), (line, msgs))
+
+    def test_test_line_qrun_chain_accepted(self):
+        chain_msgs = ("does not start with cs-qrun", "chains with", "has ; or |", "VAR= prefix")
+        for line in ("cs-qrun -- pytest && ls out", "cs-qrun -- a && cs-qrun -- b", "cs-qrun -- scripts/dev.sh test x", "cs-qrun -- scripts/dev.sh test x*"):
+            msgs = brieflint.lint(GOOD + "Test: " + line + "\n")
+            self.assertFalse(any(c in m for m in msgs for c in chain_msgs), (line, msgs))
+
     def test_abs_cd(self):
         self.assertTrue(any("absolute cd" in m for m in brieflint.lint(GOOD + "cd /workspace/x")))
 

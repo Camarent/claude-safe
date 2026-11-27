@@ -124,9 +124,7 @@ def _cost(row):
     return row.get("cost_usd") or 0  # a hand-edited row may hold null
 
 
-def digest(d, stage):
-    """-> (ok, lines): the cost digest of the stage from metrics.jsonl, also written to retro/retro-digest.md."""
-    rows = [r for r in read_jsonl(os.path.join(stage_dir(d, stage), METRICS_LOG)) if r.get("ev") == EV_SESSION]
+def _cost_lines(rows):
     per: defaultdict = defaultdict(lambda: [0, 0.0])
     for r in rows:
         g = per[(r.get("agent"), r.get("model"))]
@@ -139,9 +137,21 @@ def digest(d, stage):
         f"- {r.get('task') or r.get('id')} {r.get('agent')} {r.get('verdict') or '-'} ${_cost(r):.2f}"
         for r in sorted(rows, key=lambda r: -_cost(r))[:TOP_SESSIONS]
     ]
+    return out
+
+
+def _not_passed_lines(rows):
     bad = [r for r in rows if r.get("verdict") in (BLOCKED, FAIL, ESCALATE)]
-    out.append(f"not passed: {len(bad)} sessions, ${sum(_cost(r) for r in bad):.2f}")
+    out = [f"not passed: {len(bad)} sessions, ${sum(_cost(r) for r in bad):.2f}"]
     out += [f"- {r.get('task') or r.get('id')} {r.get('verdict')}: {r.get('reason', '')}" for r in bad[:TOP_SESSIONS]]
+    return out
+
+
+def digest(d, stage):
+    """-> (ok, lines): the cost digest of the stage from metrics.jsonl, also written to retro/retro-digest.md."""
+    rows = [r for r in read_jsonl(os.path.join(stage_dir(d, stage), METRICS_LOG)) if r.get("ev") == EV_SESSION]
+    out = _cost_lines(rows)
+    out += _not_passed_lines(rows)
     out += webskip.skips(d, stage)  # a skipped browser check stays visible in the retro
     f = work_path(stage_dir(d, stage), "retro-digest.md", create=True)
     write_text(f, "\n".join(out) + "\n")
@@ -175,7 +185,7 @@ def _forbidden_words(d):
 
 
 def public_words_gate(d):
-    """-> (ok, lines): on a public repo, every tracked text line with a forbidden word that the baseline does not accept. Per new hit: `file:line: word` and `add to <baseline>: <key line>`. A baseline entry with no hit is `stale: <key>` and does not fail. Fails closed: a scan, baseline read or visibility check that cannot finish is not ok."""
+    """-> (ok, lines): on a public repo, every tracked text line with a forbidden word that the baseline does not accept and that the stage adds (base..HEAD). Per new hit: `file:line: word` and `add to <baseline>: <key line>`. A hit on a line the stage does not add is a base hit: listed once as a non-blocking note. A baseline entry with no hit is `stale: <key>` and does not fail. Fails closed: a scan, baseline read, stage base or visibility check that cannot finish is not ok."""
     words = _forbidden_words(d)
     if not any(w.strip() for w in words):
         return True, []
@@ -190,15 +200,20 @@ def public_words_gate(d):
         skip = project(d).get(PUBLIC_WORDS_SKIP_FILES_KEY, PUBLIC_WORDS_SKIP_FILES_DEFAULT)
         found = public_words.records(repo, words, skip)
         baseline = public_words.read_baseline(os.path.join(repo, baseline_rel))
+        added = public_words.stage_added_lines(repo, project(d))
     except public_words.ScanError as e:
         return False, [str(e)]
     new, stale = public_words.diff(found, baseline)
+    blocking, on_base = public_words.split_on_stage(new, added)
     lines = []
-    for rel, n, w, text in new:
+    for rel, n, w, text in blocking:
         lines.append(f"{rel}:{n}: {w}")
         lines.append(f"add to {baseline_rel}: {public_words.hit_key(rel, w, text)}")
     lines += [f"stale: {key}" for key in stale]
-    return not new, lines
+    if on_base:
+        lines.append(f"base hits: {len(on_base)} on lines the stage does not add (not blocking)")
+        lines += [f"base: {rel}:{n}: {w}" for rel, n, w, _text in on_base]
+    return not blocking, lines
 
 
 def main(argv=None):

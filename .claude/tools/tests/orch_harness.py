@@ -15,8 +15,10 @@ os.environ["PIPELINE_NO_LEADS"] = "1"
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import cli_orch, graph, pr_mode
+from pipeline import cli_orch, graph, pr_mode, steps
 from tests.support.tmpdirs import tracked_mkdtemp
+
+WEB_HEAD = "f00dbeef" + "0" * 32  # the branch HEAD the harness fakes for the web-tester reports
 
 _INDEX_PATCH = mock.patch.object(graph, "run_index", return_value=0)  # tests never run the real indexer
 
@@ -94,6 +96,9 @@ class PhaseHarness(_Mixin):
             pa = mock.patch.object(pr_mode, name, return_value=val)
             pa.start()
             self.addCleanup(pa.stop)
+        head = mock.patch.object(steps, "_branch_head", return_value=WEB_HEAD)  # the web-tester reports carry this HEAD (see answer)
+        head.start()
+        self.addCleanup(head.stop)
         self.d = tracked_mkdtemp()
         os.makedirs(f"{self.d}/.work/s/reports")
         Path(f"{self.d}/pipeline.json").write_text(
@@ -127,6 +132,8 @@ class PhaseHarness(_Mixin):
         return ds
 
     def answer(self, d, text):
+        if d["agent"] == "web-tester":  # a web-tester report is stale without a HEAD line for the branch HEAD
+            text += f"\nHEAD: {WEB_HEAD}\n"
         Path(f"{self.d}/.work/s/reports/report-{d['id']}.md").write_text(text, encoding="utf-8")
         return self.go("report", "--id", d["id"])
 

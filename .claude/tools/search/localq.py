@@ -31,38 +31,45 @@ def limits():
     return {"call": int(os.environ.get("LOCALQ_CALLS", "1")), "job": int(os.environ.get("LOCALQ_JOBS", "2"))}
 
 
+def _try_slots(kind, n):
+    """One pass over the `kind` slots in random order -> (locked handle or None, number of lock files that could not be opened)."""
+    unopenable = 0
+    for i in random.sample(range(n), n):  # random start spreads waiters over the slots  # nosec B311  # jitter, not security
+        try:
+            f = open(os.path.join(DIR, f"{kind}{i}.lock"), "a+")  # noqa: SIM115  # handle outlives this function
+        except OSError:  # lock file owned by another uid (container leftover): skip this slot
+            unopenable += 1
+            continue
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            f.seek(0)
+            f.truncate()
+            f.write(f"{os.getpid()} {os.path.basename(sys.argv[0])} {int(time.time())}\n")
+            f.flush()
+            return f, unopenable
+        except OSError:
+            f.close()
+    return None, unopenable
+
+
 @contextlib.contextmanager
 def slot(kind="call", timeout=SLOT_TIMEOUT_S):
     os.makedirs(DIR, exist_ok=True)
     n = limits()[kind]
     deadline = time.time() + timeout
     held = None
-    unopenable = 0
     waited = False
+    unopenable = 0
     while held is None:
-        for i in random.sample(range(n), n):  # random start spreads waiters over the slots  # nosec B311  # jitter, not security
-            try:
-                f = open(os.path.join(DIR, f"{kind}{i}.lock"), "a+")  # noqa: SIM115  # handle outlives this function
-            except OSError:  # lock file owned by another uid (container leftover): skip this slot
-                unopenable += 1
-                continue
-            try:
-                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                f.seek(0)
-                f.truncate()
-                f.write(f"{os.getpid()} {os.path.basename(sys.argv[0])} {int(time.time())}\n")
-                f.flush()
-                held = f
-                break
-            except OSError:
-                f.close()
+        held, u = _try_slots(kind, n)
+        unopenable += u
         if held is None and unopenable >= n:  # no lock file can be opened at all: run unlocked rather than wait forever
             print(f"localq: no {kind} lock file is writable in {DIR}; running without a slot", file=sys.stderr)
             break
         if held is None:
             if time.time() > deadline:
                 raise TimeoutError(f"localq: no {kind} slot within {timeout}s")
-            unopenable = 0
+            unopenable = 0  # as base: the count is per pass once some slot was openable
             if not waited:
                 waited = True
                 local_log(f"localq waiting for a free {kind} slot (all {n} busy, timeout {timeout}s)")

@@ -9,7 +9,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from . import linkguard, maincheck
+from . import gitx, linkguard, maincheck
 from .configuration import (
     CLAUDE_FILE,
     DB_START_PREFIX,
@@ -83,6 +83,14 @@ def webtest_build_note(cfg) -> str:
     return f" First run `{cmd}` on this branch checkout and serve only that fresh build, never an older build output; put the checked-out commit (`git rev-parse --short HEAD`) in your report."
 
 
+def head_note(a) -> str:
+    """Brief text: the branch HEAD sha (read through gitx) and the rule to put it as a `HEAD: <sha>` line first in the report; a note saying so when git cannot read HEAD."""
+    sha = gitx.try_text(os.path.abspath(a.dir), "rev-parse", "HEAD").strip()
+    if not sha:
+        return " The branch HEAD could not be read: say so in your report and write no HEAD line."
+    return f" The branch HEAD is {sha}: put a line HEAD: {sha} as the first line of your report."
+
+
 def ux_flows_note(a, cfg) -> str:
     """Brief text for pipeline.json `ux_flows` (empty when unset): the project's named flows (path filled from the stage's UX-VARS), with the rule to run those that cover the changed files and to report the changed UI files no flow covers."""
     path = flows_rel(cfg, variables(read_text(os.path.join(a.dir, WORK_DIR, a.stage, TASKS_FILE))))
@@ -101,6 +109,7 @@ def webtest_prompt(a, task, rid) -> str:
         f"Stage {a.stage}: run the browser check of the task in {t} (read it there; index .work/{a.stage}/TASKS.md). Do its Goal and Steps; write the report file the task names."
         f" Serve only with servectl and this state dir: `--state-dir {shlex.quote(serve_dir(a))}`."
         + webtest_build_note(project(getattr(a, "dir", ".")))
+        + head_note(a)
         + UNVERIFIED_RULE
         + tail(a, rid, "|".join(ROLES["web-tester"][0]), "your full report")
     )
@@ -154,45 +163,71 @@ def slice_chars(text) -> int:
     return LEAD_SLICE_CHARS_WITH_PATTERN if PATTERN_RE.search(text) and PREDICTED_RE.search(text) else LEAD_SLICE_CHARS
 
 
+def _unique_leads(leads_text):
+    """-> (path, start, end) of each `path:START-END` lead, in order, without repeats or reversed ranges."""
+    seen: set = set()
+    for line in leads_text.splitlines():
+        m = LEAD_RE.match(line)
+        if not m:
+            continue
+        path, start = m.group(1), int(m.group(2))
+        end = int(m.group(3) or start)
+        if end < start or (path, start, end) in seen:
+            continue
+        seen.add((path, start, end))
+        yield path, start, end
+
+
+def _lead_body(root, path, start, end, cap):
+    """The code lines of one lead, or None when the file cannot be read."""
+    try:
+        return _lead_lines(root, path, start, end, cap)
+    except (OSError, ValueError):
+        return None
+
+
+def _fit_block(block, out, max_chars):
+    """-> (the block cut to the room left after `out`, or None when no room; True when the block was cut)."""
+    room = max_chars - len("\n".join(out)) - (1 if out else 0)
+    if room <= 0:
+        return None, True
+    if len(block) <= room:
+        return block, False
+    cut = block[:room].rsplit("\n", 1)[0]
+    return (cut, True) if "\n" in cut else (None, True)
+
+
 def lead_slices(d, leads_text, max_slices=4, cap=40, max_chars=LEAD_SLICE_CHARS) -> str:
     """Real code lines under the `path:START-END` leads. Read fresh on every call (no cache). "" when nothing. Never raises."""
     try:
         root = os.path.realpath(d)
         out: list = []
-        seen: set = set()
-        for line in leads_text.splitlines():
+        for path, start, end in _unique_leads(leads_text):
             if len(out) >= max_slices:
                 break
-            m = LEAD_RE.match(line)
-            if not m:
-                continue
-            path, start = m.group(1), int(m.group(2))
-            end = int(m.group(3) or start)
-            if end < start or (path, start, end) in seen:
-                continue
-            seen.add((path, start, end))
-            try:
-                body = _lead_lines(root, path, start, end, cap)
-            except (OSError, ValueError):
-                body = None
+            body = _lead_body(root, path, start, end, cap)
             if not body:
                 continue
-            block = "\n".join([f"{path}:{start}-{end}", *body])
-            joined = "\n".join(out)
-            room = max_chars - len(joined) - (1 if out else 0)
-            if room <= 0:
-                break
-            if len(block) > room:
-                block = block[:room].rsplit("\n", 1)[0]
-                if "\n" not in block:
-                    break
+            block, cut = _fit_block("\n".join([f"{path}:{start}-{end}", *body]), out, max_chars)
+            if block is not None:
                 out.append(block)
+            if cut:
                 break
-            out.append(block)
         return "\n".join(out)
     except Exception as ex:
         swallowed("steps.lead_slices", ex)
         return ""
+
+
+def _led_files(root, leads_text, text) -> list[str]:
+    """The existing files the leads and the task text name, first six, without repeats."""
+    led = [m[1] for m in (LEAD_RE.match(line) for line in leads_text.splitlines()) if m]
+    cands = [*led, *paths_in(text)[:4]]
+    files: list[str] = []
+    for p in cands:
+        if p not in files and os.path.isfile(os.path.join(root, p)):
+            files.append(p)
+    return files[:6]
 
 
 def related_files(d, leads_text, text) -> str:
@@ -202,15 +237,7 @@ def related_files(d, leads_text, text) -> str:
         from search.leads_docs import with_docs, with_tests
 
         root = os.path.realpath(d)
-        files = []
-        for line in leads_text.splitlines():
-            m = LEAD_RE.match(line)
-            if m and m.group(1) not in files and os.path.isfile(os.path.join(root, m.group(1))):
-                files.append(m.group(1))
-        for p in paths_in(text)[:4]:
-            if p not in files and os.path.isfile(os.path.join(root, p)):
-                files.append(p)
-        files = files[:6]
+        files = _led_files(root, leads_text, text)
         if not files:
             return ""
         extra = [p for p in with_tests(root, with_docs(root, files)) if p not in files][:8]
@@ -340,10 +367,15 @@ def docs_only(diff) -> bool:
     return bool(names) and all(any(fnmatch.fnmatch(n, g) for g in GATE_SKIP_PATHS) for n in names)
 
 
+def _test_run_ids(evs) -> set:
+    """Ids of the driver test-run script dispatches among the events."""
+    return {e["id"] for e in evs if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith("test run")}
+
+
 def gate_output(a, task) -> str:
     """Tail of the report of the task's last driver test run ("" when none ran or the file is gone): the reviewer reads it in the brief instead of rerunning the gate."""
     evs = [e for e in (getattr(a, "orch_events", None) or []) if e.get("task") == task["id"]]
-    ids = {e["id"] for e in evs if e["ev"] == EV_DISPATCH and e.get("role") == "script" and (e.get("why") or "").startswith("test run")}
+    ids = _test_run_ids(evs)
     rep = next((e for e in reversed(evs) if e["ev"] == EV_REPORT and e.get("id") in ids and e.get("file")), None)
     return read_text(rep["file"]).strip()[-GATE_OUTPUT_CHARS:] if rep else ""
 
@@ -501,11 +533,19 @@ def db_start_note(a) -> str:
 TOOLING_BLOCKED_NOTE = " A BLOCKED on a tooling failure names the cause: the tool, the command and the error line."
 COMPLEXITY_RE = re.compile(r"\bCCN\b")
 COMPLEXITY_NOTE = " Your task's Goal or Done mentions CCN: never run `cs-audit`; the gates run it."
+DEVTOOLS_NOTE = (
+    " Your task's Done names a tool output: read it with `cs-devtools <tool> <paths>` (one tool of the AUDIT.md audit-tools block);"
+    " never run `cs-audit`; the gates run it."
+)
+TOOL_OUTPUT_RE = re.compile(r"\b(CCN|lizard|vulture|bandit)\b")
 
 
 def complexity_note(task_file) -> str:
-    """Dev brief line forbidding `cs-audit` when the task's Goal: or Done: line mentions CCN, else ''."""
+    """Dev brief line for the task's Done: `cs-devtools <tool> <paths>` when Done names a tool output; else `cs-audit` forbidden
+    when the Goal: or Done: line mentions CCN; '' otherwise."""
     lines = read_text(task_file).splitlines()
+    if any(TOOL_OUTPUT_RE.search(line) for line in lines if line.startswith("Done:")):
+        return DEVTOOLS_NOTE
     return COMPLEXITY_NOTE if any(COMPLEXITY_RE.search(line) for line in lines if line.startswith(("Goal:", "Done:"))) else ""
 
 

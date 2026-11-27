@@ -38,19 +38,26 @@ def quoted_tokens(msg):
 MAX_CHECKS, BUDGET_S = 40, 240
 
 
+def _text_note(hits, used):
+    return f"{len(hits)} text hits, {len(used)} in other files (unverified word search, not the same symbol for sure)"
+
+
+def _symbol_note(hits, used):
+    return f"{len(hits)} refs incl. the definition, {len(used)} in other files" + (
+        ": " + ", ".join(x.split()[0] for x in used[:4]) if used else " (supports the claim)"
+    )
+
+
 def refs(repo, file, name):
     rc, out = lp_rc(repo, "nav", "refs", file, name, t=40)
     if rc != 0:
         return None
     raw = [x for x in out.splitlines() if x.strip()]
-    text = any("word-match" in x for x in raw)
     hits = [x for x in raw if not x.startswith("#") and x != "(none)"]
     used = [x for x in hits if not x.startswith(file + ":")]
-    if text:
-        return f"{len(hits)} text hits, {len(used)} in other files (unverified word search, not the same symbol for sure)"
-    return f"{len(hits)} refs incl. the definition, {len(used)} in other files" + (
-        ": " + ", ".join(x.split()[0] for x in used[:4]) if used else " (supports the claim)"
-    )
+    if any("word-match" in x for x in raw):
+        return _text_note(hits, used)
+    return _symbol_note(hits, used)
 
 
 def _newest_findings(repo):

@@ -37,7 +37,7 @@ import re
 import subprocess
 import sys
 
-from . import gitx, lead_context, verify_retry, worktree
+from . import gitx, lead_context, retry_note, verify_retry, worktree
 from .briefs import last_report_file, lead_note_line, leads_for
 from .configuration import (
     ADDENDUM_HEADING,
@@ -362,6 +362,16 @@ def _worktree_report(a, d):
     return f if os.path.isfile(f) else None
 
 
+def _fill_report_file(a, d, f) -> None:
+    """Fill the main report F of dispatch D: take the job worktree's report when F has no VERDICT line, then --text only fills a missing/blank F."""
+    if not _VERDICT_LINE.search(read_text(f)):  # the main report has no VERDICT line: take the job worktree's report when it has one
+        wt_f = _worktree_report(a, d)
+        if wt_f and _VERDICT_LINE.search(read_text(wt_f)):
+            write_text(f, read_text(wt_f))
+    if a.text and not read_text(f).strip():  # --text only fills a missing/blank file
+        write_text(f, a.text)
+
+
 def cmd_report(a) -> None:
     w, log = paths(a)
     evs = read_jsonl(log)
@@ -370,12 +380,7 @@ def cmd_report(a) -> None:
         sys.exit(f"orch: unknown dispatch id {a.id}")
     d = d[0]
     f = work_path(w, f"report-{a.id}.md", create=True)
-    if not _VERDICT_LINE.search(read_text(f)):  # the main report has no VERDICT line: take the job worktree's report when it has one
-        wt_f = _worktree_report(a, d)
-        if wt_f and _VERDICT_LINE.search(read_text(wt_f)):
-            write_text(f, read_text(wt_f))
-    if a.text and not read_text(f).strip():  # --text only fills a missing/blank file
-        write_text(f, a.text)
+    _fill_report_file(a, d, f)
     body = read_text(f)
     v, reason = _report_verdict(d, body, a.id)
     v, ignored = _remit_verdict(a, d, v, body)
@@ -414,6 +419,12 @@ def _job_has_commits(a):
     return bool(r) and str(r).strip().isdigit() and int(str(r).strip()) > 0
 
 
+def _next_retry_id(evs) -> str:
+    """-> the next `retry-N` report id after the retry reports in EVS."""
+    nums = [int(m.group(1)) for e in evs if (m := re.fullmatch(r"retry-(\d+)", str(e.get("id", ""))))]
+    return f"retry-{max(nums, default=0) + 1}"
+
+
 def _blocked_dev_is_green(a, log):
     """retry of a task whose last dev report is BLOCKED: run its Test lines and the gates in its worktree. -> True when both are green and `done` is recorded (no model call)."""
     evs = read_jsonl(log)
@@ -426,8 +437,7 @@ def _blocked_dev_is_green(a, log):
     if not ok:
         return False
     note, n = ok
-    nums = [int(m.group(1)) for e in evs if (m := re.fullmatch(r"retry-(\d+)", str(e.get("id", ""))))]
-    rid = f"retry-{max(nums, default=0) + 1}"
+    rid = _next_retry_id(evs)
     f = work_path(paths(a)[0], f"report-{rid}.md", create=True)
     write_text(f, f"VERDICT: DONE\nretry check, no model call: {note}; {n} gate command(s) green.\n")
     append_event(
@@ -453,13 +463,29 @@ def _reset_fix_chain(log, a):
 def _record_conflict(a, log, e):
     """retry hit a rebase conflict: record the step BLOCKED (a dev report, so the next retry and the lead see it) with the conflicting files and the resolve command. -> the reason text."""
     evs = read_jsonl(log)
-    nums = [int(m.group(1)) for x in evs if (m := re.fullmatch(r"retry-(\d+)", str(x.get("id", ""))))]
-    rid = f"retry-{max(nums, default=0) + 1}"
+    rid = _next_retry_id(evs)
     files = ", ".join(e.files) or "none listed (timeout)"
-    reason = (
-        f"rebase onto {e.base} conflicts in {files}; resolve: git -C {e.path} rebase {e.base}, "
-        f"fix the files, git add them, git rebase --continue; then retry {a.step}"
-    )
+    if e.rebasing:  # the abort failed: the job worktree is mid-rebase, so no commit list and no rebuild line
+        lines = [f"rebase still in progress in {e.path} (abort failed); git -C {e.path} rebase --abort, then retry {a.step}"]
+    else:
+        lines = [
+            (
+                f"rebase onto {e.base} conflicts in {files}; resolve: git -C {e.path} rebase {e.base}, "
+                f"fix the files, git add them, git rebase --continue; then retry {a.step}"
+            )
+        ]
+        if e.commits:  # the job's own commits: the lead picks the ones to keep; nothing is dropped here
+            lines.append(f"own commits not on {e.base} (oldest first):")
+            lines += [f"  {c['sha']} {c['subject']}" + (" [doc-only]" if c["doc_only"] else "") for c in e.commits]
+            shas = " ".join(c["sha"] for c in e.commits)  # the lead deletes a sha from the printed line to leave that commit out; the code drops none itself
+            lines.append(f"rebuild: git -C {e.path} reset --hard {e.base}")  # first move the job branch onto base
+            lines.append(f"rebuild: git -C {e.path} cherry-pick {shas}")  # then re-apply the job's own commits on it
+            lines.append(f"then retry: orch.py retry {a.stage} --step {a.step}")
+        elif e.commits_unknown:
+            lines.append(f"own commits not on {e.base}: unknown (git timed out); run git -C {e.path} log {e.base}..HEAD")
+        else:
+            lines.append(f"own commits not on {e.base}: none")
+    reason = "\n".join(lines)
     f = work_path(paths(a)[0], f"report-{rid}.md", create=True)
     write_text(f, f"VERDICT: BLOCKED\n{reason}\n")
     append_event(log, {"ev": "report", "id": rid, "task": a.step, "role": "dev", "verdict": BLOCKED, "reason": reason, "why": reason[:WHY_MAX], "file": f})
@@ -469,13 +495,18 @@ def _record_conflict(a, log, e):
 def _refresh_job(a, log):
     """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry with the resolve command."""
     print(REFRESH_PROGRESS.format(step=a.step), file=sys.stderr, flush=True)
+    picks = getattr(a, "pick", [])
     try:
-        res = worktree.refresh(a.dir, a.stage, a.step, discard=True)
+        res = worktree.pick_commits(a.dir, a.stage, a.step, picks) if picks else worktree.refresh(a.dir, a.stage, a.step, discard=True)
     except worktree.RefreshConflict as e:
         reason = _record_conflict(a, log, e)
         sys.exit(f"orch: retry {a.step} BLOCKED: {reason}")
     except RuntimeError as e:
         sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
+    if picks:
+        append_event(log, {"ev": "retry_refresh", "task": a.step, **res})
+        jprint({"picked": a.step, **res})
+        return
     if res["rebased"] or res["discarded"]:
         append_event(log, {"ev": "retry_refresh", "task": a.step, **res})
         jprint({"refreshed": a.step, **res})
@@ -517,6 +548,16 @@ def _skip_timeout_guard(a, log) -> bool:
     return timed_out
 
 
+def _lint_retry_note(a) -> None:
+    """retry --note: refuse a note that names no path[:line]; print a warning for a path outside the task's scope. Runs before any write."""
+    path = os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")
+    msgs = retry_note.lint(a.note, read_text(path) if os.path.isfile(path) else "")
+    if retry_note.refused(a.note):
+        sys.exit(msgs[0])
+    for m in msgs:
+        print(m, file=sys.stderr)
+
+
 def _apply_addendum(a):
     """retry --addendum: write the block to the task file, then fold the addendum into the note the dev reads first."""
     _write_addendum(a)
@@ -525,12 +566,8 @@ def _apply_addendum(a):
 
 def _unmerged_prereqs(a, evs):
     """retry: the other tasks the step's task file or note names (`task-N`) that are DONE (a dev DONE report) with a job branch the stage branch does not hold yet. A retry starts from the stage branch, so it would lack them. Advisory: any error gives []. -> [task ids]."""
-    path = os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")
-    if not os.path.isfile(path):
-        return []
-    try:
-        text = read_text(path) + "\n" + (getattr(a, "note", "") or "")
-    except (OSError, ValueError):
+    text = _step_text(a)
+    if text is None:
         return []
     named = sorted({f"task-{n}" for n in re.findall(r"\btask-(\d+)\b", text)} - {a.step}, key=lambda t: int(t[5:]))
     done = {e.get("task") for e in evs if e["ev"] == EV_REPORT and e.get("role") == "dev" and e.get("verdict") == DONE}
@@ -538,6 +575,17 @@ def _unmerged_prereqs(a, evs):
         return [t for t in named if t in done and worktree.live_job(a.dir, a.stage, t) and not worktree.is_merged(a.dir, a.stage, t)]
     except (RuntimeError, OSError):
         return []
+
+
+def _step_text(a):
+    """-> the task file of the step plus its note, or None when the task file is missing or unreadable."""
+    path = os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")
+    if not os.path.isfile(path):
+        return None
+    try:
+        return read_text(path) + "\n" + (getattr(a, "note", "") or "")
+    except (OSError, ValueError):
+        return None
 
 
 def _prereq_warning(a, ids):
@@ -576,21 +624,32 @@ def _target_stage(a) -> tuple[str, str]:
         sys.exit(f"orch: {a.cmd} refused: {e}")
 
 
+def _retry_prepare(a, log) -> tuple[bool, list]:
+    """retry checks before any write -> (done: step was verified or green, no event needed; unmerged prereq warnings)."""
+    if getattr(a, "note", ""):  # a refused note changes nothing: lint before any write
+        _lint_retry_note(a)
+    if getattr(a, "addendum", ""):  # before any other write: a refused script step changes nothing
+        _apply_addendum(a)
+    if _verify_or_green(a, log):
+        return True, []
+    warn = _unmerged_prereqs(a, read_jsonl(log))  # before the retry writes anything
+    _refresh_job(a, log)
+    return False, warn
+
+
 def cmd_reset(a) -> None:
     """retry: forget a step's history so it runs again. skip: count the step as satisfied (the owner decided)."""
     a.stage, a.dir = _target_stage(a)
     _w, log = paths(a)
     timed_out = False
+    warn: list = []
     if a.cmd == "skip":
         _skip_guard(a)
         timed_out = _skip_timeout_guard(a, log)  # before any write: a refused skip changes nothing
-    if a.cmd == "retry" and getattr(a, "addendum", ""):  # before any other write: a refused script step changes nothing
-        _apply_addendum(a)
-    if a.cmd == "retry" and _verify_or_green(a, log):
-        return
-    warn = _unmerged_prereqs(a, read_jsonl(log)) if a.cmd == "retry" else []  # before the retry writes anything
-    if a.cmd == "retry":
-        _refresh_job(a, log)
+    else:
+        done, warn = _retry_prepare(a, log)
+        if done:
+            return
     ev = {
         "ev": a.cmd,
         "task": a.step,
@@ -647,6 +706,13 @@ def main(argv=None) -> None:
             if name == "retry":
                 p.add_argument("--from", dest="from_step", default="", choices=["", "review"])
                 p.add_argument("--addendum", default="")
+                p.add_argument(
+                    "--pick",
+                    nargs="+",
+                    default=[],
+                    metavar="SHA",
+                    help="rebuild the job branch from the stage tip and cherry-pick these own commits of the job, in the given order; the other commits are dropped",
+                )
                 p.add_argument(
                     "--verify", action="store_true", help="run the task's Test lines and Done gates on the job commit; record DONE if green, start no dev"
                 )

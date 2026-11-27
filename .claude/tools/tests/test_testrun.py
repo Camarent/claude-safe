@@ -194,6 +194,16 @@ class TestRun(unittest.TestCase):
 
         self.assertEqual(testrun.run("s", "t1", box("Test: x\n"), runner=slow)[0], "BLOCKED")
 
+    def test_dev_gate_warnings_are_in_the_done_note_and_never_change_the_verdict(self):
+        def ok(*a, **k):
+            return subprocess.CompletedProcess(a[0], 0, "", "")
+
+        warn = "dev gate: full gate run 3x in one task"
+        with mock.patch.object(testrun.dev_gate_audit, "warn_task", return_value=[warn]):
+            v, note = testrun.run("s", "t1", box("Test: true\n"), runner=ok, scan=lambda cwd, d, stage: [])
+        self.assertEqual(v, "DONE")
+        self.assertIn(warn, note.splitlines())
+
 
 class WorkdirRepo(unittest.TestCase):
     def test_repo_folder_when_worktrees_off(self):

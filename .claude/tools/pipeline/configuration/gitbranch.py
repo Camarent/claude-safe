@@ -34,6 +34,18 @@ JOB_BRANCH_PREFIX = "job/"
 MERGE_TREE_MIN_GIT = (2, 38)  # `git merge-tree --write-tree` (worktree._unmerged) needs this git version
 
 
+def _current_branch_guess(repo, cfg) -> str:
+    """-> the current branch of REPO when it is not a pipeline branch; for a pipeline branch, the one other local non-pipeline branch if there is exactly one; else ""."""
+    cur = _git_out(repo, "symbolic-ref", "--short", "-q", "HEAD")
+    if not cur:
+        return ""
+    if not _is_pipeline_branch(cfg, cur):
+        return cur
+    # HEAD is a stage/job branch: the release branch is the one other local branch, else the user must say
+    others = [b for b in _git_out(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").split() if not _is_pipeline_branch(cfg, b)]
+    return others[0] if len(others) == 1 else ""
+
+
 def release_guess(repo, cfg) -> tuple[str, bool]:
     """-> (release branch, True when it is only the last-resort default and may not exist) for REPO: cfg `branch_release` when set by the user; else origin/HEAD, `init.defaultBranch` (if it exists), the first existing of DEFAULT_BRANCH_CANDIDATES, the current branch; the last candidate outside a git repo."""
     if cfg.get("branch_release") and not cfg.get("_release_detected"):
@@ -46,13 +58,8 @@ def release_guess(repo, cfg) -> tuple[str, bool]:
     for n in DEFAULT_BRANCH_CANDIDATES:
         if _has_branch(repo, n):
             return n, False
-    cur = _git_out(repo, "symbolic-ref", "--short", "-q", "HEAD")
-    if cur and not _is_pipeline_branch(cfg, cur):
-        return cur, False
-    if cur:  # HEAD is a stage/job branch: the release branch is the one other local branch, else the user must say
-        others = [b for b in _git_out(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").split() if not _is_pipeline_branch(cfg, b)]
-        if len(others) == 1:
-            return others[0], False
+    if found := _current_branch_guess(repo, cfg):
+        return found, False
     return DEFAULT_BRANCH_CANDIDATES[-1], True
 
 

@@ -9,6 +9,8 @@ from . import claude, metrics, plan_review
 from .configuration import (
     ENV_NO_CONTEXT,
     ESCALATE_DRAFT_CHARS,
+    EXIT_LIMIT,
+    GAPS_FILE,
     MODEL_OPUS,
     MODEL_SONNET,
     PLAN_CONTEXT_FILE,
@@ -258,8 +260,32 @@ def escalation_note(a) -> str:
     )
 
 
+def _architect_session(a, c, model, goal, extra):
+    """Run the architect; a Sonnet ESCALATE reruns it once on Opus with the handoff. -> (model used, verdict)."""
+    v = session(a, c, model, build_prompt(a, model, goal, extra), "plan-opus" if model == MODEL_OPUS else "plan")
+    if v == "ESCALATE" and model == MODEL_SONNET:
+        model = MODEL_OPUS
+        hand = os.path.join(feature_dir(a), "ESCALATE.md")
+        if os.path.exists(hand):
+            extra += f"Sonnet escalated this request to you and left a handoff: read .work/{a.feature}/ESCALATE.md first, trust its facts, and do not repeat its exploration.\n"
+        extra += escalation_note(a)
+        v = session(a, c, model, build_prompt(a, model, goal, extra), "plan-opus")
+    return model, v
+
+
+def _plan_fix(a, c, model, goal, probs):
+    """One plan-fix session: the architect repairs the plan through plan.py after `check` failed."""
+    session(
+        a,
+        c,
+        model,
+        build_prompt(a, model, fix_goal(a, goal), "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)),
+        PLAN_FIX,
+    )
+
+
 def run(a) -> int:
-    """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
+    """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun, EXIT_LIMIT (3) plan valid but plan-review gaps remain after the fix rounds."""
     goal = read_text(a.prompt_file)
     model = getattr(a, "model", MODEL_SONNET) or MODEL_SONNET  # --model opus: known ahead to need Opus, skip the Sonnet pass
     if a.dry_run:
@@ -272,16 +298,7 @@ def run(a) -> int:
     step(c, "startup", "start")
     extra = code_context(a, goal)
     step(c, "startup", "done")
-    prompt = build_prompt(a, model, goal, extra)
-    v = session(a, c, model, prompt, "plan-opus" if model == MODEL_OPUS else "plan")
-    if v == "ESCALATE" and model == MODEL_SONNET:
-        model = MODEL_OPUS
-        hand = os.path.join(feature_dir(a), "ESCALATE.md")
-        if os.path.exists(hand):
-            extra += f"Sonnet escalated this request to you and left a handoff: read .work/{a.feature}/ESCALATE.md first, trust its facts, and do not repeat its exploration.\n"
-        extra += escalation_note(a)
-        prompt = build_prompt(a, model, goal, extra)
-        v = session(a, c, model, prompt, "plan-opus")
+    model, v = _architect_session(a, c, model, goal, extra)
     if v == "BLOCKED":
         print(blocked_report(a))
         return 2
@@ -289,13 +306,7 @@ def run(a) -> int:
     n, probs = check_now(a, goal)
     step(c, "check", "done", tasks=n, errors=len(errors_of(probs)))
     if errors_of(probs):
-        session(
-            a,
-            c,
-            model,
-            build_prompt(a, model, fix_goal(a, goal), "The plan you wrote failed `check`; fix it through plan.py commands:\n" + "\n".join(probs)),
-            PLAN_FIX,
-        )
+        _plan_fix(a, c, model, goal, probs)
         n, probs = check_now(a, goal)
     n, probs = testrun_check(a, c, model, goal, n, probs)
     if errors_of(probs):
@@ -306,5 +317,21 @@ def run(a) -> int:
         print("\n".join(probs))
         return 2
     rounds = sum(1 for s in c.sess if s["id"] == PLAN_FIX)
-    print("\n".join([*probs, *gaps, f"OK {n} tasks (plan-fix rounds: {rounds})"]))
+    print("\n".join([*probs, f"OK {n} tasks (plan-fix rounds: {rounds})"]))
+    return _gaps_block(a, gaps) if gaps else _clear_gaps(a)
+
+
+def _gaps_block(a, gaps) -> int:
+    """Plan-review gaps still open after the fix rounds: the GAPS: block as the run's last output, also written to GAPS_FILE. -> EXIT_LIMIT."""
+    block = "\n".join(["GAPS:", *gaps])
+    write_text(os.path.join(feature_dir(a), GAPS_FILE), block + "\n")
+    print(block)
+    return EXIT_LIMIT
+
+
+def _clear_gaps(a) -> int:
+    """No gaps left: drop the GAPS_FILE of an earlier run so it does not outlive its gaps. -> 0."""
+    path = os.path.join(feature_dir(a), GAPS_FILE)
+    if os.path.exists(path):
+        os.remove(path)
     return 0

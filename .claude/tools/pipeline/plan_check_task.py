@@ -9,8 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import gitx
-from .cite_check import _cite_msg, _resolve_bare, cites
+from . import gitx, task_text
+from .cite_check import _bare_hits, _cite_msg, _resolve_bare, cites
 from .configuration import (
     CITE_BACKTICK_FILE_RE,
     SCOPE_TEST_RE,
@@ -18,6 +18,7 @@ from .configuration import (
     WORK_DIR,
     project,
     repo_dir,
+    tool_setting,
 )
 from .plan_commands import command_findings
 from .plan_files import (
@@ -82,7 +83,8 @@ SKIP_DIRS = {".git", "node_modules", "target", WORK_DIR, "dist", "__pycache__"}
 
 def _task_symbols(text):
     """The `symbols` named on the Goal:/Done: lines of a task file."""
-    return {m for line in text.splitlines() if line.startswith(("# ", "Goal:", "Done:")) for m in SYMBOL_RE.findall(line)}
+    heads = [line for line in text.splitlines() if line.startswith("# ")]
+    return {m for line in heads + [v for _, v in task_text.lines(text, "Goal", "Done")] for m in SYMBOL_RE.findall(line)}
 
 
 def _unplanned_test_files(repo, predicted, text):
@@ -148,10 +150,8 @@ CREATE_RE = re.compile(r"\b(?:add|new|create)\s+(?:(?:a|an|the)\s+)?(`[^`]+`|[\w
 def _created_names(text):
     """Names the Goal:/Done: lines ask to add: a backticked word, or a path-like word (with `/` or an extension)."""
     names = set()
-    for line in text.splitlines():
-        if not line.startswith(("Goal:", "Done:")):
-            continue
-        for m in CREATE_RE.finditer(line):
+    for _, value in task_text.lines(text, "Goal", "Done"):
+        for m in CREATE_RE.finditer(value):
             raw = m.group(1)
             name = raw.strip("`")
             if raw.startswith("`") or "/" in name or re.search(r"\.\w+$", name):
@@ -169,7 +169,7 @@ def _exists_hit(repo, predicted, name):
         if not os.path.isfile(full):
             continue
         if shutil.which("lp"):  # the code index is the first choice when it is installed
-            r = subprocess.run(["lp", "nav", "def", p, name], cwd=repo, capture_output=True, text=True, check=False, timeout=30)
+            r = subprocess.run(["lp", "nav", "def", p, name], cwd=repo, capture_output=True, text=True, check=False, timeout=tool_setting("LP_NAV_TIMEOUT_S"))
             hit = re.search(r"^(\S+?):(\d+)", r.stdout, re.MULTILINE)
             if r.returncode == 0 and hit:
                 return f"{hit[1]}:{hit[2]}"
@@ -196,7 +196,7 @@ def check_exists(d, tid, repo) -> list[str]:
     return probs
 
 
-CITE_LINE_PREFIXES = ("Goal:", "Done:", "Pattern:")  # the task lines whose cites must exist (or be predicted by this task or a task it depends on)
+CITE_LINE_FIELDS = ("Goal", "Done", "Pattern")  # the task fields whose cites must exist (or be predicted by this task or a task it depends on)
 
 
 def _in_tree(repo, path):
@@ -204,27 +204,37 @@ def _in_tree(repo, path):
     return os.path.isfile(os.path.join(repo, _resolve_bare(repo, path)))
 
 
+def _short_msg(repo, path):
+    """-> the `cite-short:` message when a bare file name (no directory) resolves to a file in a subdirectory or to 2+ files of the tree; None when it names the one root file or no file."""
+    hits = _bare_hits(repo, path)
+    if not hits or hits == [path]:
+        return None
+    return f"cite-short: {path} has no directory and the tree has {', '.join(hits)}; cite the full path"
+
+
 def check_cite_exists(d, tid, repo, ents) -> list[str]:
-    """Problems for one task file: a `path:line` cite or backticked file in its Goal/Done/Pattern lines whose file is not in the tree and is not a Predicted path of this task or of a task it depends on (an earlier wave); a cite of an existing file must hold the backticked symbol before it (cite_check._cite_msg)."""
+    """Problems for one task file: a `path:line` cite or backticked file in its Goal/Done/Pattern lines whose file is not in the tree and is not a Predicted path of this task or of a task it depends on (an earlier wave); a bare file name that is not at the tree root (`cite-short`); a cite of an existing file must hold the backticked symbol before it (cite_check._cite_msg)."""
     text = read_text(os.path.join(d, tid + ".md"))
     allowed = set(paths_in(text))
     for dep in _transitive_deps(ents, tid):
         allowed |= set(paths_in(read_text(os.path.join(d, dep + ".md"))))
     probs = []
-    for ln in text.splitlines():
-        if not ln.startswith(CITE_LINE_PREFIXES):
-            continue
-        found = list(cites(ln))
-        found += [(m[1], None, None, "") for m in CITE_BACKTICK_FILE_RE.finditer(ln)]
+    for name, value in task_text.lines(text, *CITE_LINE_FIELDS):
+        found = list(cites(value))
+        found += [(m[1], None, None, "") for m in CITE_BACKTICK_FILE_RE.finditer(value)]
         for path, line, end, before in found:
-            if _in_tree(repo, path):
+            short = _short_msg(repo, path)
+            if short:
+                probs.append(f"{tid}: {short}")
+            elif _in_tree(repo, path):
                 if line is None:
                     continue
                 msg = _cite_msg(repo, f"{tid} cites {path}:{line}", path, line, end, before)
                 if msg:
                     probs.append(f"{tid}: {msg}")
             elif path not in allowed:
-                probs.append(f"{tid}: cite-missing: {path} is not in the tree and no task of this task's dependencies lists it in Predicted paths: {ln[:120]}")
+                shown = f"{name}: {value}"[:120]
+                probs.append(f"{tid}: cite-missing: {path} is not in the tree and no task of this task's dependencies lists it in Predicted paths: {shown}")
     return probs
 
 
@@ -244,9 +254,14 @@ _CODE_SPAN = re.compile(r"`[^`]*`")
 DOCS_INDEX_CMD = re.compile(r"docs_index|cs-docs-index")  # the docs index checker: a Done or Test line that runs it must be lead-verified
 
 
+def _marked(value) -> bool:
+    """True when the field VALUE holds the lead-verified marker word outside backtick code spans."""
+    return LEAD_MARK in _CODE_SPAN.sub("", value)
+
+
 def is_lead_verified(line) -> bool:
     """True for a `Done:` or `Test:` line whose marker word sits outside backtick code spans (a marker quoted in a code span is not a marker)."""
-    return line.startswith(("Done:", "Test:")) and LEAD_MARK in _CODE_SPAN.sub("", line)
+    return any(_marked(value) for _, value in task_text.lines(line, "Done", "Test"))
 
 
 def lead_verified_lines(text) -> list[str]:
@@ -256,11 +271,12 @@ def lead_verified_lines(text) -> list[str]:
 
 def check_lead_verified(d, tid) -> list[str]:
     """Problems for one task file: a `Done:` or `Test:` line that runs the docs index checker without the lead-verified marker (the lead runs that check, never the dev)."""
-    return [
-        f"{tid}: a Done or Test line runs the docs index checker without the lead-verified marker: {ln[:120]}"
-        for ln in read_text(os.path.join(d, tid + ".md")).splitlines()
-        if ln.startswith(("Done:", "Test:")) and DOCS_INDEX_CMD.search(ln) and not is_lead_verified(ln)
-    ]
+    probs = []
+    for name, value in task_text.lines(read_text(os.path.join(d, tid + ".md")), "Done", "Test"):
+        if DOCS_INDEX_CMD.search(value) and not _marked(value):
+            shown = f"{name}: {value}"[:120]
+            probs.append(f"{tid}: a Done or Test line runs the docs index checker without the lead-verified marker: {shown}")
+    return probs
 
 
 def check_test_quoting(d, tid) -> list[str]:
@@ -312,7 +328,8 @@ def check_warning_count(d, tid) -> list[str]:
     text = read_text(os.path.join(d, tid + ".md"))
     lines = text.splitlines()
     # the heading (title) stands in when there is no Goal line
-    goal = next((line for line in lines if line.startswith("Goal:")), "") or next((line for line in lines if line.startswith("# ")), "")
+    goals = task_text.field(text, "Goal")
+    goal = goals[0] if goals else next((line for line in lines if line.startswith("# ")), "")
     n = max((int(m[1]) for m in WARN_COUNT_RE.finditer(goal)), default=0)
     return [f"size: {tid}: Goal names {n} warnings (> {MAX_WARNINGS}): split the task by file or module"] if n > MAX_WARNINGS else []
 

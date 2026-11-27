@@ -479,8 +479,11 @@ def render_task(e, a, paths) -> str:
     cmd = with_qrun(a.test)
     pat = a.pattern or (paths[0] + ":1" if paths else "")
     aff = f"Affected tests: {a.affected}\n" if getattr(a, "affected", "") else ""
+    kind = f"Type: {a.type}\n" if getattr(a, "type", "") else ""  # headers only when given: an absent Type: reads as `code`
+    outs = f"Outputs: {a.outputs}\n" if getattr(a, "outputs", "") else ""
+    ins = f"Inputs: {a.inputs}\n" if getattr(a, "inputs", "") else ""
     return (
-        f"# {e['id']}: {e['title']}\nUI: no\nWave: W{e['wave']}\n{depends_line(e.get('depends', []))}\n"  # no Goal line: it would repeat the title
+        f"# {e['id']}: {e['title']}\nUI: no\nWave: W{e['wave']}\n{depends_line(e.get('depends', []))}{kind}{outs}{ins}\n"  # no Goal line: it would repeat the title
         f"Predicted paths: {', '.join(paths)}\nPattern: {pat}\n{aff}\n"
         f"Test: {cmd}\nDone: {a.done}\nturns <= {a.turns}\nReply in 3 lines: files changed, test result, ESCALATE.\n"
     )

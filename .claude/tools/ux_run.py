@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
 
-from pipeline.configuration import LONG_CMD_TIMEOUT_S, VERDICT_PREFIX, WORK_DIR, project
+from pipeline.configuration import LONG_CMD_TIMEOUT_S, VERDICT_PREFIX, WORK_DIR, project, tool_setting
 from pipeline.ux_flows import flows_file, flows_rel, path_problem, sub, variables
 from pipeline.ux_flows import read as read_flows
 
@@ -42,7 +42,7 @@ def block(text):
 
 def up(url):
     try:
-        urllib.request.urlopen(url, timeout=2)  # nosec B310  # http URL set by the operator, not user input
+        urllib.request.urlopen(url, timeout=tool_setting("UX_PROBE_TIMEOUT_S"))  # nosec B310  # http URL set by the operator, not user input
         return True
     except urllib.error.HTTPError:  # any HTTP answer (404, 401...) means the server is up
         return True
@@ -111,8 +111,8 @@ def _build(b, repo):
 
 
 def _wait_up(url):
-    """True once URL answers, polled once a second for 30 seconds."""
-    for _ in range(30):
+    """True once URL answers, polled once a second for the UX_WAIT_UP_S seconds (a tool setting)."""
+    for _ in range(int(tool_setting("UX_WAIT_UP_S"))):
         if up(url):
             return True
         time.sleep(1)

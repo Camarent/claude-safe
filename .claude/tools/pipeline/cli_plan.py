@@ -7,7 +7,8 @@
     cs-plan next-phase --feature F                        JSON of the first open phase whose depends are done
     cs-plan stage-init --stage S --goal G [--flags "ui docs"] [--pr-title "<type>(<area>): <what>"]   TASKS.md skeleton
     cs-plan task --stage S --id N --title T --paths p1,p2 --test CMD --done TEXT [--wave W] [--depends N,M]
-                 [--pattern file:line] [--affected "tests|none"] [--turns 25]   task-N.md + TASKS.md entry + Graph (same-wave tasks must not share paths)
+                 [--pattern file:line] [--affected "tests|none"] [--turns 25]
+                 [--type code|report|webtest|research] [--outputs p] [--inputs p,q]   task-N.md + TASKS.md entry + Graph (same-wave tasks must not share paths)
     cs-plan edit-task --stage S --id N --depends M[,K]   add dependencies (no cycle; the task moves to a later wave when needed); it is held until they are merged
     cs-plan task --stage S --before N --title T --paths p1,p2 --test CMD --done TEXT [--depends N,M]   insert a task ahead of task-N, also while waves run (see ORCHESTRATOR.md)
     cs-plan edit-task --stage S --id N --field F --value V [--field F2 --value V2]   replace fields of task-N.md (title paths pattern test done turns); TASKS.md kept in sync
@@ -25,10 +26,10 @@ import os
 import sys
 from contextlib import redirect_stderr
 
-from . import plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
+from . import affected, plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
 from . import plan_files as pf
 from .branches import dirty_block, red_base_block
-from .configuration import BLOCKED_FILE, EXIT_BLOCKED, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+from .configuration import AFFECTED_SOURCE_ROOT, BLOCKED_FILE, EXIT_BLOCKED, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 from .plan_amend import amend_phase
 from .plan_run import run
 from .util import default_dir, jprint, read_text, write_text
@@ -166,6 +167,14 @@ def _known_deps(a, ents):
     return deps
 
 
+def _affected_value(a, paths) -> str:
+    """The `Affected tests:` value: --affected when given; else the test files that import the predicted paths (affected.importers over the repo's AFFECTED_SOURCE_ROOT)."""
+    if a.affected:
+        return a.affected
+    root = os.path.join(a.dir, AFFECTED_SOURCE_ROOT)
+    return ",".join(affected.importers([os.path.join(a.dir, p) for p in paths], os.path.join(root, "tests"), root))
+
+
 def _add_task(a):
     d, paths = pf.stage_dir(a), pf.csv(a.paths)
     if not os.path.exists(pf.tasks_path(d)):
@@ -183,6 +192,7 @@ def _add_task(a):
         if ov:
             raise pf.PlanError(f"{tid} and {e['id']} share paths in wave {wave}: {ov[0]} / {ov[1]}")
     e = {"id": tid, "title": a.title, "owner": a.model, "wave": wave, "review": a.model, "depends": deps}
+    a.affected = _affected_value(a, paths)
     write_text(os.path.join(d, tid + ".md"), pf.render_task(e, a, paths))
     pf.write_tasks(d, [*ents, e])
     return 0
@@ -272,6 +282,14 @@ def _check_new_paths(d, ents, e, tid, v):
             raise pf.PlanError(f"{tid} and {o['id']} share paths in wave {e['wave']}: {ov[0]} / {ov[1]}")
 
 
+def _check_dep(by, tid, dep):
+    """Raise PlanError when DEP cannot be a dependency of TID: unknown, the task itself, or a cycle."""
+    if dep not in by or dep == tid:
+        raise pf.PlanError(f"depends on unknown {dep}" if dep != tid else f"{tid} cannot depend on itself")
+    if plan_insert._reaches(by, dep, tid):
+        raise pf.PlanError(f"cycle: {dep} depends on {tid}")
+
+
 def _add_depends(d, ents, e, tid, spec):
     """edit-task --depends: add the named tasks to E's dependencies. Each must exist, not be the task itself and not depend on it (no cycle). A dependency in the same or a later wave moves the task (and the tasks that depend on it) to the wave after it, like `task --before`; a started task cannot move. -> [(task id, old wave, new wave)] of the tasks that moved."""
     if e is None:
@@ -279,10 +297,7 @@ def _add_depends(d, ents, e, tid, spec):
     by = {x["id"]: x for x in ents}
     old = {x["id"]: x["wave"] for x in ents}
     for dep in (x if x.startswith("task-") else f"task-{x}" for x in pf.csv(spec)):
-        if dep not in by or dep == tid:
-            raise pf.PlanError(f"depends on unknown {dep}" if dep != tid else f"{tid} cannot depend on itself")
-        if plan_insert._reaches(by, dep, tid):
-            raise pf.PlanError(f"cycle: {dep} depends on {tid}")
+        _check_dep(by, tid, dep)
         if dep not in e["depends"]:
             e["depends"] = [*e["depends"], dep]
     plan_insert._shift_waves(ents, pf.started_tasks(d))
@@ -330,14 +345,19 @@ def _after_depends(d, ents, e, moved, had_deps, asked):
         print("\n".join(_depends_report(d, ents, e, moved, had_deps)))
 
 
+def _check_edit_args(a):
+    """edit-task needs --field/--value pairs of equal count, or --depends, or both missing is an error."""
+    if a.field and len(a.field) != len(a.value) or a.depends is None and not a.field:
+        raise pf.PlanError("edit-task needs matching --field/--value pairs or --depends")
+
+
 def cmd_edit_task(a) -> int:
     d = pf.stage_dir(a)
     tid = f"task-{int(a.id)}"
     f = os.path.join(d, tid + ".md")
     if not os.path.exists(f):
         raise pf.PlanError(f"unknown task {tid} in {d}")
-    if a.field and len(a.field) != len(a.value) or a.depends is None and not a.field:
-        raise pf.PlanError("edit-task needs matching --field/--value pairs or --depends")
+    _check_edit_args(a)
     ents = pf.read_entries(d)
     e = next((x for x in ents if x["id"] == tid), None)
     had_deps = any(x["depends"] for x in ents)
@@ -447,12 +467,17 @@ def build() -> argparse.ArgumentParser:
         pattern="",
         affected="",
         turns=25,
+        type="",
+        outputs="",
+        inputs="",
     )
     for act in sub.choices["task"]._actions:
         if act.dest == "wave":
             act.type = int
         if act.dest == "model":
             act.choices = [MODEL_HAIKU, MODEL_SONNET]
+        if act.dest == "type":
+            act.choices = list(pf.TASK_TYPES)
     add("batch", cmd_batch, stage=True, file=True)
     add("edit-task", cmd_edit_task, stage=True, id=True)
     ep = sub.choices["edit-task"]

@@ -3,7 +3,7 @@
 from collections import defaultdict
 
 from .claude import SUMS
-from .configuration import BLOCKED, FAIL
+from .configuration import BLOCKED, EV_DISPATCH, FAIL
 from .util import append_jsonl, now, read_jsonl
 
 
@@ -28,6 +28,15 @@ def session_line(c, id, agent, model, u, verdict="", task="", reason="") -> dict
         "verdict": verdict,
         "error": u["error"],
     }
+    _add_optional(rec, u, verdict, reason)
+    c.cost += rec["cost_usd"]
+    c.sess.append(rec)
+    append_jsonl(c.metrics, rec)
+    return rec
+
+
+def _add_optional(rec, u, verdict, reason) -> None:
+    """Add the optional fields of one session record in place: each is absent when its source is empty (old lines have none of them)."""
     if u.get("seconds_api"):
         # `seconds` is claude wall time and includes backgrounded waits; `seconds_api` is only API time. Absent in old lines.
         rec["seconds_api"] = u["seconds_api"]
@@ -41,10 +50,6 @@ def session_line(c, id, agent, model, u, verdict="", task="", reason="") -> dict
         rec["search"] = u["search"]  # optional {local:find|local:nav-def|grep|glob: calls}; share = local / all
     if reason and verdict in (BLOCKED, FAIL):
         rec["reason"] = reason  # why the step did not pass (first line of its report); absent on other verdicts and in old lines
-    c.cost += rec["cost_usd"]
-    c.sess.append(rec)
-    append_jsonl(c.metrics, rec)
-    return rec
 
 
 def event(c, name, **fields) -> None:
@@ -68,9 +73,19 @@ def wave_line(c, wall) -> None:
     c.sess = []
 
 
+def missing_sessions(events, rows) -> list[str]:
+    """-> dispatch ids in orch.jsonl `events` with no `session` row in metrics.jsonl `rows`; script-role dispatches run no model and need none."""
+    have = {r.get("id") for r in rows if r.get("ev") == "session"}
+    return [e["id"] for e in events if e.get("ev") == EV_DISPATCH and e.get("role") != "script" and e["id"] not in have]
+
+
 def total_line(c) -> None:
-    ss = [r for r in read_jsonl(c.metrics) if r.get("ev") == "session"]
+    rows = read_jsonl(c.metrics)
+    ss = [r for r in rows if r.get("ev") == "session"]
     append_jsonl(c.metrics, {"ev": "total", "ts": now(), "stage": c.stage, "waves": c.wave, "sessions": len(ss), **{k: sum(s[k] for s in ss) for k in SUMS}})
+    missing = missing_sessions(read_jsonl(c.log), rows)
+    if missing:
+        print(f"no session event: {len(missing)} dispatches (cost undercount)")
 
 
 def aggregate(rows) -> dict:

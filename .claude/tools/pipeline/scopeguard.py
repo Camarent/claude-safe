@@ -61,12 +61,26 @@ def _changed(a, task_id, rx=None):
     return out, gen
 
 
+def _guard_mode(cfg) -> str:
+    """The scope_guard mode when the guard is on for this project with worktrees; '' when it is off."""
+    mode = str(cfg.get("scope_guard") or "off")
+    if mode not in SCOPE_MODES or mode == "off" or not cfg.get("worktrees"):
+        return ""
+    return mode
+
+
+def _files_text(extra) -> str:
+    """The first SCOPE_SHOWN extra files, comma-joined, with a count of the rest."""
+    more = f" (+{len(extra) - SCOPE_SHOWN} more)" if len(extra) > SCOPE_SHOWN else ""
+    return ", ".join(extra[:SCOPE_SHOWN]) + more
+
+
 def scope_note(a, task_id) -> str:
     """Reviewer brief sentence naming the files the job changed outside the task's predicted paths; '' when the guard is off, the job has no worktree or stayed in scope."""
     d = getattr(a, "dir", ".")
     cfg = project(d)
-    mode = str(cfg.get("scope_guard") or "off")
-    if mode not in SCOPE_MODES or mode == "off" or not cfg.get("worktrees"):
+    mode = _guard_mode(cfg)
+    if not mode:
         return ""
     text = read_text(os.path.join(os.path.abspath(d), WORK_DIR, a.stage, f"{task_id}.md"))
     predicted = paths_in(text)
@@ -80,5 +94,4 @@ def scope_note(a, task_id) -> str:
         return ""
     if not extra:
         return ""
-    files = ", ".join(extra[:SCOPE_SHOWN]) + (f" (+{len(extra) - SCOPE_SHOWN} more)" if len(extra) > SCOPE_SHOWN else "")
-    return (SCOPE_STRICT_NOTE if mode == "strict" else SCOPE_WARN_NOTE).format(files=files)
+    return (SCOPE_STRICT_NOTE if mode == "strict" else SCOPE_WARN_NOTE).format(files=_files_text(extra))

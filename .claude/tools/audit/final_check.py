@@ -22,6 +22,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # -I drops the script dir
+from pipeline import gate_timing
 from pipeline.configuration import (
     CLEAR_WHY_BAD_RC,
     CLEAR_WHY_GREEN,
@@ -30,6 +31,7 @@ from pipeline.configuration import (
     FAIL_ID_RES,
     FAIL_IDS_SHOWN,
     GATE_GROUP_MAX_WORKERS,
+    GATE_KIND_TASK,
     GATE_PARALLEL_KEY,
     ConfigError,
     each_of,
@@ -164,12 +166,26 @@ def run_all(cmds, repo, env, runner=run_group, groups=None):
     return [r for _, r in sorted(out, key=lambda x: x[0])]
 
 
-def log_gate_cmds(path, kind, results, names, task="", base_red=()):
-    """Append one `gate_cmd` metrics record per command of RESULTS ([(cmd, rc, seconds, text)]) to the metrics file PATH: KIND (`task` or `merge`), the gate name, exit code, seconds, and `base_red` when the command was red on the stage base too (its `rc` is then 0: it was cleared, not the task's failure). A failed write is ignored: a metric never stops a gate."""
+def log_gate_cmds(path, kind, results, names, task="", base_red=(), limits=None):
+    """Append one `gate_cmd` metrics record per command of RESULTS ([(cmd, rc, seconds, text)]) to the metrics file PATH: KIND (`task` or `merge`), the gate name, exit code, seconds, the gate time level (unit or merge), and `base_red` when the command was red on the stage base too (its `rc` is then 0: it was cleared, not the task's failure). Returns the gate time warning lines of the runs over their LIMITS (gate_time_warn_s; none when LIMITS is None); the exit codes never change. A failed write is ignored: a metric never stops a gate."""
+    level = gate_timing.LEVEL_UNIT if kind == GATE_KIND_TASK else gate_timing.LEVEL_MERGE
+    warns = []
     with contextlib.suppress(OSError):
         for cmd, rc, secs, _text in results:
-            rec = {"ev": EV_GATE_CMD, "ts": time.time(), "kind": kind, "task": task, "gate": names.get(cmd, cmd), "rc": rc, "seconds": round(secs, 1)}
+            rec = {
+                "ev": EV_GATE_CMD,
+                "ts": time.time(),
+                "kind": kind,
+                "task": task,
+                "gate": names.get(cmd, cmd),
+                "rc": rc,
+                "seconds": round(secs, 1),
+                "level": level,
+            }
             append_jsonl(path, {**rec, "base_red": True} if cmd in base_red else rec)
+            if limits is not None and (w := gate_timing.warn(level, secs, limits)):
+                warns.append(f"{names.get(cmd, cmd)}: {w}")
+    return warns
 
 
 WARN_MARKER = r"(?i)\bwarn(ing)?s?\b"
@@ -226,11 +242,16 @@ def accept_warnings(results, names, rules):
     return out, accepted
 
 
+def _base_red(results, base_cmds):
+    """-> the red commands that may be cleared against the base: really ran (not WARN_BAD_RC) and, when BASE_CMDS is given, one the base has too."""
+    return [c for c, rc, _s, _t in results if rc != 0 and rc not in WARN_BAD_RC and (base_cmds is None or c in base_cmds)]
+
+
 def clear_base_red(results, repo, env, groups=None, runner=run_group, base_cmds=None):
     """-> (results with every red command that is also red on REPO (the stage base) turned green, [those commands]). Only the red commands run again, there: a red the base already has is not the task's doing.
     Only a command the base has too (BASE_CMDS, e.g. an `each` command for a folder the task added is not) and that really ran (not a timeout or `cannot run`, WARN_BAD_RC, on either side) is cleared.
     A command that is red in both places counts as the base's, whatever the failing lines are."""
-    red = [c for c, rc, _s, _t in results if rc != 0 and rc not in WARN_BAD_RC and (base_cmds is None or c in base_cmds)]
+    red = _base_red(results, base_cmds)
     if not red:
         return results, []
     again = run_all(red, repo, env, runner=runner, groups=groups)
@@ -271,16 +292,20 @@ def uncleared_reasons(results, cleared, base_cmds, base_problem=""):
     return out
 
 
+def _result_line(c, rc, secs, text, gates):
+    """One report block for a command: a failing gate shows its output tail, any other failure its head, a pass only its name."""
+    if rc and c in gates:
+        return f"gate {gates[c]}: FAILED ({secs}s) {c}\n" + "\n".join("  " + line for line in text.splitlines()[-25:])
+    head = "\n" + "\n".join("  " + line for line in text.splitlines()[:25]) if rc else ""
+    return f"{'FAIL' if rc else 'ok'} ({secs}s) {c}" + head
+
+
 def report(results, gates=None):
     """VERDICT text. A failing gate (GATES = {cmd: name}) is reported as `gate <name>: FAILED` with the output tail."""
     gates = gates or {}
     bad = [r for r in results if r[1] != 0]
     lines = [f"VERDICT: {'FAIL' if bad else 'DONE'}", f"{len(results) - len(bad)} of {len(results)} commands passed"]
-    for c, rc, secs, text in bad + [r for r in results if r[1] == 0]:
-        if rc and c in gates:
-            lines.append(f"gate {gates[c]}: FAILED ({secs}s) {c}\n" + "\n".join("  " + line for line in text.splitlines()[-25:]))
-        else:
-            lines.append(f"{'FAIL' if rc else 'ok'} ({secs}s) {c}" + ("\n" + "\n".join("  " + line for line in text.splitlines()[:25]) if rc else ""))
+    lines += [_result_line(c, rc, secs, text, gates) for c, rc, secs, text in bad + [r for r in results if r[1] == 0]]
     return "\n".join(lines)
 
 

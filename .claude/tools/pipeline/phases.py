@@ -20,7 +20,7 @@ from .audit_phases import (
     fix_step,
     last_report,
 )
-from .briefs import UNVERIFIED_RULE, serve_dir, tail, ux_flows_note, webtest_build_note
+from .briefs import UNVERIFIED_RULE, head_note, serve_dir, tail, ux_flows_note, webtest_build_note
 from .configuration import (
     ACCEPTANCE_STEP,
     BLOCKED,
@@ -421,6 +421,7 @@ def _web_test_step(a, cfg, ids, sid, ok, prev=""):
         f" Serve only with servectl and this state dir: `--state-dir {shlex.quote(serve_dir(a))}`."
         + webtest_build_note(cfg)
         + ux_flows_note(a, cfg)
+        + head_note(a)
         + f" Check {WEBTEST_WIDTHS} in light and dark, include one wrong-input path and the end state of a flow (a session's finish screen) when a task changes it; read console and network messages."
         + (
             f" Re-check: the fix tasks ran; verify only the FAIL and UNVERIFIED items of the earlier report {prev} and say PASS or FAIL per item."
@@ -454,28 +455,35 @@ def _split_fix_tasks(evs, tasks):
     fix = [e for e in history(evs, FIX_WEB_STEP) if e["ev"] == EV_DISPATCH]
     if not fix:
         return tasks, []
-    before = {e["task"] for e in evs if e.get("ev") in STARTED_EVENTS and e.get("task") and e.get("t", 0) < fix[0]["t"]}
+    before = _started_before(evs, fix[0]["t"])
     orig = [t for t in tasks if t["id"] in before]
     return (orig, [t for t in tasks if t["id"] not in before]) if orig else (tasks, [])
 
 
+def _started_before(evs, t) -> set:
+    """The ids of the tasks with a start event before time T."""
+    return {e["task"] for e in evs if e.get("ev") in STARTED_EVENTS and e.get("task") and e.get("t", 0) < t}
+
+
+def _webskip_step(a, cfg, tasks):
+    """The script step that records the browser check as skipped (UNVERIFIED-WEB) for the tasks of the batches."""
+    ids = ", ".join(i for b in _ui_batches(a, cfg, tasks) for i in b)
+    return step(
+        WEBTEST_STEP,
+        "script",
+        None,
+        f"{tool_cmd('ops_steps.py')} webskip --dir {shlex.quote(os.path.abspath(a.dir))} --stage {a.stage} --ids {shlex.quote(ids)}",
+        {DONE},
+        None,
+        "no browser tools in headless sessions (pipeline.json webtest_tools_available false): the browser check is recorded as skipped (UNVERIFIED-WEB), not run",
+    )
+
+
 def _web_test_phases(a, cfg, tasks, evs):
     """Browser check in batches, then one fix round for the FAILs, one re-check of every batch that failed or stayed unverified, and a check of the tasks the fix round added."""
-    if webtest_tools_missing(
-        cfg
-    ):  # no browser tools in headless sessions: record the skip visibly (UNVERIFIED-WEB), do not dispatch a session that can only BLOCK
-        ids = ", ".join(i for b in _ui_batches(a, cfg, tasks) for i in b)
-        yield [
-            step(
-                WEBTEST_STEP,
-                "script",
-                None,
-                f"{tool_cmd('ops_steps.py')} webskip --dir {shlex.quote(os.path.abspath(a.dir))} --stage {a.stage} --ids {shlex.quote(ids)}",
-                {DONE},
-                None,
-                "no browser tools in headless sessions (pipeline.json webtest_tools_available false): the browser check is recorded as skipped (UNVERIFIED-WEB), not run",
-            )
-        ]
+    # no browser tools in headless sessions: record the skip visibly (UNVERIFIED-WEB), do not dispatch a session that can only BLOCK
+    if webtest_tools_missing(cfg):
+        yield [_webskip_step(a, cfg, tasks)]
         return
     orig, added = _split_fix_tasks(evs, tasks)
     batches = _ui_batches(a, cfg, orig)
@@ -612,18 +620,23 @@ def _index_modules_note(a, cfg):
     )
 
 
+def _docs_split(a, cfg, flags, audits_follow) -> tuple[list[list[dict]], list[dict]]:
+    """-> (batches to yield now, the docs step to run beside the audits). The docs step starts with the audits when no file the docs writer edits is in the stage diff."""
+    if not flags["docs"]:
+        return [], []
+    if audits_follow and docs_beside_audits(a, cfg, audit_dir_of(a, cfg)):
+        return [], [_docs_step(a, cfg)]  # no file the docs writer edits is in the stage diff: starts with the audits
+    return [[_docs_step(a, cfg)]], []
+
+
 def audit_phases(a, flags, tasks, evs) -> Iterator[list[dict]]:
     cfg = project(a.dir)
     """Lazy: a later phase is built only after the earlier one is satisfied, so it can read the earlier verdicts from evs."""
     if flags["test"]:
         yield from _test_phases(a, cfg, flags, tasks, evs)
     audits_follow = flags["audit"] and audit_due(paths(a)[0], len(tasks), int(cfg.get("audit_every_tasks") or DEFAULT_EVERY), a.dir)
-    beside = []
-    if flags["docs"]:
-        if audits_follow and docs_beside_audits(a, cfg, audit_dir_of(a, cfg)):
-            beside = [_docs_step(a, cfg)]  # no file the docs writer edits is in the stage diff: starts with the audits
-        else:
-            yield [_docs_step(a, cfg)]
+    now, beside = _docs_split(a, cfg, flags, audits_follow)
+    yield from now
     cite_on = cfg.get(DOC_CITES_KEY, DOC_CITES_DEFAULT)  # every stage end, docs flag or not: the whole docs folder, not only the stage's changes
     if cite_on and not beside:
         yield [_doc_cites_step(a)]

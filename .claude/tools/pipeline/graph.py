@@ -673,11 +673,21 @@ def _late_merge(a, evs, tasks, n):
     cmd = _merge_cmd(a, ",".join(lost))
     sid = f"merge-w{wave}{tag}"
     r = run_phase(a, evs, [step(sid, "script", None, cmd, {DONE, FAIL}, None, "merge the retried tasks by script")], n)
+    _tag_dispatches(r, sid, lost)
+    if r or last_verdict(evs, sid) != FAIL:
+        return r
+    return _late_failed(a, evs, members, wave, n, cmd, sid, tag)
+
+
+def _tag_dispatches(r, sid, lost) -> None:
+    """Log on the dispatch of step `sid` which tasks the late merge batch covers."""
     for d in (r or {}).get("dispatches", []):
         if d["task"] == sid:
             d["tasks"] = list(lost)  # logged with the dispatch: which tasks this batch covers
-    if r or last_verdict(evs, sid) != FAIL:
-        return r
+
+
+def _late_failed(a, evs, members, wave, n, cmd, sid, tag):
+    """The late merge step `sid` failed: a red gate goes to a fix-gate dev, a conflict to the merger path."""
     rep = last_report(evs, sid)
     parts = _wave_parts(a, evs, members)
     if MERGE_RED_MARK in read_text(rep):  # red gate, not a conflict: a fix-gate dev

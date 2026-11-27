@@ -28,23 +28,36 @@ def _known_file(path):
     return bool(path) and not path.endswith("/") and bool(FILE_RE.fullmatch(str(path).strip("'\"")))
 
 
+def _strip_wrappers(words):
+    """Drop leading `cd <dir>`, `sudo`, `time` and `VAR=x` words: the command word comes next."""
+    while words and (words[0] in ("cd", "sudo", "time") or re.match(r"\w+=", words[0])):
+        words = words[2:] if words[0] == "cd" else words[1:]
+    return words
+
+
+def _segment_kind(seg) -> str | None:
+    """-> 'local:...' | 'grep' | None for one command segment; None also when the segment is no search."""
+    if PIPELINE_RE.search(seg.replace(LOCAL_PATH, "")):
+        return None
+    m = LOCAL_RE.search(seg)
+    if m:
+        return "local:" + m.group(1).replace(" ", "-")
+    words = _strip_wrappers(seg.split())
+    if not words or words[0] not in GREP_WORD or NONCODE_RE.search(seg):
+        return None
+    args = [w for w in words[1:] if not w.startswith("-")]
+    if len(args) >= 2 and _known_file(args[-1]):
+        return None  # pattern + one named file: known location
+    return "grep"
+
+
 def _bash_kind(cmd):
     """-> 'local:...' | 'grep' | None; grep counts only as a command word in project code, not heredoc text, pipe filter or docs."""
     cmd = strip_heredocs(cmd, keep_opener=False)
     for seg in split_commands(cmd, pipe=False, amp=False):  # a pipe is not a split: `x | grep` filters output, it is no search
-        if PIPELINE_RE.search(seg.replace(LOCAL_PATH, "")):
-            continue
-        m = LOCAL_RE.search(seg)
-        if m:
-            return "local:" + m.group(1).replace(" ", "-")
-        words = seg.split()
-        while words and (words[0] in ("cd", "sudo", "time") or re.match(r"\w+=", words[0])):
-            words = words[2:] if words[0] == "cd" else words[1:]
-        if words and words[0] in GREP_WORD and not NONCODE_RE.search(seg):
-            args = [w for w in words[1:] if not w.startswith("-")]
-            if len(args) >= 2 and _known_file(args[-1]):
-                continue  # pattern + one named file: known location
-            return "grep"
+        kind = _segment_kind(seg)
+        if kind:
+            return kind
     return None
 
 
