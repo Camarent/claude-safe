@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from . import gitx, task_text
-from .cite_check import _cite_msg, _resolve_bare, cites
+from .cite_check import _bare_hits, _cite_msg, _resolve_bare, cites
 from .configuration import (
     CITE_BACKTICK_FILE_RE,
     SCOPE_TEST_RE,
@@ -203,8 +203,16 @@ def _in_tree(repo, path):
     return os.path.isfile(os.path.join(repo, _resolve_bare(repo, path)))
 
 
+def _short_msg(repo, path):
+    """-> the `cite-short:` message when a bare file name (no directory) resolves to a file in a subdirectory or to 2+ files of the tree; None when it names the one root file or no file."""
+    hits = _bare_hits(repo, path)
+    if not hits or hits == [path]:
+        return None
+    return f"cite-short: {path} has no directory and the tree has {', '.join(hits)}; cite the full path"
+
+
 def check_cite_exists(d, tid, repo, ents) -> list[str]:
-    """Problems for one task file: a `path:line` cite or backticked file in its Goal/Done/Pattern lines whose file is not in the tree and is not a Predicted path of this task or of a task it depends on (an earlier wave); a cite of an existing file must hold the backticked symbol before it (cite_check._cite_msg)."""
+    """Problems for one task file: a `path:line` cite or backticked file in its Goal/Done/Pattern lines whose file is not in the tree and is not a Predicted path of this task or of a task it depends on (an earlier wave); a bare file name that is not at the tree root (`cite-short`); a cite of an existing file must hold the backticked symbol before it (cite_check._cite_msg)."""
     text = read_text(os.path.join(d, tid + ".md"))
     allowed = set(paths_in(text))
     for dep in _transitive_deps(ents, tid):
@@ -214,7 +222,10 @@ def check_cite_exists(d, tid, repo, ents) -> list[str]:
         found = list(cites(value))
         found += [(m[1], None, None, "") for m in CITE_BACKTICK_FILE_RE.finditer(value)]
         for path, line, end, before in found:
-            if _in_tree(repo, path):
+            short = _short_msg(repo, path)
+            if short:
+                probs.append(f"{tid}: {short}")
+            elif _in_tree(repo, path):
                 if line is None:
                     continue
                 msg = _cite_msg(repo, f"{tid} cites {path}:{line}", path, line, end, before)

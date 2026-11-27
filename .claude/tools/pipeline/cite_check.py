@@ -125,15 +125,23 @@ def _inside(worktree, path):
     return full if os.path.commonpath([root, full]) == root else None
 
 
-def _resolve_bare(worktree, path):
-    """-> the worktree-relative path of the one file named path when path has no directory and exactly one such file exists outside CITE_SKIP_DIRS; else path unchanged."""
+def _bare_hits(worktree, path):
+    """-> every worktree-relative file named path (outside CITE_SKIP_DIRS) when path has no directory; [] when it has one."""
     if os.sep in path or "/" in path:
-        return path
+        return []
     found = []
     for root, dirs, files in os.walk(worktree):
         dirs[:] = [d for d in dirs if d not in CITE_SKIP_DIRS]
         if path in files:
             found.append(os.path.relpath(os.path.join(root, path), worktree))
+    return found
+
+
+def _resolve_bare(worktree, path):
+    """-> the worktree-relative path of the one file named path when path has no directory and exactly one such file exists outside CITE_SKIP_DIRS; else path unchanged."""
+    if os.sep in path or "/" in path:
+        return path
+    found = _bare_hits(worktree, path)
     return found[0] if len(found) == 1 else path
 
 
