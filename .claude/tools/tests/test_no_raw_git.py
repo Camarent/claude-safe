@@ -8,7 +8,6 @@ TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_ALLOWED = {
     "commit.py",  # the commit must show hook output on the terminal: gitx.run captures it
     "pipeline/configuration/gitbranch.py",  # gitx imports configuration: import cycle
-    "ptest.py",  # runs standalone (python3 -I, no package import, release container): its one git call for the .claude/ warning is raw
 }
 
 
