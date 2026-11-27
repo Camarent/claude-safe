@@ -39,7 +39,7 @@ The repo builds the base image and optional toolchain layers, provides host-side
 
 ## Pipeline module splits
 Five pipeline modules hold code moved out of older modules. Each old module re-exports the moved names, so old import paths keep working.
-- `.claude/tools/pipeline/worktree_base.py:25` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:21`).
+- `.claude/tools/pipeline/worktree_base.py:24` (`git`): git helpers, manifest lock and write, link layout, base branch. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:21`).
 - `.claude/tools/pipeline/worktree_merge.py:35` (`_git_version`): git version and `merge-tree` checks, unmerged-file queries. `worktree.py` re-exports these names (`.claude/tools/pipeline/worktree.py:78`).
 - `.claude/tools/pipeline/plan_check_task.py:38` (`_lint`): per-task plan checks (test refs, cites, commands, paths). `plan_check.py` re-exports them (`.claude/tools/pipeline/plan_check.py:58`).
 - `.claude/tools/pipeline/steps_history.py:9` (`history`): event history, retry and report queries. `steps.py` re-exports them (`.claude/tools/pipeline/steps.py:57`).

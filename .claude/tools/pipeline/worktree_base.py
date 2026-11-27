@@ -5,7 +5,6 @@ import fcntl
 import json
 import os
 import pathlib
-import subprocess
 
 from . import gitx, util
 from .configuration import (
@@ -52,10 +51,7 @@ def _stray_ignored(repo, root):
     """True when ROOT is git-ignored by REPO and its `.git` is a stray empty folder or file, not a valid repository. A real repo stays nested even when an exclude lists it, and costs no git call. Any git error (REPO not a repo): False, the old behaviour."""
     if _looks_like_repo(root):
         return False
-    try:
-        return gitx.run(repo, "check-ignore", "-q", "--", os.path.relpath(root, repo)).returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+    return bool(gitx.ignored(repo, [os.path.relpath(root, repo)]))
 
 
 def nested_repos(repo) -> list[str]:

@@ -62,7 +62,7 @@ from .plan_check_task import (  # re-exported: callers and tests import the per-
     ANCHOR_RE as ANCHOR_RE,
 )
 from .plan_check_task import (
-    CITE_LINE_PREFIXES as CITE_LINE_PREFIXES,
+    CITE_LINE_FIELDS as CITE_LINE_FIELDS,
 )
 from .plan_check_task import (
     CREATE_RE as CREATE_RE,
