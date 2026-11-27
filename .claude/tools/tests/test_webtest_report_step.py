@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -64,6 +65,12 @@ class WebtestReportStepTest(unittest.TestCase):
         assert r is not None  # the test asserts a step came back; narrows the Optional for the lines below
         self.assertEqual(r["action"], "ask_main")
         self.assertTrue(r["message"].startswith("stale webtest: no HEAD line"), r["message"])
+
+    def test_dry_walk_missing_head_line_continues(self):
+        mine = self.web_run("no head here")
+        self.a.orch_events = mine
+        with unittest.mock.patch.dict(os.environ, {steps.ENV_DRY_NO_CCN: "1"}):
+            self.assertIsNone(steps.next_step(self.a, TASK, mine, "a9"))
 
     def test_matching_head_continues(self):
         mine = self.web_run(f"HEAD: {self.head}")

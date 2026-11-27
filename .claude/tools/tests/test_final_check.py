@@ -6,9 +6,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from audit import final_check as fc
+from pipeline import steps
 from tests.support.orch_harness import OrchHarness
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -130,6 +132,10 @@ class FinalFixRoute(OrchHarness):
         self.assertEqual(self.go("next")["action"], "ask_main")  # no second fix round
 
     def test_fixed_suite_moves_on_and_a_red_browser_check_gets_its_own_round(self):
+        # the stub web-tester reports carry no HEAD line: run as the dry walk does, no staleness check
+        patcher = unittest.mock.patch.dict(os.environ, {steps.ENV_DRY_NO_CCN: "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         f = self.until(lambda d: d["agent"] == "script" and "final_check.py" in d["prompt"])
         self.answer(f, "VERDICT: FAIL\nred")
         self.triage()

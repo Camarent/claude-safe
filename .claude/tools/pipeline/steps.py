@@ -700,7 +700,9 @@ def _branch_head(a) -> str:
 
 
 def _stale_web_report(a, rep) -> str | None:
-    """-> the reason the web-tester report REP is stale (no HEAD line, or a HEAD other than the branch HEAD), or None when it is for the branch HEAD."""
+    """-> the reason the web-tester report REP is stale (no HEAD line, or a HEAD other than the branch HEAD), or None when it is for the branch HEAD. The dry walk has no HEAD line and no git checkout: None there."""
+    if os.environ.get(ENV_DRY_NO_CCN):
+        return None  # the dry-run stub report carries no HEAD line; the scratch dir is no git repo
     return webtest_report.stale(read_text(rep["file"]), _branch_head(a))
 
 
