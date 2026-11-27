@@ -49,6 +49,8 @@ KILL_ROUNDS = 5  # snapshot-and-kill passes: a process forked between snapshot a
 REAP_S = 5  # seconds to wait for the pipe to close after the kill
 ENV_FAIL_ON_SKIP = "CI"  # set to 1: skipped unittest tests make a green run exit 3 (as ptest.py)
 FAILWORD = re.compile(r"FAIL|ERROR|not ok|Error:")
+RUFF_FOUND = re.compile(r"^Found (\d+) errors?\b")  # ruff's closing count line
+RUFF_KEEP = re.compile(r"^(?:\S.*:\d+:\d+: [A-Z]{1,4}\d{3,4} |[A-Z]{1,4}\d{3,4} (?:\[\*\] )?|\s*--> \S+:\d+:\d+|\s*help: )")  # concise or full format
 
 
 def _node_summary(lines):
@@ -87,6 +89,13 @@ def _pytest_summary(lines):
     return None
 
 
+def _ruff_summary(lines):
+    found = [int(m.group(1)) for m in (RUFF_FOUND.match(line) for line in lines) if m]
+    if not found:
+        return None
+    return f"ruff: {found[-1]} findings", found[-1], 0
+
+
 def _unittest_summary(lines):
     ran = [int(m.group(1)) for m in (UNITTEST_RAN.match(line) for line in lines) if m]
     ends = [line for line in lines if UNITTEST_END.match(line)]
@@ -100,7 +109,7 @@ def _unittest_summary(lines):
 
 def summary(lines):
     """Return (text, total, skipped) or None."""
-    return _node_summary(lines) or _cargo_summary(lines) or _pytest_summary(lines) or _unittest_summary(lines)
+    return _node_summary(lines) or _cargo_summary(lines) or _pytest_summary(lines) or _ruff_summary(lines) or _unittest_summary(lines)
 
 
 def _node_failing_blocks(lines, start):
@@ -419,8 +428,15 @@ def _report_ok(lines, sm, log):
     return [f"OK exit 0 (log: {log})", *lines[-2:]], 0
 
 
+def ruff_excerpts(lines):
+    """Every ruff finding line ('path:line:col: CODE msg'), its '-->' location and its 'help:' fix line."""
+    return [line.rstrip() for line in lines if RUFF_KEEP.match(line)]
+
+
 def _failure_excerpts(lines, sm):
     ex = node_excerpts(lines) if sm and sm[0].startswith("node") else []
+    if not ex and sm and sm[0].startswith("ruff"):
+        ex = ruff_excerpts(lines)
     if not ex:
         ex = cargo_excerpts(lines)
     if not ex:
