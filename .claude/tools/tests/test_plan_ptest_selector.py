@@ -19,6 +19,8 @@ class PtestSelectorTest(unittest.TestCase):
         tests = os.path.join(self.repo, ".claude", "tools", "tests")
         os.makedirs(tests)
         open(os.path.join(tests, "test_real.py"), "w", encoding="utf-8").close()
+        with open(os.path.join(tests, "golden_plan.json"), "w", encoding="utf-8") as f:
+            f.write("{}")
         self.write("TASKS.md", "# Stage: s\n## Tasks\n- task-1 first - review: wave W1\n- task-2 second - review: wave W2 - depends: task-1\n")
         self.write("task-1.md", "# T1\nPredicted paths: .claude/tools/tests/test_new.py\n")
 
@@ -42,9 +44,22 @@ class PtestSelectorTest(unittest.TestCase):
     def test_glob_accepted(self):
         self.assertEqual(self.problems("scripts/dev.sh test 'test_*.py'"), [])
 
+    def test_glob_matching_only_non_test_file_rejected(self):
+        # a golden json in the tests dir is not a test file: ptest would select no test for it
+        got = self.problems("scripts/dev.sh test 'golden_*.json'")
+        self.assertEqual(len(got), 1)
+        self.assertIn("ptest selector golden_*.json matches no test file", got[0])
+
+    def test_glob_matching_no_file_rejected(self):
+        self.assertEqual(len(self.problems("scripts/dev.sh test 'nothing_*.py'")), 1)
+
+    def test_planned_non_test_file_does_not_satisfy_glob(self):
+        self.write("solo.md", "# T\nPredicted paths: .claude/tools/tests/golden_new.json\nTest: scripts/dev.sh test 'golden_*.json'\n")
+        self.assertEqual(len(plan_ptest.ptest_selector_problems(self.d, "solo", self.repo)), 1)
+
     def test_planned_new_file_accepted(self):
-        self.write("task-3.md", "# T\nPredicted paths: .claude/tools/tests/test_new.py\nTest: scripts/dev.sh test test_new.py\n")
-        self.assertEqual(plan_ptest.ptest_selector_problems(self.d, "task-3", self.repo), [])
+        self.write("solo.md", "# T\nPredicted paths: .claude/tools/tests/test_new.py\nTest: scripts/dev.sh test test_new.py\n")
+        self.assertEqual(plan_ptest.ptest_selector_problems(self.d, "solo", self.repo), [])
 
     def test_planned_by_dependency_accepted(self):
         # task-2 depends on task-1, which predicts test_new.py
@@ -64,8 +79,8 @@ class PtestSelectorTest(unittest.TestCase):
         self.assertEqual(len(self.problems("scripts/dev.sh test --dir other test_x")), 1)
 
     def test_no_test_line_is_silent(self):
-        self.write("task-3.md", "# T\nPredicted paths: src/x.py\n")
-        self.assertEqual(plan_ptest.ptest_selector_problems(self.d, "task-3", self.repo), [])
+        self.write("solo.md", "# T\nPredicted paths: src/x.py\n")
+        self.assertEqual(plan_ptest.ptest_selector_problems(self.d, "solo", self.repo), [])
 
     def test_absolute_pattern_is_a_problem_not_a_crash(self):
         got = self.problems("scripts/dev.sh test /abs/test_real.py")
