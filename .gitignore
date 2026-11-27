@@ -26,6 +26,9 @@
 # Working files passed in/out of the container
 scratch/
 
+# per-run overrides of pipeline.json (project.py overlays it; never tracked)
+pipeline.local.json
+
 # Chrome profile: cookies and session state, regenerated on demand
 browser-profile/
 
