@@ -8,7 +8,7 @@ import unittest.mock
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, TOOLS)
-from pipeline import cli_orch, worktree  # noqa: E402
+from pipeline import cli_orch, steps, steps_history, worktree  # noqa: E402
 from tests.support.tmpdirs import tracked_mkdtemp  # noqa: E402
 
 
@@ -98,6 +98,28 @@ class RefreshTest(unittest.TestCase):
         self.assertLess(order.index(("refresh", True)), order.index(("event", "retry")))
         self.assertTrue(os.path.isfile(f"{root}/later") and os.path.isfile(f"{root}/own"))
         self.assertEqual(sh(root, "status", "--porcelain"), "")
+
+    def test_review_retry_keeps_refresh_out_of_last_event(self):
+        # retry --from review: the rebase record is written before the marker, and the driver's next step reads the log after it
+        root = self.info["root"]
+        self.put(root, "own", "1")
+        self.put(self.m, "later", "2")  # stage moved after dispatch
+        a = types.SimpleNamespace(dir=self.t, stage="s", step="task-1", cmd="retry", note="", addendum="", from_step="review", verify=False)
+        log = cli_orch.paths(a)[1]
+        cli_orch.append_event(
+            log, {"ev": "dispatch", "task": "task-1", "id": "a1", "agent": "dev", "role": "dev", "model": "haiku", "why": None, "free": False}
+        )
+        cli_orch.append_event(log, {"ev": "report", "task": "task-1", "id": "a1", "role": "dev", "verdict": "DONE", "file": "d.md"})
+        with unittest.mock.patch.object(cli_orch, "jprint"):
+            cli_orch.cmd_reset(a)
+        evs = cli_orch.read_jsonl(log)
+        self.assertEqual(evs[-1]["ev"], "retry")
+        mine = steps_history.history(evs, "task-1")
+        self.assertEqual((mine[-1]["ev"], mine[-1]["verdict"]), ("report", "DONE"))
+        decision = steps.next_step(
+            types.SimpleNamespace(stage="s", dir=self.t, orch_events=mine), {"id": "task-1", "owner_sonnet": False, "review_sonnet": False}, mine, "a9"
+        )
+        self.assertIsNotNone(decision)
 
 
 if __name__ == "__main__":
