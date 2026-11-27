@@ -533,11 +533,19 @@ def db_start_note(a) -> str:
 TOOLING_BLOCKED_NOTE = " A BLOCKED on a tooling failure names the cause: the tool, the command and the error line."
 COMPLEXITY_RE = re.compile(r"\bCCN\b")
 COMPLEXITY_NOTE = " Your task's Goal or Done mentions CCN: never run `cs-audit`; the gates run it."
+DEVTOOLS_NOTE = (
+    " Your task's Done names a tool output: read it with `cs-devtools <tool> <paths>` (one tool of the AUDIT.md audit-tools block);"
+    " never run `cs-audit`; the gates run it."
+)
+TOOL_OUTPUT_RE = re.compile(r"\b(CCN|lizard|vulture|bandit)\b")
 
 
 def complexity_note(task_file) -> str:
-    """Dev brief line forbidding `cs-audit` when the task's Goal: or Done: line mentions CCN, else ''."""
+    """Dev brief line for the task's Done: `cs-devtools <tool> <paths>` when Done names a tool output; else `cs-audit` forbidden
+    when the Goal: or Done: line mentions CCN; '' otherwise."""
     lines = read_text(task_file).splitlines()
+    if any(TOOL_OUTPUT_RE.search(line) for line in lines if line.startswith("Done:")):
+        return DEVTOOLS_NOTE
     return COMPLEXITY_NOTE if any(COMPLEXITY_RE.search(line) for line in lines if line.startswith(("Goal:", "Done:"))) else ""
 
 

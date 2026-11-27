@@ -34,6 +34,9 @@
     "xtools": {
       "script": "tools/xtools.py"
     },
+    "devtools": {
+      "script": "tools/audit/dev_tools.py"
+    },
     "docs-index": {
       "script": "tools/docs_index.py"
     },
