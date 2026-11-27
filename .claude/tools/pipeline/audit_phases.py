@@ -378,7 +378,7 @@ def _audit_tool_phases(a, cfg, flags, audit_dir, has_audit_md):
             "tools-check",
             "script",
             None,
-            f"{tool_cmd('xtools.py')} check --install --proj {shlex.quote(audit_dir)} --needed-by {shlex.quote(os.path.join(audit_dir, cfg['audit_file']))}{' --browser' if flags['ui'] else ''} --report .work/{S}/audits/tools-check.md",
+            f"{tool_cmd('xtools.py')} check --install --proj {shlex.quote(audit_dir)} --needed-by {shlex.quote(os.path.join(audit_dir, cfg['audit_file']))} --stage-dir .work/{S}{' --browser' if flags['ui'] else ''} --report .work/{S}/audits/tools-check.md",
             {DONE},
             None,
             "before the audits: extra tools present",
