@@ -9,7 +9,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from . import linkguard, maincheck
+from . import gitx, linkguard, maincheck
 from .configuration import (
     CLAUDE_FILE,
     DB_START_PREFIX,
@@ -83,6 +83,14 @@ def webtest_build_note(cfg) -> str:
     return f" First run `{cmd}` on this branch checkout and serve only that fresh build, never an older build output; put the checked-out commit (`git rev-parse --short HEAD`) in your report."
 
 
+def head_note(a) -> str:
+    """Brief text: the branch HEAD sha (read through gitx) and the rule to put it as a `HEAD: <sha>` line first in the report; a note saying so when git cannot read HEAD."""
+    sha = gitx.try_text(os.path.abspath(a.dir), "rev-parse", "HEAD").strip()
+    if not sha:
+        return " The branch HEAD could not be read: say so in your report and write no HEAD line."
+    return f" The branch HEAD is {sha}: put a line HEAD: {sha} as the first line of your report."
+
+
 def ux_flows_note(a, cfg) -> str:
     """Brief text for pipeline.json `ux_flows` (empty when unset): the project's named flows (path filled from the stage's UX-VARS), with the rule to run those that cover the changed files and to report the changed UI files no flow covers."""
     path = flows_rel(cfg, variables(read_text(os.path.join(a.dir, WORK_DIR, a.stage, TASKS_FILE))))
@@ -101,6 +109,7 @@ def webtest_prompt(a, task, rid) -> str:
         f"Stage {a.stage}: run the browser check of the task in {t} (read it there; index .work/{a.stage}/TASKS.md). Do its Goal and Steps; write the report file the task names."
         f" Serve only with servectl and this state dir: `--state-dir {shlex.quote(serve_dir(a))}`."
         + webtest_build_note(project(getattr(a, "dir", ".")))
+        + head_note(a)
         + UNVERIFIED_RULE
         + tail(a, rid, "|".join(ROLES["web-tester"][0]), "your full report")
     )
