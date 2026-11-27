@@ -29,8 +29,8 @@ The script-step timeout (`script_timeout()` in `.claude/tools/pipeline/util.py`)
 ## audit
 
 - `.claude/tools/audit/audit_parsers.py:27` - not a plain JSON document (log noise first); scan_json finds the document
-- `.claude/tools/audit/audit_run.py:115` - returned as status "crash" with the text; the caller reports it
-- `.claude/tools/audit/audit_run.py:133` - no git means no short sha in the stamp; the date stays
+- `.claude/tools/audit/audit_run.py:123` - returned as status "crash" with the text; the caller reports it
+- `.claude/tools/audit/audit_run.py:141` - no git means no short sha in the stamp; the date stays
 - `.claude/tools/audit/gatewatch.py:25` - the file was removed between the walk and this stat, a normal race
 
 ## top-level
