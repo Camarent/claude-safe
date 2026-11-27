@@ -302,14 +302,19 @@ def _print_diag(d, f, lang, root):
     )
 
 
-def _cmd_diag(c, a, f, lang, root):
-    _open_for(c, "diag", f, lang, root)
-    try:  # pull model first (pyright publishes nothing for a clean file)
+def _pull_diags(c, f, lang):
+    """Pull model first (pyright publishes nothing for a clean file): store the items in c.diags. Optional: a failure falls through to settle."""
+    try:
         pulled = c.req("textDocument/diagnostic", {"textDocument": {"uri": uri(f)}}, 20) if lang in ("py", "js", "ts") else None
         if pulled and "items" in pulled:
             c.diags[uri(f)] = pulled["items"]
     except (RuntimeError, TimeoutError):  # KEEP: pull diagnostics is optional; the push settle below covers servers without it
         pass
+
+
+def _cmd_diag(c, a, f, lang, root):
+    _open_for(c, "diag", f, lang, root)
+    _pull_diags(c, f, lang)
     if (lang not in ("py", "js", "ts") or uri(f) not in c.diags) and not c.settle(15 if lang != "rs" else 60, uri(f)):
         return not_checked(f, lang, "language server sent no diagnostics")
     ds = c.diags.get(uri(f), [])

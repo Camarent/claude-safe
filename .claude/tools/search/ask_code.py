@@ -189,29 +189,35 @@ def source_files(root):
                 yield os.path.relpath(os.path.join(d, n), root)
 
 
+def _leading_comment_start(lines, ln):
+    """First line of the comment block (at most 12 lines) directly above symbol line `ln`, else `ln`."""
+    st, up = ln, 0
+    while st > 1 and up < 12 and lines[st - 2].strip().startswith(COMMENT):
+        st -= 1
+        up += 1
+    return st
+
+
+def _append_piece(out, piece):
+    """Add a 40-line-capped piece to `out`; a sliver under 6 lines joins the previous chunk when that stays within 40 lines."""
+    if out and piece[1] - piece[0] + 1 < 6 and piece[1] - out[-1][0] + 1 <= 40:
+        out[-1] = (out[-1][0], piece[1])  # sliver: join the previous chunk
+    else:
+        out.append(piece)
+
+
 def spans_for(lines, symlines):
     """Code files: one chunk per function/class (its leading comment included), tiling the file; pieces over 40 lines are split.
     Other files, or code with no symbols: fixed 30-line windows. Chunks under 6 lines join the previous one."""
     n = len(lines)
     if not symlines:
         return [(i + 1, min(i + CHUNK, n)) for i in range(0, n, CHUNK)]
-    found: set[int] = set()
-    for ln in symlines:
-        st, up = ln, 0
-        while st > 1 and up < 12 and lines[st - 2].strip().startswith(COMMENT):
-            st -= 1
-            up += 1
-        found.add(st)
-    starts = sorted(found)
+    starts = sorted({_leading_comment_start(lines, ln) for ln in symlines})
     bounds = ([1] if starts[0] > 1 else []) + starts + [n + 1]
     out: list = []
     for a, b in zip(bounds, bounds[1:], strict=False):
         for x in range(a, b, 40):
-            piece = (x, min(x + 39, b - 1))
-            if out and piece[1] - piece[0] + 1 < 6 and piece[1] - out[-1][0] + 1 <= 40:
-                out[-1] = (out[-1][0], piece[1])  # sliver: join the previous chunk
-            else:
-                out.append(piece)
+            _append_piece(out, (x, min(x + 39, b - 1)))
     return out
 
 
@@ -639,9 +645,18 @@ def _judge_batches(m, root, question, fresh, batch, terms, judged):
     return []
 
 
-def ask(root, question, model=True, rounds=2, batch=10, depth=40):
-    """-> {"answer": [cands], "idk": bool, "closest": [cands], "queries": ...}
-    Judges the ranked candidates in batches of `batch` down to `depth`, stopping at the first batch with a verified hit; round 2 re-asks the model with names seen in round 1."""
+def _retry_terms(m, root, question, vocab, cands):
+    """Round 2 search terms: the model re-asked with names seen in the round-1 candidates."""
+    symbols, keywords = m.translate(question + " (the first attempt found nothing; try different names and synonyms)", vocab, seen_names(root, cands[:10]))
+    return symbols, keywords + words(question)
+
+
+def _ask_result(answer, idk, closest, tried, changed):
+    return {"answer": answer, "idk": idk, "closest": closest, "queries": tried, "reindexed": changed}
+
+
+def _ask_setup(root, question, model):
+    """Refresh the index (no wait), reset LAST, and translate the question -> (reindexed flag, retry vocabulary, model, symbols, keywords)."""
     changed, _gone = refresh(
         root, embed=int(os.environ.get("ASK_CODE_EMBED_BUDGET", "400")), wait=False
     )  # a first call on a big repo must not block for minutes: finish with `local.py index`
@@ -651,24 +666,27 @@ def ask(root, question, model=True, rounds=2, batch=10, depth=40):
     )  # only for the retry: on round 1 it pulled the model to generic repo words and hurt ranking (6/14 vs 9/14 gold in top 10)
     m = _model() if model else None
     symbols, keywords = m.translate(question) if m else ([], [])
-    keywords = keywords + words(question)
+    return changed, vocab, m, symbols, keywords + words(question)
+
+
+def ask(root, question, model=True, rounds=2, batch=10, depth=40):
+    """-> {"answer": [cands], "idk": bool, "closest": [cands], "queries": ...}
+    Judges the ranked candidates in batches of `batch` down to `depth`, stopping at the first batch with a verified hit; round 2 re-asks the model with names seen in round 1."""
+    changed, vocab, m, symbols, keywords = _ask_setup(root, question, model)
     tried: list = []
     judged: set = set()
     for rnd in range(rounds):
         cands = retrieve(root, symbols, keywords, question, depth)
         tried.append({"symbols": symbols, "keywords": keywords[:12]})
         if not model:
-            return {"answer": cands[:3], "idk": not cands, "closest": cands[3:6], "queries": tried, "reindexed": changed}
+            return _ask_result(cands[:3], not cands, cands[3:6], tried, changed)
         terms = {w for s in symbols + keywords for w in words(s)}
         keep = _judge_batches(m, root, question, [c for c in cands if (c["path"], c["start"]) not in judged], batch, terms, judged)
         if keep:
-            return {"answer": keep[:3], "idk": False, "closest": [], "queries": tried, "reindexed": changed}
+            return _ask_result(keep[:3], False, [], tried, changed)
         if rnd + 1 < rounds and m:
-            symbols, keywords = m.translate(
-                question + " (the first attempt found nothing; try different names and synonyms)", vocab, seen_names(root, cands[:10])
-            )
-            keywords = keywords + words(question)
-    return {"answer": [], "idk": True, "closest": retrieve(root, symbols, keywords, question, 3), "queries": tried, "reindexed": changed}
+            symbols, keywords = _retry_terms(m, root, question, vocab, cands)
+    return _ask_result([], True, retrieve(root, symbols, keywords, question, 3), tried, changed)
 
 
 def _build_index(root, a):

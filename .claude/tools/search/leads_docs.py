@@ -195,21 +195,32 @@ def _code_lines(root, code):
     return res
 
 
+def _test_lines(tests):
+    """Test files collapsed per directory: `- dir/: name, name`."""
+    per_dir: dict = {}
+    for f in tests:
+        per_dir.setdefault(os.path.dirname(f) or ".", []).append(os.path.basename(f))
+    return ["### tests"] + [f"- {d}/: " + ", ".join(n) for d, n in per_dir.items()]
+
+
+def _capped_lines(root, group, files, cap):
+    """Files of one group: the first `cap` with their top line, the rest as bare paths."""
+    res = [f"### {group}"]
+    res += [f"- {f}" + (f" - {top_line(root, f)[:80]}" if top_line(root, f) else "") for f in files[:cap]]
+    res += [f"- {f}" for f in files[cap:]]
+    return res
+
+
 def digest(root, files):
     """Planner-facing lines in groups (code, tests, docs, data), each ranked as FILES is. All facts are copied from the files:
     code gets top comment and one doc cite, tests collapse per directory, docs show their title, data its keys."""
     by = {g: [f for f in files if group_of(f) == g] for g in ("code", "tests", "docs", "data")}
     res = ["### code (most-named first)", *_code_lines(root, by["code"])] if by["code"] else []
     if by["tests"]:
-        tests: dict = {}
-        for f in by["tests"]:
-            tests.setdefault(os.path.dirname(f) or ".", []).append(os.path.basename(f))
-        res += ["### tests"] + [f"- {d}/: " + ", ".join(n) for d, n in tests.items()]
-    for g, cap in (("docs", 8), ("data", 8)):
+        res += _test_lines(by["tests"])
+    for g in ("docs", "data"):
         if by[g]:
-            res.append(f"### {g}")
-            res += [f"- {f}" + (f" - {top_line(root, f)[:80]}" if top_line(root, f) else "") for f in by[g][:cap]]
-            res += [f"- {f}" for f in by[g][cap:]]
+            res += _capped_lines(root, g, by[g], 8)
     return res
 
 

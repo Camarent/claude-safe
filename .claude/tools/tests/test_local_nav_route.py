@@ -104,6 +104,18 @@ class NavRoute(unittest.TestCase):
         self.assertEqual(rc, 0)
         sc.assert_called_once()
 
+    def test_daemon_call_none_when_server_closes_before_reply(self):
+        conn = mock.Mock()
+        with (
+            mock.patch.object(local, "srv_connect", return_value=conn),
+            mock.patch.object(local, "_exchange", return_value=None) as ex,
+            mock.patch.object(local, "srv_kill") as kill,
+        ):
+            self.assertIsNone(local.daemon_call(["find", "x"]))  # None reply must not reach None.get
+        ex.assert_called_once()
+        conn.close.assert_called_once()
+        kill.assert_not_called()
+
     def test_timeout_falls_back_without_kill(self):
         self.serve(None, hold=5.0)
         with mock.patch.object(local, "NAV_WAIT_S", 0.2), mock.patch.object(local, "NAV_REPLY_MARGIN_S", 0.2):

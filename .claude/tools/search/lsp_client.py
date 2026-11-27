@@ -258,6 +258,18 @@ class Client:
         elif kind == "end":
             self.busy.discard(str(p.get("token")))
 
+    def _handle(self, m, target):
+        """Apply one server message. -> "set" (diagnostics for target arrived), "refresh" (progress seen), or None."""
+        if "method" in m and "id" in m:
+            self.send({"jsonrpc": "2.0", "id": m["id"], "result": self.config(m["params"]) if m["method"] == "workspace/configuration" else None})
+        elif m.get("method") == "textDocument/publishDiagnostics":
+            self.store(m["params"])
+            return "set" if m["params"]["uri"] == target else None
+        elif m.get("method") == "$/progress":
+            self.track(m["params"])
+            return "refresh"
+        return None
+
     def settle(self, secs, target=None):  # pump messages until diagnostics for `target` arrive (or secs pass)
         end = time.time() + secs
         quiet = None
@@ -266,17 +278,11 @@ class Client:
                 if quiet and time.time() > quiet and not self.busy:
                     break  # diagnostics seen, then silence: done
                 continue
-            m = self.read()
-            if "method" in m and "id" in m:
-                self.send({"jsonrpc": "2.0", "id": m["id"], "result": self.config(m["params"]) if m["method"] == "workspace/configuration" else None})
-            elif m.get("method") == "textDocument/publishDiagnostics":
-                self.store(m["params"])
-                if m["params"]["uri"] == target:
-                    quiet = time.time() + 2.0  # later (semantic) pass may follow the syntactic one
-            elif m.get("method") == "$/progress":
-                self.track(m["params"])
-                if quiet:
-                    quiet = time.time() + 2.0
+            kind = self._handle(self.read(), target)
+            if kind == "set":
+                quiet = time.time() + 2.0  # later (semantic) pass may follow the syntactic one
+            elif kind == "refresh" and quiet:
+                quiet = time.time() + 2.0
         return target in self.diags
 
     def close(self):
