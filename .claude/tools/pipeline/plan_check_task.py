@@ -18,6 +18,7 @@ from .configuration import (
     WORK_DIR,
     project,
     repo_dir,
+    tool_setting,
 )
 from .plan_commands import command_findings
 from .plan_files import (
@@ -168,7 +169,7 @@ def _exists_hit(repo, predicted, name):
         if not os.path.isfile(full):
             continue
         if shutil.which("lp"):  # the code index is the first choice when it is installed
-            r = subprocess.run(["lp", "nav", "def", p, name], cwd=repo, capture_output=True, text=True, check=False, timeout=30)
+            r = subprocess.run(["lp", "nav", "def", p, name], cwd=repo, capture_output=True, text=True, check=False, timeout=tool_setting("LP_NAV_TIMEOUT_S"))
             hit = re.search(r"^(\S+?):(\d+)", r.stdout, re.MULTILINE)
             if r.returncode == 0 and hit:
                 return f"{hit[1]}:{hit[2]}"

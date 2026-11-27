@@ -20,6 +20,9 @@ SAFESHELL_TIMEOUT_S = 60  # default run timeout of localmodel/safeshell.py
 INDEX_DB_TIMEOUT_S = 5  # sqlite3 connect timeout of the index step (index_step.py)
 SERVE_CONNECT_TIMEOUT_S = 0.5  # socket connect timeout of the servectl port wait (servectl.py)
 LSP_LOCK_TIMEOUT_S = 2  # lock wait of the language-server pool shutdown (search/lsp_pool.py)
+LP_NAV_TIMEOUT_S = 30  # seconds one `lp nav def` probe of a Predicted path may take (pipeline/plan_check_task.py)
+UX_PROBE_TIMEOUT_S = 2  # seconds one probe of the served ux url waits for an answer (ux_run.py)
+UX_WAIT_UP_S = 30  # seconds ux_run waits, polled once a second, for the served url to answer (ux_run.py)
 GIT_REMOTE = "origin"  # the remote a push or fetch names by default
 # the price rows (USD per million tokens by model family): the default; pipeline.json `tool_settings.prices` replaces it.
 # SET 2026-10-30 from the claude-api skill's cached model table (cached 2026-10-06). PRICES MUST BE RE-CHECKED against the
@@ -84,6 +87,9 @@ _SETTINGS = {
     "INDEX_DB_TIMEOUT_S": (INDEX_DB_TIMEOUT_S, "index_db_timeout_s", _positive, True),
     "SERVE_CONNECT_TIMEOUT_S": (SERVE_CONNECT_TIMEOUT_S, "serve_connect_timeout_s", _positive, True),
     "LSP_LOCK_TIMEOUT_S": (LSP_LOCK_TIMEOUT_S, "lsp_lock_timeout_s", _positive, True),
+    "LP_NAV_TIMEOUT_S": (LP_NAV_TIMEOUT_S, "lp_nav_timeout_s", _positive, True),
+    "UX_PROBE_TIMEOUT_S": (UX_PROBE_TIMEOUT_S, "ux_probe_timeout_s", _positive, True),
+    "UX_WAIT_UP_S": (UX_WAIT_UP_S, "ux_wait_up_s", _positive, True),
     "GIT_REMOTE": (GIT_REMOTE, "git_remote", _remote, True),
     "PRICES_TABLE": (PRICES_TABLE, "prices", _prices, False),
     "LIMIT_RECHECK_S": (LIMIT_RECHECK_S, "limit_recheck_s", _positive, True),
