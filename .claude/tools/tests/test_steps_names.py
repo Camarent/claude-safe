@@ -2,10 +2,13 @@
 
 import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import steps
+from pipeline import phases, steps, tasks
+from pipeline.configuration import ACCEPTANCE_STEP
 
 # public and underscore names of steps.py before the split (defs, classes, assigns and imports), pinned as they were
 HEAD_NAMES = [
@@ -183,6 +186,54 @@ class StepsNamesTest(unittest.TestCase):
     def test_head_names_importable_from_steps(self):
         missing = [n for n in HEAD_NAMES if not hasattr(steps, n)]
         self.assertEqual(missing, [])
+
+
+class _Stage:
+    def __init__(self, d, stage):
+        self.dir, self.stage = d, stage
+
+
+def _final_ids(stage, release_and_pr=False):
+    """-> the step ids of final_phases for a stage with one acceptance line and a test flag, in order.
+    release_and_pr: a project release hook, PR mode and cleanup on, so version-bump and pr-ready are yielded."""
+    with tempfile.TemporaryDirectory() as d:
+        stage_dir = os.path.join(d, ".work", stage)
+        os.makedirs(stage_dir)
+        with open(os.path.join(stage_dir, "TASKS.md"), "w", encoding="utf-8") as f:
+            f.write("# stage\n")
+        with open(os.path.join(d, ".work", stage.split("/phases/")[0], "Plan.md"), "w", encoding="utf-8") as f:
+            f.write("## Acceptance checklist\n- cmd: true\n")
+        cfg = {**phases.project(d), "release_script": "release.sh"} if release_and_pr else phases.project(d)
+        flags = {**tasks.parse_flags(os.path.join(d, "none.md")), "audit": True, "test": True, "index": False, "release": release_and_pr}
+        with (
+            mock.patch.object(phases, "project", return_value=cfg),
+            mock.patch.object(phases.pr_mode, "pr_active", return_value=release_and_pr),
+            mock.patch.object(phases.pr_mode, "cleanup_active", return_value=release_and_pr),
+        ):
+            return [st["id"] for g in phases.final_phases(_Stage(d, stage), flags, [], []) for st in g]
+
+
+class AcceptanceOrderTest(unittest.TestCase):
+    def test_finish_phase_runs_acceptance_before_the_audits(self):
+        ids = _final_ids("feat/phases/08-finish")
+        self.assertIn(ACCEPTANCE_STEP, ids)
+        self.assertLess(ids.index(ACCEPTANCE_STEP), ids.index("plan-vs-changes"), ids)
+
+    def test_plain_stage_keeps_acceptance_after_the_audits(self):
+        ids = _final_ids("feat")
+        self.assertIn(ACCEPTANCE_STEP, ids)
+        self.assertGreater(ids.index(ACCEPTANCE_STEP), ids.index("plan-vs-changes"), ids)
+
+    def test_plain_stage_keeps_acceptance_after_version_bump_and_pr_ready(self):
+        ids = _final_ids("feat", release_and_pr=True)
+        self.assertIn("version-bump", ids, ids)
+        self.assertIn("pr-ready", ids, ids)
+        self.assertLess(ids.index("version-bump"), ids.index(ACCEPTANCE_STEP), ids)
+        self.assertLess(ids.index("pr-ready"), ids.index(ACCEPTANCE_STEP), ids)
+        self.assertGreater(ids.index(ACCEPTANCE_STEP), ids.index("plan-vs-changes"), ids)
+
+    def test_non_finish_phase_gets_no_acceptance_step(self):
+        self.assertNotIn(ACCEPTANCE_STEP, _final_ids("feat/phases/03-build"))
 
 
 if __name__ == "__main__":

@@ -148,7 +148,8 @@ class _Final:
         self.pub_line = " ".join(re.findall(PUBLISH_LINE_RE, txt, re.I | re.M))  # every PUBLISH: line, not just the first
         self.pre = re.search(r"^\s*PRE-APPROVED\s*:\s*master merge\s*$", txt, re.I | re.M)  # owner pre-approved the merge: no pause
         self.name = getattr(a, "feature", None) or self.S
-        self.last_phase = "/phases/" not in self.S or is_finish_phase(tm)  # a feature's PR is ready once, after its closing phase
+        self.finish = is_finish_phase(tm)
+        self.last_phase = "/phases/" not in self.S or self.finish  # a feature's PR is ready once, after its closing phase
         self.rel_on = (
             self.last_phase and flags["release"] and bool(cfg.get("release_script")) and pr_mode.cleanup_active(a)
         )  # a git repo with a derived stage branch and a project release hook
@@ -362,14 +363,22 @@ def _cleanup_step(c):
         ]
 
 
-_FINAL_BUILDERS = (_bump_and_ready, _acceptance, _local_merge, _merge_release_cleanup, _push_master, _publish_steps, _cleanup_step)
+def _acceptance_after_ready(c):
+    """Plain stage: the acceptance step keeps its old slot, after the version bump and PR ready, before the local merge. The finish phase runs it earlier (see final_phases)."""
+    if not c.finish:
+        yield from _acceptance(c)
+
+
+_FINAL_BUILDERS = (_bump_and_ready, _acceptance_after_ready, _local_merge, _merge_release_cleanup, _push_master, _publish_steps, _cleanup_step)
 
 
 def final_phases(a, flags, tasks, evs) -> Iterator[list[dict]]:
-    """Audit phases, then the post-publish steps (flag `index`; `UI: yes` + `PUBLISH:` line)."""
+    """Audit phases, then the post-publish steps (flag `index`; `UI: yes` + `PUBLISH:` line). The finish phase runs the acceptance step before its audits, so acceptance.md exists when the freshness audit runs."""
     cfg = project(a.dir)
-    yield from audit_phases(a, flags, tasks, evs)
     c = _Final(a, flags, cfg)
+    if c.finish:
+        yield from _acceptance(c)
+    yield from audit_phases(a, flags, tasks, evs)
     for build in _FINAL_BUILDERS:
         yield from build(c)
 
