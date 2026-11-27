@@ -36,6 +36,7 @@ from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     FAIL,
     GATE_TIMEOUT_S,
     GIT_TIMEOUT_S,
+    TASKS_FILE,
     WORK_DIR,
     docs_dir_of,
     project,
@@ -205,10 +206,12 @@ def _cite_findings(cwd, d, report, diff):
 
 
 def _docs_impact_findings(cwd, d, stage, diff):
-    """-> (FAIL note naming each doc the job diff leaves stale (docs_impact.check), skip note). Off when the `docs_impact_gate` key of pipeline.json is false for `stage` (a dict gives each stage its own switch, docs_impact.gate_on) or `docs_dir` is empty (no docs folder, no root walk). No job diff -> no finding, the skip note NO_DIFF_NOTE."""
+    """-> (FAIL note naming each doc the job diff leaves stale (docs_impact.check), skip note). Off when the `docs_impact_gate` key of pipeline.json is false for `stage` (a dict gives each stage its own switch, docs_impact.gate_on), when the stage's TASKS.md holds a `Docs gate: off` line (docs_impact.plan_off), or when `docs_dir` is empty (no docs folder, no root walk). No job diff -> no finding, the skip note NO_DIFF_NOTE."""
     cfg = project(d)
     docs = docs_dir_of(cfg)
     if not docs_impact.gate_on(cfg.get(DOCS_IMPACT_KEY, DOCS_IMPACT_DEFAULT), stage) or not docs:
+        return "", ""
+    if docs_impact.plan_off(read_text(os.path.join(d, WORK_DIR, stage, TASKS_FILE))):
         return "", ""
     if diff is None:
         return "", NO_DIFF_NOTE

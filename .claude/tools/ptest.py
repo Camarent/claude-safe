@@ -117,6 +117,11 @@ def select_files(tests_dir, patterns, merge_only=()):
     return names
 
 
+def unmatched_patterns(tests_dir, patterns):
+    """Patterns that match no file in tests_dir. A named test file that is missing must fail the run, not pass as one of several selected files."""
+    return [pat for pat in patterns if not any(Path(tests_dir).glob(Path(pat).name))]
+
+
 def print_slowest(res):
     """Print the five slowest files."""
     for t, _, n, _, _, _ in res[:5]:
@@ -229,8 +234,9 @@ def main(argv=None):
     ap.add_argument("patterns", nargs="*", default=["test_*.py"])
     a = ap.parse_args(argv)
     names = select_files(a.dir, a.patterns, merge_only_tests())
-    if not names:
-        print("ptest: no test files match")
+    missing = unmatched_patterns(a.dir, a.patterns)
+    if missing or not names:
+        print(f"ptest: no test files match: {' '.join(missing or a.patterns)}")
         return 1
     start = time.time()
     claude_before = main_claude_status()
