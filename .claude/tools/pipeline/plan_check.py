@@ -15,17 +15,16 @@ from .cite_check import _cite_msg as _cite_msg  # re-exported: pre-split name of
 from .cite_check import _resolve_bare as _resolve_bare  # re-exported: pre-split name of pipeline.plan_check
 from .cite_check import cites as cites  # re-exported: pre-split name of pipeline.plan_check
 from .configuration import (
-    AFFECTED_WARN_PREFIX,
+    AFFECTED_WARN_PREFIX as AFFECTED_WARN_PREFIX,
+)
+from .configuration import (
     CARRIED_NOT_NEEDED,
     CARRIED_SECTION,
     FINAL_GATES_KEY,
     GATE_LABELS,
     GATES_KEY,
-    GENERATED_WARN_PREFIX,
     MERGE_GATES_KEY,
-    NEG_WARN_PREFIX,
     PLAN_FILE,
-    PREREQ_WARN_PREFIX,
     PUBLISH_BUILD,
     PUBLISH_CWD,
     PUBLISH_FILES,
@@ -35,10 +34,7 @@ from .configuration import (
     PUBLISH_RE,
     REQUEST_FILE,
     SHARED_MIN,
-    SKIP_GATE_WARN_PREFIX,
     TASKS_FILE,
-    TESTCMD_WARN_PREFIX,
-    WEBTEST_WARN_PREFIX,
     ConfigError,
     project,
     publish_entries,
@@ -50,7 +46,25 @@ from .configuration import (
     CITE_BACKTICK_FILE_RE as CITE_BACKTICK_FILE_RE,
 )
 from .configuration import (
+    GENERATED_WARN_PREFIX as GENERATED_WARN_PREFIX,
+)
+from .configuration import (
+    NEG_WARN_PREFIX as NEG_WARN_PREFIX,
+)
+from .configuration import (
+    PREREQ_WARN_PREFIX as PREREQ_WARN_PREFIX,
+)
+from .configuration import (
     SCOPE_TEST_RE as SCOPE_TEST_RE,
+)
+from .configuration import (
+    SKIP_GATE_WARN_PREFIX as SKIP_GATE_WARN_PREFIX,
+)
+from .configuration import (
+    TESTCMD_WARN_PREFIX as TESTCMD_WARN_PREFIX,
+)
+from .configuration import (
+    WEBTEST_WARN_PREFIX as WEBTEST_WARN_PREFIX,
 )
 from .configuration import (
     WORK_DIR as WORK_DIR,
@@ -218,7 +232,9 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
-from .plan_parallel import PARALLEL_WARN_PREFIX, parallel_candidates
+from .plan_parallel import PARALLEL_WARN_PREFIX as PARALLEL_WARN_PREFIX
+from .plan_parallel import parallel_candidates
+from .plan_problem import ERROR, Problem
 from .plan_ptest import ptest_selector_problems
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_rules import (
@@ -531,33 +547,8 @@ MIN_PHASE, MAX_COMBINED = 10, 25
 
 
 def errors_of(probs) -> list[str]:
-    """PROBS without the `combine:`, `size:`, `shared:`, `parallel:`, `gate:`, `release:`, `done:`, `cmd:`, `open-edit:`, `neg:`, `prereq:`, `webtest:`, `tests-use:`, `repos:` and `publish:` warnings (those never fail a check). `ci-drift:` is an error."""
-    return [
-        p
-        for p in probs
-        if not p.startswith(
-            (
-                "combine:",
-                "size:",
-                "shared:",
-                "gate:",
-                "release:",
-                "done:",
-                "cmd:",
-                "open-edit:",
-                "repos:",
-                UX_FLOWS_WARN_PREFIX,
-                PARALLEL_WARN_PREFIX,
-                AFFECTED_WARN_PREFIX,
-                NEG_WARN_PREFIX,
-                SKIP_GATE_WARN_PREFIX,
-                PREREQ_WARN_PREFIX,
-                WEBTEST_WARN_PREFIX,
-                GENERATED_WARN_PREFIX,
-                TESTCMD_WARN_PREFIX,
-            )
-        )
-    ]
+    """PROBS whose kind is an error in plan_problem.KIND_LEVELS: the warning kinds (`combine:`, `size:`, `neg:`, `tests-use:`, ...) never fail a check; an unknown kind is an error."""
+    return [p for p in probs if Problem.parse(p).level == ERROR]
 
 
 def ci_drift_warnings(d) -> list[str]:

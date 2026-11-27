@@ -44,7 +44,7 @@ def test_command_hint(cfg) -> str | None:
 
 
 def check_bare_test_runner(d, tid, workspace) -> list[str]:
-    """`testcmd:` warning (never fails a check) for one task: its `Test:` line runs bare `pytest` / `python -m pytest` while the project names another test command (it needs an environment the job worktree lacks)."""
+    """`testcmd:` error for one task: its `Test:` line runs bare `pytest` / `python -m pytest` while the project names another test command (it needs an environment the job worktree lacks)."""
     m = TEST_LINE_RE.search(read_text(os.path.join(d, tid + ".md")))
     if not m:
         return []

@@ -32,12 +32,12 @@ class T(unittest.TestCase):
     def check(self):
         return plan_testcmd.check_bare_test_runner(self.d, TID, self.ws)
 
-    def test_bare_pytest_warns_with_setting_hint(self):
+    def test_bare_pytest_is_an_error_with_setting_hint(self):
         self.cfg(test_command_hint="make test")
         self.task("Test: pytest tests/core/x.py")
         got = self.check()
         self.assertTrue(got and got[0].startswith("testcmd:") and "make test" in got[0])
-        self.assertEqual(plan_check.errors_of(got), [])
+        self.assertEqual(plan_check.errors_of(got), got)
 
     def test_python_dash_m_pytest_warns(self):
         self.cfg(test_command_hint="make test")
@@ -116,12 +116,17 @@ class T(unittest.TestCase):
         self.task("Test: cs-qrun -- ! grep x f && cs-qrun -- ! grep y g")
         self.assertEqual(len(plan_testcmd.check_qrun_operator(self.d, TID)), 1)
 
-    def test_bare_pytest_stays_a_warning_not_an_error(self):
+    def test_bare_pytest_is_an_error_even_with_other_bans(self):
         self.cfg(test_command_hint="make test", test_ban=[{"pattern": "^nomatch$", "use": "x"}])
         self.task("Test: pytest tests/x.py")
         got = plan_testcmd.check_bare_test_runner(self.d, TID, self.ws)
         self.assertTrue(got[0].startswith("testcmd:"))
-        self.assertEqual(plan_check.errors_of(got), [])
+        self.assertEqual(plan_check.errors_of(got), got)
+
+    def test_project_test_line_is_no_error(self):
+        self.cfg(test_command_hint="make test")
+        self.task("Test: make test")
+        self.assertEqual(plan_check.errors_of(plan_testcmd.check_bare_test_runner(self.d, TID, self.ws)), [])
 
 
 if __name__ == "__main__":
