@@ -114,3 +114,5 @@ If the project CLAUDE.md has a `## Guidelines` section, read the listed file for
 Unknown location: `lp find "question"` first. Known file/symbol or exhaustive callers/impact: grep or `nav`. Exclude minified vendor JS from grep (`--glob '!*.min.js'` / `grep --exclude='*.min.js'`).
 
 If the report file cannot be written, put the full report in the reply text instead (orch.py saves it when the file is missing).
+
+Brief Test line malformed (missing, not runnable, wrong path): reply `BLOCKED: <test line, one line why>` on your first turn; do not guess a command and burn a retry.

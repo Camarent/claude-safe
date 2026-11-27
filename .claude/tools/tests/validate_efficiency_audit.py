@@ -2,10 +2,12 @@
 """Validate an efficiency audit file (retro-m25 / m26-fixes / docs-cleanup).
 
     python3 -I .claude/tools/tests/validate_efficiency_audit.py FILE
+    python3 -I .claude/tools/tests/validate_efficiency_audit.py --after FILE
     python3 -I .claude/tools/tests/validate_efficiency_audit.py --selftest
 
 Before: a table of exactly five sink rows; each row has one cell per run, a number or `not available`.
 Fixes: exactly two bullets, each naming a repo path with `:LINE` that exists and a saving with a number.
+--after also needs an After section (same table form, a cell marked measured or expected) and a `done:` entry per fix.
 Exit 0 when valid, 1 when not, 2 on usage error. Stdlib only (run with -I)."""
 
 import os
@@ -19,6 +21,8 @@ NOT_AVAILABLE = "not available"
 FIX_CITE_RE = re.compile(r"(\.claude/[\w./-]+\.\w+):(\d+)")
 SECTION_RE = re.compile(r"^## (\w+)\b", re.MULTILINE)
 REQUIRED_FIXES = 2
+FIXED_SINKS = ("review rounds", "other")
+DONE_RE = re.compile(r'\bdone:\s*grep\s+(?:-\w+\s+)?"([^"]+)"\s+(\S+)')
 
 
 def _sections(text):
@@ -35,32 +39,60 @@ def _cells(line):
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
-def _before_problems(lines):
+def _table_problems(lines, name="Before"):
     rows = [ln for ln in lines if ln.strip().startswith("|") and not re.fullmatch(r"[\s|:-]+", ln.strip())]
     if not rows:
-        return ["Before: no table"]
+        return [f"{name}: no table"]
     header, body = _cells(rows[0]), rows[1:]
     probs = []
     if tuple(header[1:]) != RUNS:
-        probs.append(f"Before: header must name the runs {', '.join(RUNS)}")
+        probs.append(f"{name}: header must name the runs {', '.join(RUNS)}")
     if len(body) != len(SINKS):
-        probs.append(f"Before: need exactly {len(SINKS)} sink rows, got {len(body)}")
+        probs.append(f"{name}: need exactly {len(SINKS)} sink rows, got {len(body)}")
     seen = set()
     for ln in body:
         cells = _cells(ln)
         sink = next((s for s in SINKS if cells[0].lower().startswith(s.lower())), None)
         if sink is None:
-            probs.append(f"Before: row is not one of the sink kinds: {cells[0]!r}")
+            probs.append(f"{name}: row is not one of the sink kinds: {cells[0]!r}")
         elif sink in seen:
-            probs.append(f"Before: sink {sink!r} listed twice")
+            probs.append(f"{name}: sink {sink!r} listed twice")
         else:
             seen.add(sink)
         if len(cells) != len(RUNS) + 1:
-            probs.append(f"Before: row {cells[0]!r} needs one cell per run ({len(RUNS)}), got {len(cells) - 1}")
+            probs.append(f"{name}: row {cells[0]!r} needs one cell per run ({len(RUNS)}), got {len(cells) - 1}")
             continue
         for run, cell in zip(RUNS, cells[1:]):
             if cell != NOT_AVAILABLE and not re.search(r"\d", cell):
-                probs.append(f"Before: row {cells[0]!r} has no number for {run}: {cell!r}")
+                probs.append(f"{name}: row {cells[0]!r} has no number for {run}: {cell!r}")
+    return probs
+
+
+def _after_problems(secs, root=ROOT):
+    """After: same table as Before; each fixed sink cell says measured or expected; each fix row has a `done:` entry."""
+    if "After" not in secs:
+        return ["missing section: ## After"]
+    probs = _table_problems(secs["After"], "After")
+    rows = {_cells(ln)[0].lower(): _cells(ln) for ln in secs["After"] if ln.strip().startswith("|")}
+    for sink in FIXED_SINKS:
+        cells = next((c for k, c in rows.items() if k.startswith(sink)), None)
+        if cells is None:
+            continue  # the table check above already reports the missing row
+        for run, cell in zip(RUNS, cells[1:]):
+            if cell != NOT_AVAILABLE and not (re.search(r"\d", cell) and re.search(r"\b(measured|expected)\b", cell)):
+                probs.append(f"After: row {sink!r} cell {run} needs a number and the word measured or expected: {cell!r}")
+    for ln in (x for x in secs.get("Fixes", []) if x.startswith("- ")):
+        m = DONE_RE.search(ln)
+        if not m:
+            probs.append(f"Fixes: no 'done:' entry in {ln[:60]!r}")
+            continue
+        path = os.path.join(root, m.group(2))
+        if not os.path.isfile(path):
+            probs.append(f"Fixes: done: file does not exist: {m.group(2)}")
+        else:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                if m.group(1) not in fh.read():
+                    probs.append(f"Fixes: done: text {m.group(1)!r} not found in {m.group(2)}")
     return probs
 
 
@@ -87,17 +119,19 @@ def _fix_problems(lines, root):
     return probs
 
 
-def validate(text, root=ROOT):
-    """-> list of problems; empty when the audit is valid."""
+def validate(text, root=ROOT, after=False):
+    """-> list of problems; empty when the audit is valid (after=True also checks the After section and `done:` entries)."""
     secs = _sections(text)
     probs = []
     for name in ("Before", "Fixes"):
         if name not in secs:
             probs.append(f"missing section: ## {name}")
     if "Before" in secs:
-        probs += _before_problems(secs["Before"])
+        probs += _table_problems(secs["Before"])
     if "Fixes" in secs:
         probs += _fix_problems(secs["Fixes"], root)
+    if after:
+        probs += _after_problems(secs, root)
     return probs
 
 
@@ -118,6 +152,20 @@ GOOD = """## Before
 """
 
 
+AFTER = """
+## After
+
+| sink | retro-m25 | m26-fixes | docs-cleanup |
+|---|---|---|---|
+| repeat reads | 0 expected | not available | not available |
+| re-planning | 15 | not available | 2 |
+| review rounds | 100 expected | not available | 4 expected |
+| Opus calls without a stated reason | 0 | not available | 0 |
+| other | 15 expected | not available | 2 expected |
+"""
+DONE_OK = ' done: grep -n "brieflint" .claude/tools/pipeline/plan_check_task.py'
+
+
 def _selftest():
     """Decoys: a good file passes; four rows, a missing section, a missing number and a missing cited file each fail."""
     cases = [
@@ -128,6 +176,19 @@ def _selftest():
         ("cite to missing file fails", GOOD.replace("plan_check_task.py:43", "no_such_file.py:1"), True),
     ]
     bad = []
+    good_after = GOOD + AFTER
+    done_after = good_after.replace("session.", "session." + DONE_OK).replace("retry.", "retry." + DONE_OK)
+    after_cases = [
+        ("after: good file passes", done_after, False),
+        ("after: missing After section fails", GOOD, True),
+        ("after: missing done entry fails", good_after, True),
+        ("after: done grep matching nothing fails", done_after.replace('"brieflint"', '"no such text xyz"'), True),
+        ("after: review rounds cell without marker fails", done_after.replace("| 4 expected |", "| 4 |"), True),
+        ("after: other cell without marker fails", done_after.replace("| 15 expected |", "| 15 |"), True),
+    ]
+    for label, text, want_problems in after_cases:
+        if bool(validate(text, after=True)) != want_problems:
+            bad.append(label)
     for label, text, want_problems in cases:
         got = bool(validate(text))
         if got != want_problems:
@@ -142,11 +203,12 @@ def _selftest():
 def main(argv):
     if len(argv) == 2 and argv[1] == "--selftest":
         return _selftest()
-    if len(argv) != 2:
+    after = len(argv) == 3 and argv[1] == "--after"
+    if not after and (len(argv) != 2 or argv[1].startswith("--")):
         print(__doc__, file=sys.stderr)
         return 2
-    with open(argv[1], encoding="utf-8") as fh:
-        probs = validate(fh.read())
+    with open(argv[-1], encoding="utf-8") as fh:
+        probs = validate(fh.read(), after=after)
     for p in probs:
         print(p)
     if not probs:

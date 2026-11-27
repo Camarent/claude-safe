@@ -14,5 +14,19 @@ Sources: retro-m25 phase `orch.jsonl` dispatch/retry events (8 phases, top-level
 
 ## Fixes
 
-- review rounds: `.claude/tools/pipeline/configuration/defaults.py:113` `prereview_skip` = "reviewer" sends every skipped local pre-review to the paid reviewer. Saving: about 0.008 USD per avoided reviewer session if the lead sets "ask_main" for skips.
-- other (retries): `.claude/tools/pipeline/plan_check_task.py:43` runs brieflint at plan time; retry notes name brief Test-line defects (3 of 18 retries), which reach the dev. Saving: about 0.009 USD per avoided dev retry (docs-cleanup haiku dev average).
+Fix candidates `defaults.py` `prereview_skip` and `plan_check_task.py` were dropped: `defaults.py` is a predicted path of task-12 (C3), and brieflint already runs at plan time (`plan_check.py` calls it for every task). Next sinks taken: review rounds (late findings) and other (retries from a malformed brief Test line).
+
+- review rounds: `.claude/agents/reviewer.md:124` tells the reviewer to list every finding in the first verdict, so no extra round is spent on held-back findings. Saving: about 0.008 USD per avoided reviewer session. done: grep -n "One review round per diff" .claude/agents/reviewer.md
+- other (retries): `.claude/agents/dev.md:118` tells the dev to reply BLOCKED on a malformed brief Test line at turn one, not to burn retries (3 of 18 retries were Test-line defects). Saving: about 0.009 USD per avoided dev retry (docs-cleanup haiku dev average). done: grep -n "Brief Test line malformed" .claude/agents/dev.md
+
+## After
+
+No run is started here; numbers are expected from the Before counts and the per-session averages above.
+
+| sink | retro-m25 | m26-fixes | docs-cleanup |
+|---|---|---|---|
+| repeat reads | 0 (expected, unchanged) | not available | not available |
+| re-planning | 15 (expected, unchanged) | not available | 2 (expected, unchanged) |
+| review rounds | 100 (expected: about 25 avoided reviewer sessions) | not available | 4 (expected: 1 avoided) |
+| Opus calls without a stated reason | 0 (expected, unchanged) | not available | 0 (expected, unchanged) |
+| other | 15 (expected: 3 avoided retries) | not available | 2 (expected: 1 avoided) |

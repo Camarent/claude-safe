@@ -120,3 +120,5 @@ If the project CLAUDE.md has a `## Guidelines` section, read every listed file (
 Unknown location: `lp find "question"` first. Known file/symbol or exhaustive callers/impact: grep or `nav`. Exclude minified vendor JS from grep (`--glob '!*.min.js'` / `grep --exclude='*.min.js'`).
 
 If the report file cannot be written, put the full report in the reply text instead (orch.py saves it when the file is missing).
+
+One review round per diff: list every finding in the first verdict (wrong, risky, nit with `path:line`); do not hold a finding back for a later round.
