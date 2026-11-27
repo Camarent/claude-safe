@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
-from pipeline.configuration import AGENTS_DIR, JQ_FILE_MAX_BYTES, QRUN_PATTERN
+from pipeline.configuration import AGENTS_DIR, JQ_FILE_MAX_BYTES, QRUN_CHAIN_READ_ONLY, QRUN_PATTERN
 from pipeline.plan_files import paths_in
 from pipeline.plan_rules import main_checkout_problems, untracked_problems
 
@@ -17,6 +17,9 @@ JQ_RE = re.compile(r"\bjq\b(?:\s+-\S+)*\s+(?:'([^']*)'|\"([^\"]*)\")\s+([\w./-]+
 JQ_CHAIN_RE = re.compile(r"\s*((?:\.[^\s.\[\]|,()\"']+)+)")  # the leading `.a.b` chain of a filter
 JQ_KEY_RE = re.compile(r"[A-Za-z_]\w*$")
 JQ_STRING_RE = re.compile(r"\"[^\"]*\"|'[^']*'")
+QRUN_HEAD_RE = re.compile(rf"{QRUN_PATTERN}\s+--(?=\s|$)")  # a call that opens with qrun and its `--`
+CHAIN_OPS_RE = re.compile(r"[;|]")  # shell operators: qrun runs no shell, so a Test line never uses them
+READ_ONLY_TAIL_RE = re.compile(r"[<>`]|\$\(")  # a redirect or a substitution is not a read-only tail
 
 
 def _missing_jq_key(filt, data):
@@ -68,16 +71,30 @@ def _untracked_problems(text, repo, git):
     return untracked_problems(paths_in(text), repo, git) if repo else []
 
 
+def _chain_problems(t):
+    """Chain checks for one Test: line, quotes stripped. No `;` or `|`; the first `&&` segment is `cs-qrun --`;
+    each later segment is `cs-qrun --` or a plain read-only command."""
+    if CHAIN_OPS_RE.search(t):
+        return ["Test line has ; or | (qrun runs no shell; the agents' sandbox denies chains): one cs-qrun command, or cs-qrun -- cmd && read-only cmd"]
+    first, *rest = t.split("&&")
+    if not QRUN_HEAD_RE.match(first.strip()):
+        return ["Test line does not start with cs-qrun -- (the test must run through qrun): write Test: cs-qrun -- cmd"]
+    for seg in map(str.strip, rest):
+        words = seg.split()
+        if QRUN_HEAD_RE.match(seg) or (words and words[0] in QRUN_CHAIN_READ_ONLY and not READ_ONLY_TAIL_RE.search(seg)):
+            continue
+        return ["Test line chains with && a command that is not cs-qrun or read-only (qrun runs no shell): wrap the chain as qrun -- bash -c '...'"]
+    return []
+
+
 def _test_prefix_problems(text, repo):
     p = []
     for m in re.finditer(r"(?m)^Test:\s*(.*)$", text):
         # quoted text is a shell script or one literal argument, not a chain here: strip it once for the checks below
         t = re.sub(r"'[^']*'|\"[^\"]*\"", "", m[1])
-        if re.match(r"[A-Z_][A-Z0-9_]*=", t) or re.search(r"(?:^|\s)env\s|&&|;|\bcd\s", t):
-            p.append("Test line has a VAR= prefix, env, cd, && or ; (the agents' sandbox denies it): one command through qrun, qrun applies test_env")
-        # qrun runs no shell: a chain after qrun needs bash -c '...' (the quoted script is then not checked)
-        if re.search(r"qrun(\.py)?\s+--\s.*&&", t):
-            p.append("Test line chains with && after qrun (qrun runs no shell): wrap the chain as qrun -- bash -c '...'")
+        if re.match(r"[A-Z_][A-Z0-9_]*=", t) or re.search(r"(?:^|\s)env\s|\bcd\s", t):
+            p.append("Test line has a VAR= prefix, env or cd (the agents' sandbox denies it): one command through qrun, qrun applies test_env")
+        p += _chain_problems(t)
         if any(re.fullmatch(r"[\w./-]*\*[\w./*-]*", tok) for tok in t.split()):
             p.append("Test line has an unquoted glob (qrun runs no shell, so it is never expanded): name the directory or file")
         p += main_checkout_problems(m[1], repo)
