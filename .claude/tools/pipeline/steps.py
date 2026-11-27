@@ -52,6 +52,7 @@ from .configuration import (
 )
 from .e1 import model_for
 from .plan_files import paths_in, task_type
+from .report_preflight import PREFLIGHT_WHY, diff_paths, done_line
 from .routing_log import UNLOGGED_WHY, unlogged_routes
 from .stagedir import resolve_stage
 from .steps_docfix import DOCFIX_WHY, repeated_pair
@@ -241,6 +242,34 @@ def _quality_or_review(a, task, mine, rid, s):
 
 
 def _to_review(a, task, mine, rid):
+    """The report preflight (script, when the task has a Done line), then the local pre-review and the paid reviewer."""
+    return _preflight_script(a, task, mine, rid) or _prereview_or_review(a, task, mine, rid)
+
+
+def _preflight_script(a, task, mine, rid):
+    """The report preflight dispatch: the dev report checked against the task's Done line by script. None when the task has no Done line,
+    no dev report, or the preflight already sent the task back PREREVIEW_FREE_ROUNDS times (the same cap as the pre-review)."""
+    brief = work_path(os.path.join(getattr(a, "dir", "."), WORK_DIR, a.stage), task["id"] + ".md")
+    rep = next((e["file"] for e in reversed(mine) if e["ev"] == EV_REPORT and e.get("role") == "dev" and e.get("file")), "")  # the dev report, not a script's
+    if not rep or not done_line(read_text(brief)) or len(_script_fails(a, task, mine, PREFLIGHT_WHY)) >= PREREVIEW_FREE_ROUNDS:
+        return None
+    changed = "".join(f" --changed {shlex.quote(p)}" for p in diff_paths(_pre_review_diff(a, task)))
+    return _script(
+        task,
+        rid,
+        PREFLIGHT_WHY,
+        f"{tool_cmd('pipeline/report_preflight.py')} --brief {shlex.quote(brief)} --report {shlex.quote(rep)}{changed}",
+    )
+
+
+def _script_fails(a, task, mine, word):
+    """The FAIL reports of this task's script dispatches whose `why` starts with `word`, over the whole event log (an auto-retry does not reset them)."""
+    full = [e for e in (getattr(a, "orch_events", None) or mine) if e.get("task") == task["id"]]
+    ids = script_ids(full, word)
+    return [e for e in full if e["ev"] == EV_REPORT and e["id"] in ids and e["verdict"] == FAIL]
+
+
+def _prereview_or_review(a, task, mine, rid):
     """The local pre-review (if on) before each paid review, then the paid reviewer. The pre-review is skipped once the dev used its last try, so
     the local model can never keep a task away from the paid reviewer (Haiku, Haiku, Sonnet, Sonnet: each earlier try faces the gate)."""
     if prereview_on(a) and _tries(mine, "dev") < MAX_TRIES and not _prereview_done(a, task, mine):
@@ -259,7 +288,7 @@ DIFF_SHA_RE = re.compile(r"^diff-sha: (\w+)", re.M)
 def _prereview_done(a, task, mine):
     """True when another pre-review is pointless: it already sent the task back PREREVIEW_FREE_ROUNDS times (counted over the whole event log, an auto-retry does
     not reset it), or the dev's rework left the diff as it was when the last pre-review FAILed (no new commit)."""
-    fails = _pre_review_fails(a, task, mine)
+    fails = _script_fails(a, task, mine, "local pre-review")
     if len(fails) >= PREREVIEW_FREE_ROUNDS:
         return True
     m = DIFF_SHA_RE.search(read_text(fails[-1]["file"])) if fails else None
@@ -269,13 +298,6 @@ def _prereview_done(a, task, mine):
     if diff and hashlib.sha256(diff.encode("utf-8")).hexdigest()[:DIFF_SHA_LEN] == m.group(1):
         return True
     return _files_unchanged(a, task, m.group(1))
-
-
-def _pre_review_fails(a, task, mine):
-    """The FAIL reports of this task's local pre-reviews, over the whole event log (an auto-retry does not reset them)."""
-    full = [e for e in (getattr(a, "orch_events", None) or mine) if e.get("task") == task["id"]]
-    ids = script_ids(full, "local pre-review")
-    return [e for e in full if e["ev"] == EV_REPORT and e["id"] in ids and e["verdict"] == FAIL]
 
 
 def _pre_review_diff(a, task) -> str:
@@ -412,6 +434,12 @@ def _reviewer_before(mine, dev_report):
 
 def _script_followup(a, task, mine, rid, s, last):
     """The script steps that name a follow-up (escalation gate, checks after a BLOCKED dev, environment repair). None for the others."""
+    if last["id"] in script_ids(
+        mine, PREFLIGHT_WHY
+    ):  # FAIL -> the dev reworks, a free round (no review round); otherwise on to the pre-review and the reviewer
+        if last["verdict"] == FAIL:
+            return _disp(a, task, rid, "dev", rework=last["file"], free=True, mine=mine)
+        return _prereview_or_review(a, task, mine, rid)
     if last["id"] in script_ids(
         mine, "escalation gate"
     ):  # the gate only guards the step before it: plan that step again without the gate events (`_gate` then reads the verdict)
