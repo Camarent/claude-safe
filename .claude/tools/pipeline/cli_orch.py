@@ -495,13 +495,18 @@ def _record_conflict(a, log, e):
 def _refresh_job(a, log):
     """retry: rebase the job branch onto the stage branch; drop uncommitted leftovers of the dead dev (logged, commits kept). A conflict records the step BLOCKED and stops the retry with the resolve command."""
     print(REFRESH_PROGRESS.format(step=a.step), file=sys.stderr, flush=True)
+    picks = getattr(a, "pick", [])
     try:
-        res = worktree.refresh(a.dir, a.stage, a.step, discard=True)
+        res = worktree.pick_commits(a.dir, a.stage, a.step, picks) if picks else worktree.refresh(a.dir, a.stage, a.step, discard=True)
     except worktree.RefreshConflict as e:
         reason = _record_conflict(a, log, e)
         sys.exit(f"orch: retry {a.step} BLOCKED: {reason}")
     except RuntimeError as e:
         sys.exit(f"orch: retry {a.step} BLOCKED: {e}")
+    if picks:
+        append_event(log, {"ev": "retry_refresh", "task": a.step, **res})
+        jprint({"picked": a.step, **res})
+        return
     if res["rebased"] or res["discarded"]:
         append_event(log, {"ev": "retry_refresh", "task": a.step, **res})
         jprint({"refreshed": a.step, **res})
@@ -701,6 +706,13 @@ def main(argv=None) -> None:
             if name == "retry":
                 p.add_argument("--from", dest="from_step", default="", choices=["", "review"])
                 p.add_argument("--addendum", default="")
+                p.add_argument(
+                    "--pick",
+                    nargs="+",
+                    default=[],
+                    metavar="SHA",
+                    help="rebuild the job branch from the stage tip and cherry-pick these own commits of the job, in the given order; the other commits are dropped",
+                )
                 p.add_argument(
                     "--verify", action="store_true", help="run the task's Test lines and Done gates on the job commit; record DONE if green, start no dev"
                 )

@@ -16,6 +16,7 @@ from .configuration import (
     EV_SETUP,
     GIT_LONG_TIMEOUT_S,
     METRICS_LOG,
+    PICK_BACKUP_REF,
     PROJECT_DEFAULTS,
     WORK_DIR,
     work_branch,
@@ -270,6 +271,47 @@ def refresh(a_dir, stage, task, discard=False) -> dict[str, list]:
             continue
         _rebase_job(path, rel, base, info["branch"])
         res["rebased"].append(rel)
+    return res
+
+
+def pick_commits(a_dir, stage, task, shas) -> dict[str, list]:
+    """retry --pick: rebuild the main repo's job branch from its stage tip: the old tip is kept as a backup ref, the branch is reset to the tip and `shas` are cherry-picked in the given order. Every sha must be an own commit of the job (base..HEAD); one that is not is refused before any write. A failed cherry-pick is aborted (no pick state left): the picks made so far stay, and the RuntimeError names the old tip and its backup ref. -> {"discarded": [...], "picked": [...]}"""
+    info = live_job(a_dir, stage, task)
+    if not info:
+        raise RuntimeError(f"no live job for {task}: nothing to pick from")
+    _cfg, repo, _root, _b = layout(a_dir, stage, task)
+    rel = os.path.basename(repo)
+    path = _job_worktrees(info).get(rel)
+    if not path:
+        raise RuntimeError(f"{task} has no job worktree for {rel}: nothing to pick from")
+    base = _base_branch(repo, info["base"])
+    own = _own_commits(path, base)
+    if own is None:
+        raise RuntimeError(f"the job commits of {info['branch']} could not be listed (git timed out): nothing picked")
+    own_shas = {c["sha"] for c in own}
+    full = []
+    for s in shas:
+        sha = git(path, "rev-parse", "--verify", "--quiet", f"{s}^{{commit}}", check=False)
+        if sha not in own_shas:
+            raise RuntimeError(f"--pick refused: {s} is not a commit of {info['branch']} on top of {base} (nothing reset)")
+        full.append(sha)
+    res: dict[str, list] = {"discarded": [], "picked": []}
+    old = git(path, "rev-parse", "HEAD")
+    ref = f"{PICK_BACKUP_REF}/{old}"
+    git(path, "update-ref", ref, old)  # the old tip survives the reset below
+    _skip_dirty(path, rel, True, res)  # uncommitted leftovers of the dead dev go (logged)
+    git(path, "reset", "--hard", "-q", base)
+    for sha in full:
+        r = gitx.run(path, "cherry-pick", sha, timeout=GIT_LONG_TIMEOUT_S)
+        if r.returncode:
+            why = (r.stdout + r.stderr).strip()[-300:]
+            with contextlib.suppress(subprocess.SubprocessError):
+                gitx.run(path, "cherry-pick", "--abort", timeout=GIT_LONG_TIMEOUT_S)
+            raise RuntimeError(
+                f"cherry-pick of {sha} onto {base} in {rel} failed (aborted, not resolved): {why}. The old tip {old} is kept as {ref}; "
+                f"git -C {path} reset --hard {old} restores it"
+            )
+        res["picked"].append(sha)
     return res
 
 

@@ -29,6 +29,7 @@ FETCH_FAIL_MARKS = (
 )  # gate output with one of these = a network/db fetch failure, not a real finding
 FETCH_FAIL_LINE = "network/db fetch failed, retry"  # line added to a gate's output when only a fetch failure made it red
 FETCH_RETRIES = 1  # extra runs of a gate whose red output is a fetch failure
+PICK_BACKUP_REF = "refs/orch-pick-backup"  # retry --pick: the job's old tip is kept as <this>/<sha> before the branch is rebuilt
 BLOCKED_FILE = "BLOCKED.md"  # written into a stage/feature folder when a run stops blocked
 GAPS_FILE = "GAPS.md"  # written into the feature folder when a plan run ends with plan-review gaps left (its GAPS: block)
 PHASES_DIR, REPORTS_DIR, AUDITS_DIR, BASE_FILE = (
