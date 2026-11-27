@@ -534,10 +534,15 @@ def _code_settings(a, hdr, policy, root):
     for c in [a.test, *extra_cmds]:
         if not command_ok(c, policy):
             sys.exit(f"localdev: command not allowed by localdev/policy.json: {c!r}")
+    return extra_cmds, _read_also_dirs(hdr, root, policy)
+
+
+def _read_also_dirs(hdr, root, policy):
+    """The task's 'Read also' directories (absolute). Exits when there are too many or one does not exist."""
     read_dirs = [os.path.abspath(os.path.join(root, d.strip())) for d in hdr.get("read_also", "").split(",") if d.strip()]
     if len(read_dirs) > policy["max_read_also_dirs"] or any(not os.path.isdir(d) for d in read_dirs):
         sys.exit("localdev: 'Read also' has too many directories or one does not exist")
-    return extra_cmds, read_dirs
+    return read_dirs
 
 
 def _code_prompt(task_rel, task_paths, test):
@@ -620,6 +625,14 @@ def _code_test(test, wt):
         return subprocess.CompletedProcess(test, 1, stdout="", stderr=f"test run failed: {e}")
 
 
+def _code_summary(root, cid, verdict, branch, wt, files, viol, t, res, rep):
+    """Print the two result lines of a code task: verdict, files, test, turns, reverts; then branch and report."""
+    test_state = "OK" if t.returncode == 0 else "FAIL"
+    print(f"LOCALDEV code {verdict} id={cid} files={files} test={test_state} turns={res['turns']} secs={res['secs']}" + (f" reverted={viol}" if viol else ""))
+    state = "committed" if verdict == PASS else "left as is for inspection"
+    print(f"branch {branch} (worktree {wt}, {state})   report: {os.path.relpath(rep, root)}")
+
+
 def code_task(a):
     """Run one code task in its own git worktree and branch: agent edits, test run, commit on PASS. Returns 0 on PASS, 1 otherwise."""
     root = os.path.abspath(a.repo)
@@ -655,11 +668,7 @@ def code_task(a):
     committed = _commit_leftovers(wt, cid, task_rel, task_paths) if verdict == PASS else False
     rep = os.path.join(base_dir, "report.md")
     _code_report(rep, cid, verdict, branch, base, files, viol, a.test, t, res)
-    print(
-        f"LOCALDEV code {verdict} id={cid} files={files} test={'OK' if t.returncode == 0 else 'FAIL'} turns={res['turns']} secs={res['secs']}"
-        + (f" reverted={viol}" if viol else "")
-    )
-    print(f"branch {branch} (worktree {wt}, {'committed' if verdict == 'PASS' else 'left as is for inspection'})   report: {os.path.relpath(rep, root)}")
+    _code_summary(root, cid, verdict, branch, wt, files, viol, t, res, rep)
     log_run(
         root,
         {

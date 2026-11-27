@@ -100,6 +100,21 @@ def main(argv=None):
     res = {"gold": a.gold, "cold": cold_runs(g["repo"], text, cfg, g["files"], runs), "meta": eval_meta(g["repo"], cfg)}
     if lines is not None:
         res["quick_lines"] = len(lines)
+    _print_cold(res, g, lines)
+    if a.check_cache:
+        res["cache"] = _cache_report(g["repo"], text, cfg)
+    if a.out:
+        with open(a.out, "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=1)
+    return 0
+
+
+def _mean(x):
+    return sum(x) / len(x) if x else 1.0
+
+
+def _print_cold(res, g, lines):
+    """Print the cold-run recall line and the meta line of the eval result RES."""
     hs = [r["hits"] for r in res["cold"]]
     lo, hi = spread(hs)
     print(
@@ -109,24 +124,19 @@ def main(argv=None):
     m = res["meta"]
     extra = f", request lines {len(lines)}" if lines is not None else ""
     print(f"EVAL meta: model {m['model']}, prompt {m['prompt_hash']}, files listed {m['files_listed']}, date {m['date']}{extra}", flush=True)
-    if a.check_cache:
-        rows = cache_check(g["repo"], text, cfg)
-        cv = [overlap(c, f) for _, c, f, _ in rows]
-        ff = [overlap(f, f2) for _, _, f, f2 in rows]
 
-        def mean(x):
-            return sum(x) / len(x) if x else 1.0
 
-        res["cache"] = {"sections": len(rows), "cached_vs_fresh": [round(x, 2) for x in cv], "fresh_vs_fresh": [round(x, 2) for x in ff]}
-        verdict = "consistent with the model's own noise" if mean(cv) >= mean(ff) - 0.1 else "LOWER than the model's own noise: check the cache key"
-        print(
-            f"EVAL cache: {len(rows)} cached lines, overlap cached-vs-fresh mean {mean(cv):.2f} (min {min(cv, default=1):.2f}), fresh-vs-fresh mean {mean(ff):.2f} (min {min(ff, default=1):.2f}): {verdict}",
-            flush=True,
-        )
-    if a.out:
-        with open(a.out, "w", encoding="utf-8") as f:
-            json.dump(res, f, indent=1)
-    return 0
+def _cache_report(repo, text, cfg):
+    """Print the cache-key check (cached vs fresh overlap) and return its record for the result."""
+    rows = cache_check(repo, text, cfg)
+    cv = [overlap(c, f) for _, c, f, _ in rows]
+    ff = [overlap(f, f2) for _, _, f, f2 in rows]
+    verdict = "consistent with the model's own noise" if _mean(cv) >= _mean(ff) - 0.1 else "LOWER than the model's own noise: check the cache key"
+    print(
+        f"EVAL cache: {len(rows)} cached lines, overlap cached-vs-fresh mean {_mean(cv):.2f} (min {min(cv, default=1):.2f}), fresh-vs-fresh mean {_mean(ff):.2f} (min {min(ff, default=1):.2f}): {verdict}",
+        flush=True,
+    )
+    return {"sections": len(rows), "cached_vs_fresh": [round(x, 2) for x in cv], "fresh_vs_fresh": [round(x, 2) for x in ff]}
 
 
 if __name__ == "__main__":

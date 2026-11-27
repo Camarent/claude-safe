@@ -81,21 +81,29 @@ def decide(rc, out, diff=None, text=None):
     return SKIPPED, f"local review skipped (rc {rc}): {out.strip()[:REASON_CUT]}"
 
 
-def usage_context(d, paths, max_syms=8):
-    """What else uses the definitions this diff adds or changes (`lp nav refs`), packed, so the reviewer can see a broken caller. "" when lp knows nothing."""
-    out, n = [], 0
+def _changed_defs(d, paths):
+    """(file, line, symbol) of the definitions this diff adds or changes, in PATHS when given."""
     for f, ranges in added_ranges(d, "HEAD").items():
         if (paths and not any(f == p.rstrip("/") or f.startswith(p.rstrip("/") + "/") for p in paths)) or not ranges:
             continue
         for ln, sym in definitions(lp(d, "nav", "outline", f).splitlines(), lambda x, ranges=ranges: any(a <= x <= b for a, b in ranges)):
-            if n >= max_syms:
-                break
-            n += 1
-            used, text = uses_of(d, f, sym)
-            out.append(
-                f"- {'~' if text else ''}{sym} ({f}:{ln}): "
-                + (", ".join(used[:5]) + (f" +{len(used) - 5}" if len(used) > 5 else "") if used else "no other use")
-            )
+            yield f, ln, sym
+
+
+def _use_line(d, f, ln, sym):
+    """One bullet: the definition, its uses (`lp nav refs`), ~ when only a word search found them."""
+    used, text = uses_of(d, f, sym)
+    where = "no other use" if not used else ", ".join(map(str, used[:5])) + (f" +{len(used) - 5}" if len(used) > 5 else "")
+    return f"- {'~' if text else ''}{sym} ({f}:{ln}): {where}"
+
+
+def usage_context(d, paths, max_syms=8):
+    """What else uses the definitions this diff adds or changes (`lp nav refs`), packed, so the reviewer can see a broken caller. "" when lp knows nothing."""
+    out: list[str] = []
+    for f, ln, sym in _changed_defs(d, paths):
+        if len(out) >= max_syms:
+            break
+        out.append(_use_line(d, f, ln, sym))
     return ("\n\n## Other files that use the changed definitions (lp nav refs; ~ = word search only)\n" + "\n".join(out) + "\n") if out else ""
 
 
