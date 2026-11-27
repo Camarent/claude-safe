@@ -71,6 +71,19 @@ def family(text, cmd=""):
     return "other: " + text[:45]
 
 
+MULTI_FIX = "one command per Bash call; qrun form: cs-qrun -- <cmd> && <read-only cmd>"
+CLASSIFIER_FIX = "split the command; run reads separately"
+
+
+def fix_for(label):
+    """-> the allowed form for a family label, or "" when no fix is known (the harness texts have no hook to change)."""
+    if label.startswith("multi: "):
+        return MULTI_FIX
+    if label.startswith("other: ") and "classifier" in label.lower():
+        return CLASSIFIER_FIX
+    return ""
+
+
 def result_text(block):
     c = block.get("content")
     if isinstance(c, list):
@@ -157,6 +170,8 @@ def render(s, examples):
     out.append("Families:")
     for f in s["families"]:
         out.append(f"  {f['count']:5d}  {100 * f['share']:5.1f}%  {f['family']}")
+        if fix_for(f["family"]):
+            out.append("          fix: " + fix_for(f["family"]))
         if examples:
             out.append("          e.g. " + f["example"][:160].replace("\n", " "))
     return "\n".join(out)

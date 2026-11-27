@@ -68,6 +68,34 @@ class Scan(unittest.TestCase):
         self.assertIn("denied: 2", denials.render(s, 1))
 
 
+class Fix(unittest.TestCase):
+    def test_multi_and_classifier_get_fix_line(self):
+        self.assertEqual(denials.fix_for(denials.family(MULTI + "make all", "")), denials.MULTI_FIX)
+        self.assertEqual(denials.fix_for(denials.family(MULTI + "cd /w", "")), denials.MULTI_FIX)
+        classifier = denials.family("The classifier blocked this compound command", "")
+        self.assertEqual(denials.fix_for(classifier), denials.CLASSIFIER_FIX)
+
+    def test_unknown_family_prints_no_fix(self):
+        self.assertEqual(denials.fix_for(denials.family("weird blocked thing", "")), "")
+        self.assertEqual(denials.fix_for("sed"), "")
+
+    def test_render_prints_fix_under_family(self):
+        s = {
+            "bash_calls": 4,
+            "denied": 3,
+            "rate": 0.75,
+            "per_day": {},
+            "families": [
+                {"family": "multi: other (make all)", "count": 2, "share": 2 / 3, "example": "make all"},
+                {"family": "sed", "count": 1, "share": 1 / 3, "example": "sed -i x"},
+            ],
+        }
+        out = denials.render(s, 0).splitlines()
+        i = out.index(f"  {2:5d}  {100 * 2 / 3:5.1f}%  multi: other (make all)")
+        self.assertIn("fix: " + denials.MULTI_FIX, out[i + 1])
+        self.assertFalse(any("fix:" in line for line in out[i + 2 :]))
+
+
 class DeniedGuard(unittest.TestCase):
     def test_guard_name_ends_each_entry_in_order(self):
         den = [
