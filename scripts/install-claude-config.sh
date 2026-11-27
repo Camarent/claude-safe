@@ -30,7 +30,7 @@ claude_config_sync() {
 claude_config_drift() {
   local n out
   for n in $(claude_config_items); do
-    out="$(claude_config_sync "$n" -n -i)" || die "rsync dry run failed for $n: nothing checked, nothing changed"
+    out="$(claude_config_sync "$n" -n -i -c)" || die "rsync dry run failed for $n: nothing checked, nothing changed"
     grep -q '^>f' <<<"$out" && return 0
   done
   return 1
@@ -89,7 +89,7 @@ dry_run_claude_config() {
   local n line out count=0
   say "dry run: files that would change in $HOME/.claude (nothing written):"
   for n in $(claude_config_items); do
-    out="$(claude_config_sync "$n" -n -i)" || die "rsync dry run failed for $n: nothing listed, nothing changed"
+    out="$(claude_config_sync "$n" -n -i -c)" || die "rsync dry run failed for $n: nothing listed, nothing changed"
     while IFS= read -r line; do
       case "$line" in '>f'*) say "  ${line:12}"; count=$((count + 1)) ;; esac
     done <<<"$out"
