@@ -5,7 +5,7 @@ import os
 import re
 import shlex
 
-from . import maincheck
+from . import gitx, maincheck, webtest_report
 from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, research_prompt, testrun_on, webtest_prompt
 from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
@@ -694,8 +694,18 @@ def is_webtest(a, task) -> bool:
     return task_type(read_text(work_path(os.path.join(repo, WORK_DIR, a.stage), task["id"] + ".md"))) == "webtest"
 
 
+def _branch_head(a) -> str:
+    """-> the HEAD sha of the stage checkout (the commit head_note puts in the web-tester brief), "" when git cannot read it."""
+    return gitx.try_text(os.path.abspath(getattr(a, "dir", ".")), "rev-parse", "HEAD").strip()
+
+
+def _stale_web_report(a, rep) -> str | None:
+    """-> the reason the web-tester report REP is stale (no HEAD line, or a HEAD other than the branch HEAD), or None when it is for the branch HEAD."""
+    return webtest_report.stale(read_text(rep["file"]), _branch_head(a))
+
+
 def _next_webtest(a, task, mine, rid):
-    """The steps of a `Type: webtest` task: web-tester (PASS) -> the task's Test lines by script (they validate its report) -> done. Anything else goes to the lead once."""
+    """The steps of a `Type: webtest` task: web-tester (PASS) -> the task's Test lines by script (they validate its report) -> done. Anything else goes to the lead once; a stale report goes to the lead too."""
     if any(e["ev"] == EV_SKIP for e in mine):
         return None
     last = mine[-1] if mine else None
@@ -712,6 +722,9 @@ def _next_webtest(a, task, mine, rid):
                 "action": "ask_main",
                 "message": f"{task['id']}: web-tester verdict {last['verdict']} ({last.get('reason', '')}); report {last['file']}" + hint(a, task["id"]),
             }
+        why = _stale_web_report(a, last)
+        if why:
+            return {"action": "ask_main", "message": f"{why}; report {last['file']}" + hint(a, task["id"])}
         if testrun_on(a) and not script_ids(mine, "test run"):
             return _test_run_script(a, task, rid, "test run (the task's Test lines check the web-tester's report on the stage branch checkout)")
         return None
@@ -843,25 +856,36 @@ def _phase_failed_ask(a, st, rep):
     )
 
 
+def _phase_step(a, evs, st) -> tuple[str, str] | None:
+    """One parallel step: ("ask", message), ("dispatch", "") when it still needs a dispatch, None when satisfied."""
+    mine = history(evs, st["id"])
+    if st.get("pause"):  # lead action: satisfied only by `orch.py skip --step <id>`
+        return None if any(e["ev"] == EV_SKIP for e in mine) else ("ask", st["prompt"])
+    reps = [e for e in mine if e["ev"] == EV_REPORT]
+    if any(e["ev"] == EV_SKIP for e in mine):
+        return None
+    if reps and reps[-1]["verdict"] in st["ok"]:
+        why = _stale_web_report(a, reps[-1]) if st["agent"] == WEB_TESTER else None  # the web-check gate: a report not for the branch HEAD is no pass
+        return None if why is None else ("ask", f"{why}; report {reps[-1]['file']}" + hint(a, st["id"]))
+    if not mine:
+        return ("dispatch", "")
+    if mine[-1]["ev"] == EV_DISPATCH:
+        return ("ask", f"{st['id']} ({st['agent']}) was dispatched but never reported" + hint(a, st["id"]))
+    return ("ask", _phase_failed_ask(a, st, reps[-1]))
+
+
 def run_phase(a, evs, steps, n) -> dict | None:
     """Parallel steps. -> dispatch dict (steps not yet satisfied and not failed), ask_main dict, or None when every step is satisfied."""
     ds: list = []
     asks: list = []
     for st in steps:
-        mine = history(evs, st["id"])
-        if st.get("pause"):  # lead action: satisfied only by `orch.py skip --step <id>`
-            if not any(e["ev"] == EV_SKIP for e in mine):
-                asks.append(st["prompt"])
+        r = _phase_step(a, evs, st)
+        if r is None:
             continue
-        reps = [e for e in mine if e["ev"] == EV_REPORT]
-        if any(e["ev"] == EV_SKIP for e in mine) or (reps and reps[-1]["verdict"] in st["ok"]):
-            continue
-        if not mine:
-            ds.append(_phase_dispatch(st, f"a{n + 1 + len(ds)}"))
-        elif mine[-1]["ev"] == EV_DISPATCH:
-            asks.append(f"{st['id']} ({st['agent']}) was dispatched but never reported" + hint(a, st["id"]))
+        if r[0] == "ask":
+            asks.append(r[1])
         else:
-            asks.append(_phase_failed_ask(a, st, reps[-1]))
+            ds.append(_phase_dispatch(st, f"a{n + 1 + len(ds)}"))
     if ds:
         return {"action": "dispatch", "dispatches": ds}
     if asks:

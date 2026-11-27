@@ -6,6 +6,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 os.environ["PIPELINE_NO_LEADS"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,6 +15,7 @@ from pipeline import plan_check, plan_files, plan_rules, steps
 from tests.support.tmpdirs import tracked_mkdtemp
 
 TASK = {"id": "task-1", "owner_sonnet": False, "review_sonnet": False}
+WT_HEAD = "abc1234def5678" + "0" * 26  # the stage branch HEAD the web-tester reports carry
 
 
 def ev(kind, **kw):
@@ -75,11 +77,14 @@ class WebtestTaskTest(_Base):
     def setUp(self):
         super().setUp()
         self.task_file("# task-1: smoke\nType: webtest\nTest: node check.js out.md\n")
+        head = mock.patch.object(steps, "_branch_head", return_value=WT_HEAD)  # the report HEAD line must match the branch HEAD
+        head.start()
+        self.addCleanup(head.stop)
 
     def wt_run(self, verdict, reason=""):
         return [
             ev("dispatch", id="a1", agent="web-tester", role="web-tester", model="haiku", why=None),
-            ev("report", id="a1", role="web-tester", verdict=verdict, reason=reason, file=self.report("wt.md", f"VERDICT: {verdict}\n")),
+            ev("report", id="a1", role="web-tester", verdict=verdict, reason=reason, file=self.report("wt.md", f"VERDICT: {verdict}\nHEAD: {WT_HEAD}\n")),
         ]
 
     def test_type_is_known_to_the_plan(self):
@@ -90,13 +95,13 @@ class WebtestTaskTest(_Base):
         r = self.nxt([])
         self.assertEqual((r["action"], r["agent"], r["role"], r["model"]), ("dispatch", "web-tester", "web-tester", "haiku"))
         self.assertIn("--state-dir", r["prompt"])
-        self.assertIn(".work/s/task-1.md", r["prompt"])
+        self.assertIn(f".work/s/{TASK['id']}.md", r["prompt"])
         self.assertIn("VERDICT: PASS|FAIL|BLOCKED", r["prompt"])
 
     def test_web_tester_pass_runs_the_test_lines_by_script(self):
         r = self.nxt(self.wt_run("PASS"))
         self.assertEqual((r["action"], r["role"]), ("dispatch", "script"))
-        self.assertIn("testrun.py --stage s --task task-1", r["prompt"])
+        self.assertIn(f"testrun.py --stage s --task {TASK['id']}", r["prompt"])
 
     def test_test_lines_done_ends_the_task_without_review_or_gates(self):
         mine = [
@@ -131,9 +136,9 @@ class WebtestTaskTest(_Base):
         self.assertIsNone(self.nxt([ev("skip")]))
 
     def test_testrun_runs_a_webtest_task_on_the_main_checkout_not_a_job_worktree(self):
-        self.assertEqual(testrun.workdir(self.d, "s", "task-1"), self.d)
-        self.task_file("# task-1\nType: code\n")
-        self.assertIsNone(testrun.workdir(self.d, "s", "task-1"))  # a code task never tests the main checkout
+        self.assertEqual(testrun.workdir(self.d, "s", TASK["id"]), self.d)
+        self.task_file(f"# {TASK['id']}\nType: code\n")
+        self.assertIsNone(testrun.workdir(self.d, "s", TASK["id"]))  # a code task never tests the main checkout
 
     def test_other_task_types_keep_the_dev_first(self):
         self.task_file("# task-1\nType: code\n")
@@ -148,7 +153,7 @@ class WebtestPlanWarningTest(_Base):
     def test_brief_run_by_the_web_tester_without_the_type_is_warned(self):
         out = self.warn("# t\nDone: Goal: run by the web-tester agent at 390x844\n")
         self.assertEqual(len(out), 1)
-        self.assertTrue(out[0].startswith("webtest: task-1"))
+        self.assertTrue(out[0].startswith(f"webtest: {TASK['id']}"))
         self.assertIn("Type: webtest", out[0])
 
     def test_type_webtest_and_unrelated_mentions_are_quiet(self):
@@ -156,7 +161,7 @@ class WebtestPlanWarningTest(_Base):
         self.assertEqual(self.warn("# t\nDone: the final web-tester pass checks the page later\n"), [])
 
     def test_the_warning_never_fails_a_check(self):
-        self.assertEqual(plan_check.errors_of(["webtest: task-1: says 'x' but is not `Type: webtest`"]), [])
+        self.assertEqual(plan_check.errors_of([f"webtest: {TASK['id']}: says 'x' but is not `Type: webtest`"]), [])
 
 
 if __name__ == "__main__":

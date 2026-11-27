@@ -20,7 +20,7 @@ from .audit_phases import (
     fix_step,
     last_report,
 )
-from .briefs import UNVERIFIED_RULE, serve_dir, tail, ux_flows_note, webtest_build_note
+from .briefs import UNVERIFIED_RULE, head_note, serve_dir, tail, ux_flows_note, webtest_build_note
 from .configuration import (
     ACCEPTANCE_STEP,
     BLOCKED,
@@ -421,6 +421,7 @@ def _web_test_step(a, cfg, ids, sid, ok, prev=""):
         f" Serve only with servectl and this state dir: `--state-dir {shlex.quote(serve_dir(a))}`."
         + webtest_build_note(cfg)
         + ux_flows_note(a, cfg)
+        + head_note(a)
         + f" Check {WEBTEST_WIDTHS} in light and dark, include one wrong-input path and the end state of a flow (a session's finish screen) when a task changes it; read console and network messages."
         + (
             f" Re-check: the fix tasks ran; verify only the FAIL and UNVERIFIED items of the earlier report {prev} and say PASS or FAIL per item."
