@@ -469,6 +469,11 @@ def ux_flows_findings(d, ents, repo) -> list[str]:
     flows, probs = read_flows(path)
     if probs:
         return [f"ux_flows: {p}" for p in probs]
+    return _uncovered_ui_warning(cfg, rel, produced, flows)
+
+
+def _uncovered_ui_warning(cfg, rel, produced, flows) -> list[str]:
+    """-> the `ux-flows:` warning naming the UI files of the plan that no flow covers, [] when all are covered."""
     globs = ui_paths(cfg)
     changed = [p for p in produced if any(fnmatch.fnmatch(p, g) or fnmatch.fnmatch(os.path.basename(p), g) for g in globs) and not _same(p, rel)]
     _, loose = covering(flows, changed)
@@ -557,14 +562,19 @@ def _later_notes_problems(d, ents, ok_bullets) -> list[str]:
     if not os.path.isfile(path):
         return []
     items = [x for x in Path(path).read_text(encoding="utf-8", errors="replace").splitlines() if x.startswith("- ")]
-    paths = {p for e in ents for p in task_paths(d, e["id"]) if p}
-    # whole-token match of the path or its file name, never a substring (`a` must not match `data`)
-    names = {n for p in paths for n in (p, os.path.basename(p)) if n}
-    named = [x for x in items if any(re.search(rf"(?<![\w.-]){re.escape(n)}(?![\w-])", x) for n in names)]
+    named = _notes_naming_paths(d, ents, items)
     return [
         f"carried-notes: `{x[2:]}` names a path of this stage: add a `- task-N ...` or `- {CARRIED_NOT_NEEDED} reason` line to `## {CARRIED_SECTION}`"
         for x in named[len(ok_bullets) :]
     ]
+
+
+def _notes_naming_paths(d, ents, items) -> list[str]:
+    """-> the later-notes bullets that name a path (or its file name) of this stage's tasks, in file order."""
+    paths = {p for e in ents for p in task_paths(d, e["id"]) if p}
+    # whole-token match of the path or its file name, never a substring (`a` must not match `data`)
+    names = {n for p in paths for n in (p, os.path.basename(p)) if n}
+    return [x for x in items if any(re.search(rf"(?<![\w.-]){re.escape(n)}(?![\w-])", x) for n in names)]
 
 
 GATE_RE = re.compile(r"^gate:\s*(uncertainty gate|owner step or real-data run|separate repo|30-task cap)\b", re.I)

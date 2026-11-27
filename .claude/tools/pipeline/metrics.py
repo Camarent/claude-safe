@@ -28,6 +28,15 @@ def session_line(c, id, agent, model, u, verdict="", task="", reason="") -> dict
         "verdict": verdict,
         "error": u["error"],
     }
+    _add_optional(rec, u, verdict, reason)
+    c.cost += rec["cost_usd"]
+    c.sess.append(rec)
+    append_jsonl(c.metrics, rec)
+    return rec
+
+
+def _add_optional(rec, u, verdict, reason) -> None:
+    """Add the optional fields of one session record in place: each is absent when its source is empty (old lines have none of them)."""
     if u.get("seconds_api"):
         # `seconds` is claude wall time and includes backgrounded waits; `seconds_api` is only API time. Absent in old lines.
         rec["seconds_api"] = u["seconds_api"]
@@ -41,10 +50,6 @@ def session_line(c, id, agent, model, u, verdict="", task="", reason="") -> dict
         rec["search"] = u["search"]  # optional {local:find|local:nav-def|grep|glob: calls}; share = local / all
     if reason and verdict in (BLOCKED, FAIL):
         rec["reason"] = reason  # why the step did not pass (first line of its report); absent on other verdicts and in old lines
-    c.cost += rec["cost_usd"]
-    c.sess.append(rec)
-    append_jsonl(c.metrics, rec)
-    return rec
 
 
 def event(c, name, **fields) -> None:
