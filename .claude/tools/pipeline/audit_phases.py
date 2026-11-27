@@ -40,6 +40,7 @@ from .configuration import (
     STALE_REPORT_NOTE,
     STALE_RETRY_STEP,
     TASKS_FILE,
+    WIRING_DIRS_KEY,
     WORK_DIR,
     allowed,
     tool_cmd,
@@ -383,6 +384,18 @@ def _audit_tool_phases(a, cfg, flags, audit_dir, has_audit_md):
             "before the audits: extra tools present",
         )
     ]
+    if cfg.get(WIRING_DIRS_KEY):  # no wiring_dirs in pipeline.json: no orphan check
+        yield [
+            step(
+                "orphan-check",
+                "script",
+                None,
+                f"{tool_cmd('pipeline/plan_wiring_orphans.py')} --workspace {shlex.quote(os.path.abspath(a.dir))} --base {audit_base(a, cfg)} --out .work/{S}/audits/orphans.md",
+                {DONE},
+                None,
+                "after the last wave: new source files that nothing imports, by script (a finding never blocks)",
+            )
+        ]
     if has_audit_md:  # no model: the audit tools run once, the auditors read the compact result
         yield [
             step(
