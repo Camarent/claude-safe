@@ -470,10 +470,10 @@ def _tree_before(cwd):
     return None
 
 
-def _record_run(cwd, argv, rc, tree):
+def _record_run(cwd, argv, rc, tree, secs=None, level=None):
     """Append the gate-run record; a failure is dropped: qrun's exit code and output never depend on it."""
     with contextlib.suppress(Exception):
-        gate_record.record(cwd, argv, rc, tree=tree)
+        gate_record.record(cwd, argv, rc, tree=tree, secs=secs, level=level)
 
 
 def main(argv=None):
@@ -499,7 +499,9 @@ def main(argv=None):
     tree = _tree_before(cwd) if recording else None  # taken before the run: a test may write files
     cmd_argv = cmd
     cmd = _parallelize(cmd, cwd)
+    level = "parallel" if cmd != cmd_argv else "serial"  # _parallelize swapped in ptest
     deadline = time.monotonic() + _timeout()  # one budget for the start command and the run
+    started = time.monotonic()
     try:
         with contextlib.ExitStack() as stack:
             extra_env = stack.enter_context(_postgres(deadline)) if a.postgres else {}
@@ -508,7 +510,7 @@ def main(argv=None):
         print(e, file=sys.stderr)
         return 2
     if recording:
-        _record_run(cwd, cmd_argv, rc, tree)
+        _record_run(cwd, cmd_argv, rc, tree, secs=round(time.monotonic() - started, 3), level=level)
     sm = summary(lines)
     if rc == 0:
         out, code = _report_ok(lines, sm, log)

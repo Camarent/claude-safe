@@ -112,7 +112,16 @@ class TestRecord(unittest.TestCase):
         self.assertEqual([r["rc"] for r in rows], [0, 2])
         self.assertEqual([r["ts"] for r in rows], [1.0, 2.0])
         self.assertEqual(len({r["run"] for r in rows}), 2)
-        self.assertEqual(set(rows[0]), {"run", "cmd", "tree", "base", "rc", "ts"})
+        self.assertEqual(set(rows[0]), {"run", "cmd", "tree", "base", "rc", "ts", "secs", "level"})
+
+    def test_secs_and_level_written_and_optional(self):
+        G.record(self.repo, ["t"], 0, now=1.0, secs=2.5, level="parallel")
+        G.record(self.repo, ["t"], 0, now=2.0)  # old caller: no secs or level given
+        log = os.path.join(self.repo, ".git", G.RECORD_FILE)
+        rows = G._entries(log)
+        self.assertEqual((rows[0]["secs"], rows[0]["level"]), (2.5, "parallel"))
+        self.assertEqual((rows[1]["secs"], rows[1]["level"]), (None, None))
+        self.assertIsNotNone(G.find_passed(self.repo, ["t"], base=rows[1]["base"]))
 
 
 if __name__ == "__main__":

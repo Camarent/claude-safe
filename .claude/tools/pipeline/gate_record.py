@@ -67,15 +67,25 @@ def skip_note(cwd, rec) -> str:
 _TREE_NOW = object()  # record(tree=...) default: hash the tree at the call
 
 
-def record(cwd, argv, rc, now=None, tree=_TREE_NOW) -> None:
-    """Append {run, cmd, tree, base, rc, ts} for this gate run; writes nothing when there is no tree or no log path.
-    tree: the tree hash taken before the run (a test may write files during it); default: taken now."""
+def record(cwd, argv, rc, now=None, tree=_TREE_NOW, secs=None, level=None) -> None:
+    """Append {run, cmd, tree, base, rc, ts, secs, level} for this gate run; writes nothing when there is no tree or no log path.
+    tree: the tree hash taken before the run (a test may write files during it); default: taken now.
+    secs: measured wall seconds of the run (None when the caller did not measure); level: how the run was executed (e.g. parallel, serial)."""
     if tree is _TREE_NOW:
         tree = tree_hash(cwd)
     path = _log_path(cwd)
     if tree is None or path is None:
         return
-    entry = {"run": uuid.uuid4().hex, "cmd": cmd_key(argv), "tree": tree, "base": _head(cwd), "rc": rc, "ts": time.time() if now is None else now}
+    entry = {
+        "run": uuid.uuid4().hex,
+        "cmd": cmd_key(argv),
+        "tree": tree,
+        "base": _head(cwd),
+        "rc": rc,
+        "ts": time.time() if now is None else now,
+        "secs": secs,
+        "level": level,
+    }
     try:
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
