@@ -10,6 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import testrun
+from pipeline import cite_check
 from pipeline.configuration import CITE_CHECK_KEY, EMPTY_TEST_KEY, JOB_DIFF_MAX_CHARS, docs_dir_of
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -54,6 +55,11 @@ def scan_clean(*_a):
 
 
 class TestRunCite(unittest.TestCase):
+    def test_cite_check_is_the_worktree_module(self):
+        # guards the mutation checks: the cite tests only prove the worktree code when pipeline.cite_check loads from this checkout
+        tools = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.assertEqual(os.path.realpath(cite_check.__file__), os.path.realpath(os.path.join(tools, "pipeline", "cite_check.py")))
+
     def run_task(self, d, prose, runner=green, report=""):
         return testrun.run("s", "task-1", d, runner=runner, scan=scan_clean, diff_fn=lambda *_a: diff_of(prose), report=report)
 
@@ -177,6 +183,24 @@ class TestRunCite(unittest.TestCase):
         verdict, note = testrun.run(
             "s", "task-1", d, runner=green, scan=scan_clean, diff_fn=lambda *_a: split_diff, report=os.path.join(d, ".work", "s", "report-x.md")
         )
+        self.assertEqual(verdict, testrun.DONE)
+        self.assertNotIn("cite check", note)
+
+    def test_report_cite_into_removed_file_is_fail(self):
+        # the job diff deletes pipeline/gone.py and the tree lacks it: a report cite into it is stale
+        deleted_diff = (
+            "diff --git a/pipeline/gone.py b/pipeline/gone.py\ndeleted file mode 100644\n--- a/pipeline/gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-x = 1\n"
+        )
+        d = box("Test: true\n", report="done, see pipeline/gone.py:1\n")
+        verdict, note = testrun.run(
+            "s", "task-1", d, runner=green, scan=scan_clean, diff_fn=lambda *_a: deleted_diff, report=os.path.join(d, ".work", "s", "report-x.md")
+        )
+        self.assertEqual(verdict, testrun.FAIL)
+        self.assertIn("report:1 cites pipeline/gone.py:1 but pipeline/gone.py is missing", note)
+
+    def test_report_cite_into_existing_file_is_done(self):
+        d = box("Test: true\n", report=f"done, {GOOD_CITE}\n")
+        verdict, note = self.run_task(d, GOOD_CITE, report=os.path.join(d, ".work", "s", "report-x.md"))
         self.assertEqual(verdict, testrun.DONE)
         self.assertNotIn("cite check", note)
 
