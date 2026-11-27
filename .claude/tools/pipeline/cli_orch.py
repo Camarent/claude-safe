@@ -465,10 +465,27 @@ def _record_conflict(a, log, e):
     evs = read_jsonl(log)
     rid = _next_retry_id(evs)
     files = ", ".join(e.files) or "none listed (timeout)"
-    reason = (
-        f"rebase onto {e.base} conflicts in {files}; resolve: git -C {e.path} rebase {e.base}, "
-        f"fix the files, git add them, git rebase --continue; then retry {a.step}"
-    )
+    if e.rebasing:  # the abort failed: the job worktree is mid-rebase, so no commit list and no rebuild line
+        lines = [f"rebase still in progress in {e.path} (abort failed); git -C {e.path} rebase --abort, then retry {a.step}"]
+    else:
+        lines = [
+            (
+                f"rebase onto {e.base} conflicts in {files}; resolve: git -C {e.path} rebase {e.base}, "
+                f"fix the files, git add them, git rebase --continue; then retry {a.step}"
+            )
+        ]
+        if e.commits:  # the job's own commits: the lead picks the ones to keep; nothing is dropped here
+            lines.append(f"own commits not on {e.base} (oldest first):")
+            lines += [f"  {c['sha']} {c['subject']}" + (" [doc-only]" if c["doc_only"] else "") for c in e.commits]
+            shas = " ".join(c["sha"] for c in e.commits)  # the lead deletes a sha from the printed line to leave that commit out; the code drops none itself
+            lines.append(f"rebuild: git -C {e.path} reset --hard {e.base}")  # first move the job branch onto base
+            lines.append(f"rebuild: git -C {e.path} cherry-pick {shas}")  # then re-apply the job's own commits on it
+            lines.append(f"then retry: orch.py retry {a.stage} --step {a.step}")
+        elif e.commits_unknown:
+            lines.append(f"own commits not on {e.base}: unknown (git timed out); run git -C {e.path} log {e.base}..HEAD")
+        else:
+            lines.append(f"own commits not on {e.base}: none")
+    reason = "\n".join(lines)
     f = work_path(paths(a)[0], f"report-{rid}.md", create=True)
     write_text(f, f"VERDICT: BLOCKED\n{reason}\n")
     append_event(log, {"ev": "report", "id": rid, "task": a.step, "role": "dev", "verdict": BLOCKED, "reason": reason, "why": reason[:WHY_MAX], "file": f})

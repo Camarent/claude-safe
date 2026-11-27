@@ -1,6 +1,7 @@
 """Job worktrees: create, commit, merge, remove, review markers. The command line is wt.py."""
 
 import contextlib
+import fnmatch
 import os
 import pathlib
 import re
@@ -10,6 +11,8 @@ import time
 
 from . import gitx, util
 from .configuration import (
+    DOC_PATHS,
+    DOCS_WAVE_DIR,
     EV_SETUP,
     GIT_LONG_TIMEOUT_S,
     METRICS_LOG,
@@ -234,13 +237,16 @@ from .worktree_merge import (
 
 
 class RefreshConflict(RuntimeError):
-    """A rebase that failed and was aborted. `files`: the unmerged paths (may be empty on a timeout), `path`: the job worktree, `base`: the branch the rebase targeted."""
+    """A rebase that failed and was aborted. `files`: the unmerged paths (may be empty on a timeout), `path`: the job worktree, `base`: the branch the rebase targeted, `commits`: the job's own commits not on base ({sha, subject, doc_only}, oldest first), `rebasing`: the abort failed and the job worktree is still mid-rebase (no commits listed then)."""
 
-    def __init__(self, msg, files, path, base):
+    def __init__(self, msg, files, path, base, commits=(), rebasing=False, commits_unknown=False):
         super().__init__(msg)
         self.files = files
         self.path = path
         self.base = base
+        self.commits = list(commits)
+        self.rebasing = rebasing
+        self.commits_unknown = commits_unknown  # the commit list timed out: [] then means unknown, not none
 
 
 def refresh(a_dir, stage, task, discard=False) -> dict[str, list]:
@@ -290,9 +296,63 @@ def _rebase_job(path, rel, base, branch) -> None:
     if not failed:
         return
     files = git(path, "diff", "--name-only", "--diff-filter=U", check=False).split()  # the unmerged paths, read before the abort clears them
-    with contextlib.suppress(subprocess.SubprocessError):
-        gitx.run(path, "rebase", "--abort", timeout=GIT_LONG_TIMEOUT_S)
-    raise RefreshConflict(f"rebase of {branch} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}", files, path, base)
+    if not _abort_rebase(path):  # still mid-rebase: base..HEAD would list a partial pick, so list nothing
+        raise RefreshConflict(
+            f"rebase of {branch} onto {base} in {rel} conflicts or hangs, and the abort left the rebase in place: {why}", files, path, base, rebasing=True
+        )
+    commits = _own_commits(path, base)  # the abort leaves HEAD on the job branch (_abort_rebase checks it), so base..HEAD is the job's own work
+    raise RefreshConflict(
+        f"rebase of {branch} onto {base} in {rel} conflicts or hangs (aborted, not resolved): {why}",
+        files,
+        path,
+        base,
+        commits or (),
+        commits_unknown=commits is None,
+    )
+
+
+def _rebase_state(path) -> bool:
+    """True while git keeps a rebase in progress in the job worktree `path`."""
+    for name in ("rebase-merge", "rebase-apply"):
+        try:
+            p = gitx.run(path, "rev-parse", "--path-format=absolute", "--git-path", name).stdout.strip()
+        except subprocess.TimeoutExpired:  # state unknown: treat as still in progress
+            return True
+        if p and os.path.exists(p):
+            return True
+    return False
+
+
+def _abort_rebase(path) -> bool:
+    """Leave no rebase state in `path`: `--abort` restores the branch; when that fails or times out, `--quit` drops the state alone. -> True when no rebase state is left and HEAD is on a branch (`--quit` keeps a detached HEAD at the partial pick, so base..HEAD would omit the job's commits)."""
+    for action in ("--abort", "--quit"):
+        with contextlib.suppress(subprocess.SubprocessError):
+            gitx.run(path, "rebase", action, timeout=GIT_LONG_TIMEOUT_S)
+        if not _rebase_state(path):
+            try:
+                return gitx.run(path, "symbolic-ref", "-q", "HEAD").returncode == 0
+            except subprocess.TimeoutExpired:
+                return False
+    return False
+
+
+def _is_doc_path(path) -> bool:
+    """A docs path of the project (pipeline.json DOC_PATHS globs, or under DOCS_WAVE_DIR)."""
+    return any(fnmatch.fnmatch(path, g) for g in (*DOC_PATHS, DOCS_WAVE_DIR + "*"))
+
+
+def _own_commits(path, base) -> list[dict] | None:
+    """The job's own commits not on `base`, oldest first: {sha, subject, doc_only}; doc_only: every file the commit touches is a docs path. A git timeout gives None (unknown)."""
+    try:
+        shas = gitx.run(path, "rev-list", "--reverse", f"{base}..HEAD").stdout.split()
+        out = []
+        for sha in shas:
+            subject = gitx.run(path, "log", "-1", "--format=%s", sha).stdout.strip()
+            files = gitx.run(path, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).stdout.split()
+            out.append({"sha": sha, "subject": subject, "doc_only": bool(files) and all(_is_doc_path(f) for f in files)})
+        return out
+    except subprocess.TimeoutExpired:
+        return None
 
 
 def refresh_stale(a_dir, stage, tasks) -> tuple[list, dict]:
