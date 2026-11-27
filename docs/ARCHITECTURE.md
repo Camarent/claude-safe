@@ -2,7 +2,7 @@
 
 ## What it is
 claude-safe runs Claude Code in a throwaway Docker container. Only the folder you mount is reachable from the host (`README.md:5-6`).
-The repo builds the base image and optional toolchain layers, provides host-side dev and release scripts, and carries the pipeline under `.claude/` (agents, tools, practices; not an index module, see `README.md` and `docs/decisions.md`).
+The repo builds the base image and optional toolchain layers, provides host-side dev and release scripts, and carries the pipeline under `.claude/` (agents, tools, practices; not an index module, see `README.md` and `docs/decisions.md`, whose "Cite verify" section records the orch.jsonl cite check).
 
 ## Modules
 - [scripts](modules/scripts.md) - host-side dev checks, pre-PR gate, config install and sync, agent rendering.

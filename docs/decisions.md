@@ -228,3 +228,17 @@ Reason: a usage-limit wait must not hang the driver on one long sleep, and its t
 - D5 timed-out skip (2026-11-26): an acceptance step that hit its time limit is `timed out, not verified` (`slow_suite.REASON`, `slow_suite.record` keeps the row for the retro; the timeout limit is `ACCEPTANCE_CMD_TIMEOUT_S`, the timing flag is `acceptance_timing_flag`, `script_timeout_s` does not change it). The skip event of such a step carries the flag `timed_out`. `cli_orch` `cmd_reset` (skip) refuses such a step without `--note`, before any write, and records `timed_out` on the skip event with the note. `pr_ops.skipped_notes` puts one line per such skip and its note into the PR body beside the browser-check note, so the owner sees who verified it.
 - D6 install check: after each phase merge, while another phase is open, the driver runs `pipeline_install_check` (`install_check` in `cli_feature.py`); a nonzero exit blocks before the next phase, and the phase stays done. This repo sets `scripts/sync-claude-config.sh --compare {work_branch}`, which writes nothing and exits 10 when `~/.claude` differs from the work branch.
 - D7 CI unavailable (2026-11-26): project setting `ci_available` false means the repo has no CI runs. `pr_ops._ready` then marks the PR ready without the CI wait, and `pr_ops._merge` skips the check wait; both keep the local gates (`_gates_gate` blocks red before the push) and the squash-forbidden check, and the PR body names the rule. The master-merged step does not run the gates again: it relies on the pr-ready result. Default (absent or true) is unchanged.
+
+## Cite verify (retro-m25, cite-verify)
+
+Source: `/home/cam/workspace/kata/.work/m25-ui-impl/orch.jsonl` (1598 lines; some lines are plain strings, so jq prints benign `Cannot index string` errors for them). Filter used (report events of the three tasks whose `why` mentions cite, or whose verdict is BLOCKED):
+
+```
+jq -c 'select(type=="object" and .ev=="report" and (.task=="task-25" or .task=="task-36" or .task=="docs-cite-final") and ((.why//"")|test("cite";"i") or .verdict=="BLOCKED")) | {id,task,role,verdict}' /home/cam/workspace/kata/.work/m25-ui-impl/orch.jsonl
+```
+
+- docs-cite-final: 1 cite-related event (a532 script FAIL `docs/modules/extension.md:23 cites ext...`; retry a533 DONE). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
+- task-25: 5 cite-related events (a458, a460, a463 script FAIL `cite check: a path:line cite does not hold`; a459, a462 dev DONE rework of those cites). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
+- task-36: 2 cite-related events (a659, a662 script FAIL `cite check: a path:line cite does not hold`). 0 BLOCKED. Verdict: cite failure, not zero; the 0-BLOCKED row holds.
+
+Verdict on retro report b (section B, row cite check, 0 BLOCKED rows): the 0-BLOCKED count holds. The claim of zero cite causes does not hold: 6 cite FAIL events were caught and retried (5 script `cite check` FAIL plus the docs-cite-final FAIL, all listed above). Cite checks fail, they do not block, so the row count is right and the cause count is wrong.
