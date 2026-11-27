@@ -144,13 +144,22 @@ class Client:
             out.append({"analysis": analysis} if sec == "python" else analysis if sec == "python.analysis" else {})
         return out
 
+    @staticmethod
+    def _msg(method, params, rid=None):  # JSON-RPC: a call with no params omits the field (shutdown/exit reject "params": null)
+        m = {"jsonrpc": "2.0", "method": method}
+        if rid is not None:
+            m["id"] = rid
+        if params is not None:
+            m["params"] = params
+        return m
+
     def note(self, method, params):
-        self.send({"jsonrpc": "2.0", "method": method, "params": params})
+        self.send(self._msg(method, params))
 
     def req(self, method, params, wait=60):
         self.n += 1
         rid = self.n
-        self.send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        self.send(self._msg(method, params, rid))
         end = time.time() + wait
         while time.time() < end:
             m = self.read(end)
