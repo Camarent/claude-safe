@@ -13,7 +13,7 @@ from pipeline import dev_gate_audit, gate_timing
 from pipeline.configuration import EV_SESSION, HOME, METRICS_LOG, ORCH_LOG, RETRO_ASK_CAUSE_CHARS, WORK_DIR
 from pipeline.util import read_jsonl, work_path
 
-from retro import agent_cost, lead_cost, ledger
+from retro import agent_cost, block_causes, lead_cost, ledger
 
 SIGNAL_RE = re.compile(r"^RETRO ([\w-]+):\s*(.*)$")
 ASK_TASK_RE = re.compile(r"^[\w.-]*\d[\w.-]*: ")  # "task-5: " or "merge-w1: " (an id with a digit) in front of the cause; "error: ..." is part of the cause
@@ -34,14 +34,15 @@ def phase_dirs(feature_dir):
 
 
 def gather(feature_dir):
-    """-> {phase: {"signals": [(name, text)], "notes": [lines of retro.md]}}"""
+    """-> {phase: {"signals": [(name, text)], "notes": [lines of retro.md], "asks": [ask messages], "events": [orch.jsonl events]}}"""
     out = {}
     for d in phase_dirs(feature_dir):
         base = os.path.join(feature_dir, "phases", d)
         sigs = [(m[1], m[2]) for line in read(work_path(base, "retro-numbers.md")).splitlines() if (m := SIGNAL_RE.match(line))]
         notes = [x for x in read(work_path(base, "retro.md")).splitlines() if x.strip()]
-        asks = [e.get("message", "") for e in read_jsonl(os.path.join(base, ORCH_LOG)) if e.get("ev") == "ask"]
-        out[d] = {"signals": sigs, "notes": notes, "asks": asks}
+        events = read_jsonl(os.path.join(base, ORCH_LOG))
+        asks = [e.get("message", "") for e in events if e.get("ev") == "ask"]
+        out[d] = {"signals": sigs, "notes": notes, "asks": asks, "events": events}
     return out
 
 
@@ -94,6 +95,8 @@ def render(feature, data, gate=()):
     rep = {n: p for n, p in names.items() if len(set(p)) > 1}
     lines += ["", "## Signals seen in 2+ phases"] + ([f"- {n}: {', '.join(sorted(set(p)))}" for n, p in sorted(rep.items())] or ["(none)"])
     lines += _ask_lines(data)
+    counts = block_causes.count(e for v in data.values() for e in v.get("events", []))
+    lines += ["", "## Block causes (script, no model)", block_causes.line(counts)]
     lines += ["", "## Gate time and dev gate warnings"] + ([f"- {x[:300]}" for x in gate] or ["(none)"])
     for ph, v in data.items():
         lines += _phase_block(ph, v)

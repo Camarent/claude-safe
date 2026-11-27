@@ -43,6 +43,19 @@ class FeatureRetroTest(unittest.TestCase):
         self.assertIn("- 2x dev verdict BLOCKED (report line)", text)
         self.assertIn("- 1x review failed 2 rounds", text)
 
+    def test_block_causes_line_comes_from_the_script_counts(self):  # no model asked: the digest carries the counts of the report events
+        import json
+
+        with open(os.path.join(self.dir, "phases", "01-a", "orch.jsonl"), "w") as fh:
+            events = [
+                {"ev": "report", "task": "task-1", "verdict": "BLOCKED", "reason": "cite check: path missing"},
+                {"ev": "report", "task": "task-2", "verdict": "FAIL", "reason": "gate red after 2 tries"},
+                {"ev": "report", "task": "task-3", "verdict": "DONE", "reason": "ok"},
+            ]
+            fh.writelines(json.dumps(e) + "\n" for e in events)
+        text = feature_retro.render("f", feature_retro.gather(self.dir))
+        self.assertIn("## Block causes (script, no model)\n- block causes (2 BLOCKED/FAIL reports): cite 1, gate 1, ignored path 0, tooling 0, other 0", text)
+
     def test_out_file_run_prints_a_done_line(self):  # a silent --out run was recorded as FAIL ("no clear verdict") 4 of 4 times
         out = os.path.join(self.dir, "problems.md")
         rc, text = self.run_main("--out", out)
