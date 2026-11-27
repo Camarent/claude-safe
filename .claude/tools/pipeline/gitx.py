@@ -52,6 +52,17 @@ def try_text(repo, *args, timeout=GIT_TIMEOUT_S) -> str:
     return r.stdout if r and r.returncode == 0 else ""
 
 
+def ignored(repo, paths) -> list[str]:
+    """-> the PATHS git ignores in REPO (`git check-ignore`, one call per path). Tracked files and paths outside REPO are not reported: a path git rejects hides no other path."""
+    hits = []
+    for p in paths:
+        r = try_run(repo, "check-ignore", "-q", "--", p)
+        # exit 0: ignored; exit 1: not ignored; anything else (outside REPO, no work tree, no git): not reported
+        if r and r.returncode == 0:
+            hits.append(p)
+    return hits
+
+
 _C_ESCAPES = {"t": "\t", "n": "\n"}
 _ESCAPE_RE = re.compile(r"\\([0-7]{3}|.)", re.S)
 _OCTAL_BASE = 8

@@ -41,6 +41,16 @@ class GitxTest(unittest.TestCase):
         r = gitx.run(self.d, "check-ignore", "-z", "--stdin", input="skip.txt\0keep.txt\0")
         self.assertEqual(r.stdout, "skip.txt\0")
 
+    def test_ignored_reports_only_ignored_untracked_paths(self):
+        with open(os.path.join(self.d, ".gitignore"), "w") as f:
+            f.write("skip.txt\nlog.txt\n")
+        for name in ("skip.txt", "log.txt", "keep.txt"):
+            with open(os.path.join(self.d, name), "w") as f:
+                f.write("x\n")
+        subprocess.run(["git", "-C", self.d, "add", "-f", "log.txt"], check=True)  # tracked despite the ignore rule
+        outside = os.path.join(os.path.dirname(self.d), "outside-of-repo.txt")
+        self.assertEqual(gitx.ignored(self.d, ["skip.txt", "log.txt", "keep.txt", outside]), ["skip.txt"])
+
     def test_timeout_is_named(self):
         hung = unittest.mock.patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired(["git"], 5))
         with hung, self.assertRaisesRegex(RuntimeError, "timed out after 5 s"):
