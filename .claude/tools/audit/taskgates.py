@@ -215,18 +215,32 @@ def _collision_line(f, ids, passed):
     return f"\ncollision: {f} failed on every rerun; run ids {', '.join(ids)}"
 
 
+def _gate_commands(cfg, d, stage, task, cwd):
+    """-> (gate commands, ""), or ([], (verdict, text)) when the gates may not run for this task here."""
+    if cwd is None:
+        return [], (BLOCKED, "no job worktree for this task: the gates would run on the main checkout, so they were not run")
+    cmds = final_check.commands(cfg, cwd)
+    if not cmds:
+        return [], (BLOCKED, "no `gates` in pipeline.json: nothing to run")
+    outside = testrun.outside_writes(d, stage, task)  # a project without the test-run step is still guarded
+    if outside:
+        return [], testrun.outside_verdict(outside)
+    return cmds, None
+
+
+def _stamp_green(d, stage, task, text, sha):
+    """Write the content hash of a green run, so an unchanged worktree is not run again."""
+    if text.startswith("VERDICT: DONE") and sha:
+        write_text(sha_file(d, stage, task), sha + "\n")
+
+
 def run(stage, task, d, runner=None, git=gitx.try_out, run_id=None):
     """-> (verdict word, text). `runner` (final_check.run_group signature) and `git` are injectable for tests; `run_id` prefixes the run ids of the collision reruns (default: this process id)."""
     cfg = project(d)
     cwd = testrun.workdir(d, stage, task)
-    if cwd is None:
-        return BLOCKED, "no job worktree for this task: the gates would run on the main checkout, so they were not run"
-    cmds = final_check.commands(cfg, cwd)
-    if not cmds:
-        return BLOCKED, "no `gates` in pipeline.json: nothing to run"
-    outside = testrun.outside_writes(d, stage, task)  # a project without the test-run step is still guarded
-    if outside:
-        return testrun.outside_verdict(outside)
+    cmds, refusal = _gate_commands(cfg, d, stage, task, cwd)
+    if refusal:
+        return refusal
     skip, sha = _skip_reason(cfg, d, stage, task, git)
     if skip:
         return DONE, skip
@@ -240,8 +254,7 @@ def run(stage, task, d, runner=None, git=gitx.try_out, run_id=None):
     )
     text = _gate_text(res, names, cleared, why, root, flaky, collisions)
     green = text.startswith("VERDICT: DONE")
-    if green and sha:
-        write_text(sha_file(d, stage, task), sha + "\n")
+    _stamp_green(d, stage, task, text, sha)
     note = text.split("\n", 1)[1]
     extra = _extra(gatewatch.warning(cwd, before, gatewatch.snapshot(root, watch), git) if watch else "", green, env, cwd, git, test_env(cfg, d))
     return (DONE if green else FAIL), "\n".join(x for x in (note, *slow, extra) if x)  # slow: warnings only, the verdict is green or red as before

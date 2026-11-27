@@ -242,11 +242,16 @@ def accept_warnings(results, names, rules):
     return out, accepted
 
 
+def _base_red(results, base_cmds):
+    """-> the red commands that may be cleared against the base: really ran (not WARN_BAD_RC) and, when BASE_CMDS is given, one the base has too."""
+    return [c for c, rc, _s, _t in results if rc != 0 and rc not in WARN_BAD_RC and (base_cmds is None or c in base_cmds)]
+
+
 def clear_base_red(results, repo, env, groups=None, runner=run_group, base_cmds=None):
     """-> (results with every red command that is also red on REPO (the stage base) turned green, [those commands]). Only the red commands run again, there: a red the base already has is not the task's doing.
     Only a command the base has too (BASE_CMDS, e.g. an `each` command for a folder the task added is not) and that really ran (not a timeout or `cannot run`, WARN_BAD_RC, on either side) is cleared.
     A command that is red in both places counts as the base's, whatever the failing lines are."""
-    red = [c for c, rc, _s, _t in results if rc != 0 and rc not in WARN_BAD_RC and (base_cmds is None or c in base_cmds)]
+    red = _base_red(results, base_cmds)
     if not red:
         return results, []
     again = run_all(red, repo, env, runner=runner, groups=groups)
@@ -287,16 +292,20 @@ def uncleared_reasons(results, cleared, base_cmds, base_problem=""):
     return out
 
 
+def _result_line(c, rc, secs, text, gates):
+    """One report block for a command: a failing gate shows its output tail, any other failure its head, a pass only its name."""
+    if rc and c in gates:
+        return f"gate {gates[c]}: FAILED ({secs}s) {c}\n" + "\n".join("  " + line for line in text.splitlines()[-25:])
+    head = "\n" + "\n".join("  " + line for line in text.splitlines()[:25]) if rc else ""
+    return f"{'FAIL' if rc else 'ok'} ({secs}s) {c}" + head
+
+
 def report(results, gates=None):
     """VERDICT text. A failing gate (GATES = {cmd: name}) is reported as `gate <name>: FAILED` with the output tail."""
     gates = gates or {}
     bad = [r for r in results if r[1] != 0]
     lines = [f"VERDICT: {'FAIL' if bad else 'DONE'}", f"{len(results) - len(bad)} of {len(results)} commands passed"]
-    for c, rc, secs, text in bad + [r for r in results if r[1] == 0]:
-        if rc and c in gates:
-            lines.append(f"gate {gates[c]}: FAILED ({secs}s) {c}\n" + "\n".join("  " + line for line in text.splitlines()[-25:]))
-        else:
-            lines.append(f"{'FAIL' if rc else 'ok'} ({secs}s) {c}" + ("\n" + "\n".join("  " + line for line in text.splitlines()[:25]) if rc else ""))
+    lines += [_result_line(c, rc, secs, text, gates) for c, rc, secs, text in bad + [r for r in results if r[1] == 0]]
     return "\n".join(lines)
 
 
