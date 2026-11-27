@@ -62,7 +62,7 @@ def _table_problems(lines, name="Before"):
         if len(cells) != len(RUNS) + 1:
             probs.append(f"{name}: row {cells[0]!r} needs one cell per run ({len(RUNS)}), got {len(cells) - 1}")
             continue
-        for run, cell in zip(RUNS, cells[1:]):
+        for run, cell in zip(RUNS, cells[1:], strict=True):
             if cell != NOT_AVAILABLE and not re.search(r"\d", cell):
                 probs.append(f"{name}: row {cells[0]!r} has no number for {run}: {cell!r}")
     return probs
@@ -78,7 +78,7 @@ def _after_problems(secs, root=ROOT):
         cells = next((c for k, c in rows.items() if k.startswith(sink)), None)
         if cells is None:
             continue  # the table check above already reports the missing row
-        for run, cell in zip(RUNS, cells[1:]):
+        for run, cell in zip(RUNS, cells[1:], strict=False):
             if cell != NOT_AVAILABLE and not (re.search(r"\d", cell) and re.search(r"\b(measured|expected)\b", cell)):
                 probs.append(f"After: row {sink!r} cell {run} needs a number and the word measured or expected: {cell!r}")
     for ln in (x for x in secs.get("Fixes", []) if x.startswith("- ")):
