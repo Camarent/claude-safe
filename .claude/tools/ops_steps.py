@@ -124,9 +124,7 @@ def _cost(row):
     return row.get("cost_usd") or 0  # a hand-edited row may hold null
 
 
-def digest(d, stage):
-    """-> (ok, lines): the cost digest of the stage from metrics.jsonl, also written to retro/retro-digest.md."""
-    rows = [r for r in read_jsonl(os.path.join(stage_dir(d, stage), METRICS_LOG)) if r.get("ev") == EV_SESSION]
+def _cost_lines(rows):
     per: defaultdict = defaultdict(lambda: [0, 0.0])
     for r in rows:
         g = per[(r.get("agent"), r.get("model"))]
@@ -139,9 +137,21 @@ def digest(d, stage):
         f"- {r.get('task') or r.get('id')} {r.get('agent')} {r.get('verdict') or '-'} ${_cost(r):.2f}"
         for r in sorted(rows, key=lambda r: -_cost(r))[:TOP_SESSIONS]
     ]
+    return out
+
+
+def _not_passed_lines(rows):
     bad = [r for r in rows if r.get("verdict") in (BLOCKED, FAIL, ESCALATE)]
-    out.append(f"not passed: {len(bad)} sessions, ${sum(_cost(r) for r in bad):.2f}")
+    out = [f"not passed: {len(bad)} sessions, ${sum(_cost(r) for r in bad):.2f}"]
     out += [f"- {r.get('task') or r.get('id')} {r.get('verdict')}: {r.get('reason', '')}" for r in bad[:TOP_SESSIONS]]
+    return out
+
+
+def digest(d, stage):
+    """-> (ok, lines): the cost digest of the stage from metrics.jsonl, also written to retro/retro-digest.md."""
+    rows = [r for r in read_jsonl(os.path.join(stage_dir(d, stage), METRICS_LOG)) if r.get("ev") == EV_SESSION]
+    out = _cost_lines(rows)
+    out += _not_passed_lines(rows)
     out += webskip.skips(d, stage)  # a skipped browser check stays visible in the retro
     f = work_path(stage_dir(d, stage), "retro-digest.md", create=True)
     write_text(f, "\n".join(out) + "\n")

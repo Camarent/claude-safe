@@ -74,32 +74,43 @@ def main(argv=None):
     ap.add_argument("--subject", default="")
     ap.add_argument("--repo", default="", help="add-repo: the nested repo, relative to the main repo")
     a = ap.parse_args(argv)
-    if a.cmd in ("create", "add-repo", "remove", "commit", "merge", "mark-merged", "diff", "review-begin", "review-reset") and not a.task:
-        ap.error("--task is required")
-    if a.cmd == "add-repo" and not a.repo:
-        ap.error("--repo is required")
+    _check_args(ap, a)
     a.dir = stage_root(a.dir, a.stage) or a.dir  # run from inside a job worktree, `.` holds no manifest: use the stage root
     try:
         out = _run(a)
     except Conflict as e:
-        print(json.dumps({"error": str(e)}))
-        sys.exit(2)
+        sys.exit(_fail(e, 2))
     except Blocked as e:
-        print(json.dumps({"error": str(e)}))
-        sys.exit(3)
+        sys.exit(_fail(e, 3))
     except RuntimeError as e:
         if not a.cmd.startswith("review-"):
             raise
-        print(json.dumps({"error": str(e)}))
-        sys.exit(4)
+        sys.exit(_fail(e, 4))
     if a.cmd == "commit" and not out:
-        print(
-            f"wt.py commit: task {a.task} has no job worktree in stage {a.stage}, nothing was committed (worked in place? commit with commit.py)",
-            file=sys.stderr,
-        )
-        print(json.dumps(out))
-        sys.exit(3)
+        _nothing_committed(a, out)
     print(out if isinstance(out, str) else json.dumps(out))
+
+
+def _check_args(ap, a):
+    if a.cmd in ("create", "add-repo", "remove", "commit", "merge", "mark-merged", "diff", "review-begin", "review-reset") and not a.task:
+        ap.error("--task is required")
+    if a.cmd == "add-repo" and not a.repo:
+        ap.error("--repo is required")
+
+
+def _fail(e, code):
+    """Print the error as JSON and return the exit code for the caller to pass to sys.exit."""
+    print(json.dumps({"error": str(e)}))
+    return code
+
+
+def _nothing_committed(a, out):
+    print(
+        f"wt.py commit: task {a.task} has no job worktree in stage {a.stage}, nothing was committed (worked in place? commit with commit.py)",
+        file=sys.stderr,
+    )
+    print(json.dumps(out))
+    sys.exit(3)
 
 
 def _run(a):
