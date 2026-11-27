@@ -123,6 +123,7 @@ PROJECT_DEFAULTS: dict = {
     "acceptance_timing_flag": None,  # flag appended to the project test command in the acceptance command lines (timing output goes to the stage reports folder); None = no flag
     "pipeline_install_check": None,  # command the driver runs after each phase merge, before the next phase; a failure blocks the stage; None = no check
     "ci_available": True,  # false where no CI runs for the repo: pr-ready and master-merged skip the CI waits and merge on green local gates, and say so
+    "wiring_dirs": [],  # repo folders whose new source files must be imported by another tracked file (orphan check, plan_wiring_orphans.py); [] = no check
 }
 GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
@@ -137,3 +138,17 @@ GITLEAKS_TOOL = "gitleaks"  # the secret scanner binary (gate_secrets.scan_diff)
 GITLEAKS_CLEAN_RC = 0  # gitleaks exit code: no leak found
 GITLEAKS_LEAKS_RC = 1  # gitleaks exit code: at least one leak found
 SECRET_SCAN_TIMEOUT_S = 120  # seconds for one gitleaks run over the task diff
+WIRING_DIRS_KEY = "wiring_dirs"  # the PROJECT_DEFAULTS key: repo folders the orphan check covers
+WIRING_SOURCE_EXTS = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")  # source files the orphan check reads and checks
+WIRING_PY_EXT = ".py"  # the Python source extension: its import lines name dotted modules, not quoted paths
+WIRING_ALIAS_PREFIXES = ("@/",)  # JS/TS path-alias prefixes of an import specifier: the rest is a repo path
+WIRING_TEST_RE = r"(^|/)(test_[^/]*|[^/]*\.(test|spec)\.[^/]+)$|(^|/)tests?/"  # regex: a test file, never an orphan
+WIRING_IMPORT_LINE_RE = r"^\s*(?:\}\s*)?(?:from\s|import\b|export\b.*\bfrom\b|(?:const|let|var)\s.*\brequire\s*\(|require\s*\(|(?:await\s+)?import\s*\()"  # regex: a line that starts an import (a comment or a string never does)
+WIRING_QUOTED_RE = r"""['"]([^'"]+)['"]"""  # regex: the module specifier of a JS/TS import line
+WIRING_PY_FROM_RE = r"^\s*from\s+([\w.]+)\s+import\s+(.+)$"  # regex: a Python `from X import Y` line
+WIRING_PY_IMPORT_RE = r"^\s*import\s+([\w.]+)"  # regex: a Python `import X` line
+WIRING_SPLIT_RE = r"[^\w-]+"  # regex: splits a module specifier into the names it is made of
+KNIP_CONFIG_FILE = "knip.json"  # the knip config at the repo root; its `entry` globs are never orphans
+KNIP_ENTRY_KEY = "entry"  # the knip.json key that lists the entry files
+WIRING_ORPHAN_LINE = "- orphan: {}"  # one line of the orphan report per orphan file
+WIRING_NONE_TEXT = "No orphans: every new file under wiring_dirs has an importer.\n"  # the report text when no orphan is found
