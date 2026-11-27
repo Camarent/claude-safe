@@ -174,6 +174,11 @@ TOOLBLOCK_PREFIX = (
     "tool-block:"  # error prefix of plan_toolblock.check_toolblock: a Test/Done names a JS tool whose smoke probe fails and the task has no ops-N dependency
 )
 KNIP_PROD_PREFIX = "knip-prod:"  # error prefix of plan_toolblock.check_toolblock: a Test/Done runs knip --production while the knip config has no entry key
+QUOTE_MISSING_PREFIX = (
+    "quote-missing:"  # error prefix of plan_quotes.check_quotes: a quoted message in a Done line is in no tracked file and the task text does not create it
+)
+QUOTE_WORDS = ("warning", "message", "text", "prints")  # the Done words that introduce a quoted message (plan_quotes)
+QUOTE_MIN_LEN = 12  # a quoted string shorter than this is not checked (plan_quotes)
 TOOLBLOCK_TOOLS = ("madge", "knip", "eslint")  # JS tools whose Test/Done use plan_toolblock probes (a word match, not a file name)
 KNIP_PROD_CMD = "knip --production"  # the Test/Done text that marks a knip production run (plan_toolblock)
 OPS_DEP_PREFIX = "ops-"  # task-id prefix of a manual ops row: a task that depends on one is exempt from tool-block (plan_toolblock)

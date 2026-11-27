@@ -237,6 +237,7 @@ from .plan_parallel import PARALLEL_WARN_PREFIX as PARALLEL_WARN_PREFIX
 from .plan_parallel import parallel_candidates
 from .plan_problem import ERROR, Problem
 from .plan_ptest import ptest_selector_problems
+from .plan_quotes import check_quotes
 from .plan_report import check_report_validator, check_type_inputs
 from .plan_research_hint import check_research_hint
 from .plan_rules import (
@@ -521,7 +522,7 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
         d, ents
     ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(
         d, ents
-    ) + check_research_hint(d, ents) + check_wiring(d, ents) + check_toolblock(d, ents)
+    ) + check_research_hint(d, ents) + check_wiring(d, ents) + check_toolblock(d, ents) + check_quotes(d, ents)
 
 
 def _carried_problems(d, ents):

@@ -54,6 +54,7 @@ KIND_LEVELS = {
     "wiring": ERROR,  # a new module under a wiring dir with no mount (plan_wiring)
     "tool-block": ERROR,  # a Test/Done names a JS tool whose smoke probe fails (plan_toolblock)
     "knip-prod": ERROR,  # a Test/Done runs knip --production with no knip entry key (plan_toolblock)
+    "quote-missing": ERROR,  # a Done quotes a message no tracked file has and the task does not create (plan_quotes)
 }
 
 KIND_RE = re.compile(r"([a-z][a-z-]*):")  # a problem line starts with this token

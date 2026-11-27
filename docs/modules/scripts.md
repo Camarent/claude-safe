@@ -49,6 +49,7 @@ Each problem line starts with its kind token. The level comes from `KIND_LEVELS`
 - `reach:` (warning): a task with a `Mounts:` header has no Done line naming an entry proof (entry, bundle, built, cli, route or e2e). Example: `reach: T4: its \`Mounts:\` header needs a Done line naming an entry proof (entry, bundle, built, cli, route or e2e), not only a harness, mock or fake`. Checked by `plan_wiring.py`.
 - `tool-block:` (error): a Test or Done line runs a JS tool (madge, knip, eslint) whose smoke probe fails. Example: `tool-block: T6 uses knip: <probe reason>`. Checked by `plan_toolblock.py` through `tool_probe.py`.
 - `knip-prod:` (error): a Test or Done line runs `knip --production` while the knip entry config does not allow it. Example: `knip-prod: T6 runs <KNIP_PROD_CMD>: <reason>`. Checked by `plan_toolblock.py`.
+- `quote-missing:` (error): a Done line quotes a message (12+ characters after warning, message, text or prints) that no tracked file holds and the task text does not create. Example: `quote-missing: T7: Done quotes '<quoted text>' but no tracked file has it and the task does not create it`. Checked by `plan_quotes.py`.
 
 The tools check (`xtools.py check`, the `tools-check` audit step) warns `warning (not used by this project, install failed): <tool>` for a tool that failed to install and that AUDIT.md does not need; it never fails the check. The `--needed-by` and `--stage-dir` flags decide that.
 
