@@ -63,6 +63,9 @@ GATE_TIME_WARN_DEFAULT = {"unit": 120, "merge": 300, "full": 540}  # seconds per
 MERGE_ONLY_TESTS_DEFAULT = ["test_lsp_e2e.py"]  # the `merge_only_tests` default: test files only the merge gate runs
 DEV_GATE_FULL_CMDS_DEFAULT = ["scripts/dev.sh cov", "scripts/dev.sh gate"]  # the `dev_gate_full_cmds` default: the dev gate's full commands
 DEV_GATE_REPEAT_MAX_DEFAULT = 1  # the `dev_gate_repeat_max` default: a red dev gate run repeats no more than this many times
+GATE_SLOTS_DEFAULT = 3  # the `gate_slots` default: gate commands running at once on this host; 0 = no cap
+GATE_SLOT_POLL_S = 0.2  # seconds a gate waits between two tries for a free slot (gate_slots.py)
+GATE_SLOT_DIR = "cs-gate-slots"  # the folder under the system temp dir that holds the slot files of gate_slots.py
 PROJECT_DEFAULTS: dict = {
     "auditor_max_turns": AUDITOR_MAX_TURNS,  # see above
     "auditor_escalate_max_turns": AUDITOR_ESCALATE_MAX_TURNS,  # see above
@@ -132,6 +135,7 @@ PROJECT_DEFAULTS: dict = {
     "merge_only_tests": MERGE_ONLY_TESTS_DEFAULT,  # test files run only by the merge gate (gates_merge), never by a task's Test line or the unit gates
     "dev_gate_full_cmds": DEV_GATE_FULL_CMDS_DEFAULT,  # commands the dev gate runs in full (dev_gate_audit); [] = none
     "dev_gate_repeat_max": DEV_GATE_REPEAT_MAX_DEFAULT,  # most times the dev gate repeats a red run; 1 = no repeat
+    "gate_slots": GATE_SLOTS_DEFAULT,  # gate commands that may run at once across every driver on this host (gate_slots.py); 0 = no cap. Caps the load so a step's gate runs fit the 540 s budget
 }
 GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
@@ -140,6 +144,7 @@ GATE_TIME_WARN_KEY = "gate_time_warn_s"  # the PROJECT_DEFAULTS key above: secon
 MERGE_ONLY_TESTS_KEY = "merge_only_tests"  # the PROJECT_DEFAULTS key above: test files only the merge gate runs
 DEV_GATE_FULL_CMDS_KEY = "dev_gate_full_cmds"  # the PROJECT_DEFAULTS key above: the dev gate's full commands
 DEV_GATE_REPEAT_MAX_KEY = "dev_gate_repeat_max"  # the PROJECT_DEFAULTS key above: most repeats of a red dev gate run
+GATE_SLOTS_KEY = "gate_slots"  # the PROJECT_DEFAULTS key above: gate commands running at once on this host
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above
 EMPTY_TEST_KEY = "empty_test_gate"  # the PROJECT_DEFAULTS key (empty_tests.py gate switch)
 EMPTY_TEST_DEFAULT = True  # the key when pipeline.json does not set it
