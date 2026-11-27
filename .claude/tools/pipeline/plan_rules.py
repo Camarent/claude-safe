@@ -19,6 +19,7 @@ from .configuration import (
     AFFECTED_SHOWN,
     AFFECTED_WARN_PREFIX,
     BARE_TAG_RE,
+    CITE_SKIP_DIRS,
     CMD_REF_PREFIX,
     DEFAULT_WORKSPACE,
     DOC_PATHS,
@@ -467,6 +468,9 @@ def done_when_problems(phase, repo, produced, lead_text) -> list[str]:
             continue
         msg = f"{phase['dir']}: done_when needs {tok}, but no Predicted path produces it and no lead step names it: add the path to a task or an ops step"
         probs.append(msg if "/" in tok else "done: " + msg)
+    for w in glob_words(cmd):
+        if not glob_hits(repo, w, [*produced, *phase["paths"], *written]):
+            probs.append(f"{phase['dir']}: done_when glob `{w}` matches no file and no Predicted path or lead step produces one: check the name")
     return probs
 
 
@@ -532,6 +536,44 @@ def _only_tests_path(text):
     return bool(segs) and all(_path_only_segment(w) for w in segs)
 
 
+GLOB_WORD_RE = re.compile(r"[\w.*?][\w./*?-]*")  # a path-like shell word: no leading `/` or `-`, no quotes, no `(`
+
+
+def glob_words(text) -> list[str]:
+    """Shell words of TEXT that are file globs (a `*` or `?` in a path-like word); `print(1*2)`, options and full ref names (`refs/tags/v*`) are not."""
+    return [w for w in _split_words(text) if GLOB_WORD_RE.fullmatch(w) and re.search(r"[*?]", w) and not w.startswith(CMD_REF_PREFIX)]
+
+
+def glob_matches(repo, pattern) -> list[str]:
+    """Repo-relative files that PATTERN matches at any depth under REPO (`test_x*` finds `a/tests/test_x1.py`)."""
+    pat = pattern.removeprefix("./")
+    out = []
+    for root, dirs, files in os.walk(repo):  # glob.glob skips dot folders such as .claude
+        dirs[:] = [d for d in dirs if d not in CITE_SKIP_DIRS]
+        for f in files:
+            rel = os.path.relpath(os.path.join(root, f), repo).replace(os.sep, "/")
+            if fnmatch.fnmatch(rel if "/" in pat else f, pat):
+                out.append(rel)
+    return out
+
+
+def glob_hits(repo, pattern, names=()) -> list[str]:
+    """What PATTERN matches: the repo files (`glob_matches`) plus the NAMES (Predicted paths, written files) it matches. An empty list means the glob names no file."""
+    return glob_matches(repo, pattern) + [n for n in names if fnmatch.fnmatch(n, pattern)]
+
+
+def glob_problems(text, repo, test_only) -> list[str]:
+    """Problems for the glob words of one command TEXT, judged over REPO: a glob that matches no file; with TEST_ONLY also a glob that matches only non-test files."""
+    probs = []
+    for w in glob_words(text):
+        hits = glob_hits(repo, w)
+        if not hits:
+            probs.append(f"glob `{w}` matches no file (check the name and directory)")
+        elif test_only and not any(_is_test_path(h) for h in hits):
+            probs.append(f"glob `{w}` matches only non-test files (name a test file)")
+    return probs
+
+
 def _accept_cmd_problems(text, repo):
     """-> problem words for one `cmd:` text: the agents' sandbox denies `cd`, `&&` and an env prefix, and a job worktree is not the main checkout."""
     if not text:
@@ -549,6 +591,8 @@ def _accept_cmd_problems(text, repo):
         probs.append("reads as a sentence, not a command (write the command that proves it, or use `eyes:`)")
     if _only_tests_path(text):
         probs.append("only tests that a path exists (write the command that runs the behaviour, or use `eyes:`)")
+    if repo:
+        probs += glob_problems(text, repo, test_only=True)
     return probs
 
 
