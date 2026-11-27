@@ -9,6 +9,8 @@ from . import claude, metrics, plan_review
 from .configuration import (
     ENV_NO_CONTEXT,
     ESCALATE_DRAFT_CHARS,
+    EXIT_LIMIT,
+    GAPS_FILE,
     MODEL_OPUS,
     MODEL_SONNET,
     PLAN_CONTEXT_FILE,
@@ -283,7 +285,7 @@ def _plan_fix(a, c, model, goal, probs):
 
 
 def run(a) -> int:
-    """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun."""
+    """-> exit code: 0 plan valid, 2 blocked or still invalid after one rerun, EXIT_LIMIT (3) plan valid but plan-review gaps remain after the fix rounds."""
     goal = read_text(a.prompt_file)
     model = getattr(a, "model", MODEL_SONNET) or MODEL_SONNET  # --model opus: known ahead to need Opus, skip the Sonnet pass
     if a.dry_run:
@@ -315,5 +317,21 @@ def run(a) -> int:
         print("\n".join(probs))
         return 2
     rounds = sum(1 for s in c.sess if s["id"] == PLAN_FIX)
-    print("\n".join([*probs, *gaps, f"OK {n} tasks (plan-fix rounds: {rounds})"]))
+    print("\n".join([*probs, f"OK {n} tasks (plan-fix rounds: {rounds})"]))
+    return _gaps_block(a, gaps) if gaps else _clear_gaps(a)
+
+
+def _gaps_block(a, gaps) -> int:
+    """Plan-review gaps still open after the fix rounds: the GAPS: block as the run's last output, also written to GAPS_FILE. -> EXIT_LIMIT."""
+    block = "\n".join(["GAPS:", *gaps])
+    write_text(os.path.join(feature_dir(a), GAPS_FILE), block + "\n")
+    print(block)
+    return EXIT_LIMIT
+
+
+def _clear_gaps(a) -> int:
+    """No gaps left: drop the GAPS_FILE of an earlier run so it does not outlive its gaps. -> 0."""
+    path = os.path.join(feature_dir(a), GAPS_FILE)
+    if os.path.exists(path):
+        os.remove(path)
     return 0

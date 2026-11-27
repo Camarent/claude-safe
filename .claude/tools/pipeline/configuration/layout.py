@@ -12,7 +12,7 @@ PUBLISH_CWD, PUBLISH_BUILD, PUBLISH_PAGE, PUBLISH_FILES = "cwd", "build", "page"
 PUBLISH_OUT = "{out}"  # placeholder in a `build` string: replaced by the stage scratch dir (absolute, shell-quoted)
 PUBLISH_NO_CHAIN = "&&"  # a `build` string must be one command: chaining is refused
 EXIT_OK = 0  # exit code of plan.py / wave.py when a run finishes
-EXIT_LIMIT = 3  # exit code of plan.py / wave.py when a run stops at a limit (max-waves and the like)
+EXIT_LIMIT = 3  # exit code of plan.py / wave.py when a run stops at a limit (max-waves, plan-review fix rounds and the like)
 EXIT_BLOCKED = 4  # exit code of plan.py / wave.py when a run stops blocked (back to the lead)
 EXIT_CODES = {
     EXIT_OK: "done",
@@ -30,6 +30,7 @@ FETCH_FAIL_MARKS = (
 FETCH_FAIL_LINE = "network/db fetch failed, retry"  # line added to a gate's output when only a fetch failure made it red
 FETCH_RETRIES = 1  # extra runs of a gate whose red output is a fetch failure
 BLOCKED_FILE = "BLOCKED.md"  # written into a stage/feature folder when a run stops blocked
+GAPS_FILE = "GAPS.md"  # written into the feature folder when a plan run ends with plan-review gaps left (its GAPS: block)
 PHASES_DIR, REPORTS_DIR, AUDITS_DIR, BASE_FILE = (
     "phases",
     "reports",

@@ -203,6 +203,9 @@ AFFECTED_CODE_EXTS = (
     ".rs",
 )  # only code files and code tests are matched by name (data, docs and styles are named by far too many tests)
 AFFECTED_TEST_DIRS = {"test", "tests"}  # a file under a directory of this name is a test file
+AFFECTED_SOURCE_ROOT = (
+    ".claude/tools"  # import root of the pipeline package: a planned path maps to its dotted module under it; its `tests` dir is scanned for importers
+)
 AFFECTED_SHOWN = 5  # tests named in one `affected:` line
 NEG_WARN_PREFIX = "neg:"  # warning prefix of that rule; plan_check.errors_of never fails on it
 SKIP_GATE_RE = r"pytest\.mark\.skipif|pytest\.skip\("  # a task file that skips a test: cs-qrun exits 3 on it (plan_rules.check_skip_gate)

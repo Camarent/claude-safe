@@ -26,10 +26,10 @@ import os
 import sys
 from contextlib import redirect_stderr
 
-from . import plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
+from . import affected, plan_check, plan_dryrun, plan_insert, plan_testrun, pr_mode
 from . import plan_files as pf
 from .branches import dirty_block, red_base_block
-from .configuration import BLOCKED_FILE, EXIT_BLOCKED, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
+from .configuration import AFFECTED_SOURCE_ROOT, BLOCKED_FILE, EXIT_BLOCKED, MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 from .plan_amend import amend_phase
 from .plan_run import run
 from .util import default_dir, jprint, read_text, write_text
@@ -167,6 +167,14 @@ def _known_deps(a, ents):
     return deps
 
 
+def _affected_value(a, paths) -> str:
+    """The `Affected tests:` value: --affected when given; else the test files that import the predicted paths (affected.importers over the repo's AFFECTED_SOURCE_ROOT)."""
+    if a.affected:
+        return a.affected
+    root = os.path.join(a.dir, AFFECTED_SOURCE_ROOT)
+    return ",".join(affected.importers([os.path.join(a.dir, p) for p in paths], os.path.join(root, "tests"), root))
+
+
 def _add_task(a):
     d, paths = pf.stage_dir(a), pf.csv(a.paths)
     if not os.path.exists(pf.tasks_path(d)):
@@ -184,6 +192,7 @@ def _add_task(a):
         if ov:
             raise pf.PlanError(f"{tid} and {e['id']} share paths in wave {wave}: {ov[0]} / {ov[1]}")
     e = {"id": tid, "title": a.title, "owner": a.model, "wave": wave, "review": a.model, "depends": deps}
+    a.affected = _affected_value(a, paths)
     write_text(os.path.join(d, tid + ".md"), pf.render_task(e, a, paths))
     pf.write_tasks(d, [*ents, e])
     return 0
