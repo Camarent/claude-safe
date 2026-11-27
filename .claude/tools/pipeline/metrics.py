@@ -3,7 +3,7 @@
 from collections import defaultdict
 
 from .claude import SUMS
-from .configuration import BLOCKED, FAIL
+from .configuration import BLOCKED, EV_DISPATCH, FAIL
 from .util import append_jsonl, now, read_jsonl
 
 
@@ -68,9 +68,19 @@ def wave_line(c, wall) -> None:
     c.sess = []
 
 
+def missing_sessions(events, rows) -> list[str]:
+    """-> dispatch ids in orch.jsonl `events` with no `session` row in metrics.jsonl `rows`; script-role dispatches run no model and need none."""
+    have = {r.get("id") for r in rows if r.get("ev") == "session"}
+    return [e["id"] for e in events if e.get("ev") == EV_DISPATCH and e.get("role") != "script" and e["id"] not in have]
+
+
 def total_line(c) -> None:
-    ss = [r for r in read_jsonl(c.metrics) if r.get("ev") == "session"]
+    rows = read_jsonl(c.metrics)
+    ss = [r for r in rows if r.get("ev") == "session"]
     append_jsonl(c.metrics, {"ev": "total", "ts": now(), "stage": c.stage, "waves": c.wave, "sessions": len(ss), **{k: sum(s[k] for s in ss) for k in SUMS}})
+    missing = missing_sessions(read_jsonl(c.log), rows)
+    if missing:
+        print(f"no session event: {len(missing)} dispatches (cost undercount)")
 
 
 def aggregate(rows) -> dict:
