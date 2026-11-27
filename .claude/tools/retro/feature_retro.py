@@ -70,21 +70,33 @@ def gate_lines(feature_dir, cwd):
     return out
 
 
-def render(feature, data, gate=()):
+def _signal_phases(data):
+    """-> {signal name: [phase, ...]} for every signal tripped in data."""
     names: dict = {}
     for ph, v in data.items():
         for n, _ in v["signals"]:
             names.setdefault(n, []).append(ph)
+    return names
+
+
+def _phase_block(ph, v):
+    """-> markdown lines for one phase: its tripped signals and its retro.md notes."""
+    lines = ["", f"## {ph}"]
+    lines += [f"- {n}: {t[:300]}" for n, t in v["signals"]] or ["- no tripped signal"]
+    if v["notes"]:
+        lines += ["retro.md:"] + [f"  {x[:300]}" for x in v["notes"][:15]]
+    return lines
+
+
+def render(feature, data, gate=()):
+    names = _signal_phases(data)
     lines = [f"# Feature problems: {feature}", "", f"{len(data)} phases. Facts only; causes are for the lead to find (hypothesis, not verified)."]
     rep = {n: p for n, p in names.items() if len(set(p)) > 1}
     lines += ["", "## Signals seen in 2+ phases"] + ([f"- {n}: {', '.join(sorted(set(p)))}" for n, p in sorted(rep.items())] or ["(none)"])
     lines += _ask_lines(data)
     lines += ["", "## Gate time and dev gate warnings"] + ([f"- {x[:300]}" for x in gate] or ["(none)"])
     for ph, v in data.items():
-        lines += ["", f"## {ph}"]
-        lines += [f"- {n}: {t[:300]}" for n, t in v["signals"]] or ["- no tripped signal"]
-        if v["notes"]:
-            lines += ["retro.md:"] + [f"  {x[:300]}" for x in v["notes"][:15]]
+        lines += _phase_block(ph, v)
     return "\n".join(lines) + "\n"
 
 

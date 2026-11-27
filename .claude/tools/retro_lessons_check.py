@@ -19,7 +19,7 @@ HEADER_CELL, DIVIDER_PREFIX = "stage", "---"
 ROW_CELLS = 4  # stage | task | report | cause
 
 
-def parse(text):
+def parse(text: str) -> tuple[dict[str, list[list[str]]], tuple[int, int] | None]:
     """-> ({section: [cells, ...]}, (stuck, useless) totals or None). Header and divider rows are skipped."""
     sections: dict[str, list[list[str]]] = {}
     totals = None

@@ -200,19 +200,32 @@ def _cost_shape_signals(total, heavy, by_task):
     return sig
 
 
+def _before(r, since):
+    """True when the transcript's first event is older than since (a cut-off of 0 keeps everything)."""
+    return bool(since and r["first"] and r["first"] < since)
+
+
+def _add_lead(sid, lead, since, rows, sig):
+    """-> units of the lead log, or 0.0 when it is older than since (it still owns its in-stage subagents)."""
+    r = scan(lead)
+    if _before(r, since):  # an old lead still owns its in-stage subagents
+        return 0.0
+    rows.append(("lead", "-", r))
+    sig.extend(_lead_signals(sid, r))
+    return r["units"]
+
+
 def analyse(paths, since=0.0, sids=None):
-    sig, rows, total, heavy = [], [], 0.0, 0.0
+    sig: list[tuple[str, str]] = []
+    rows: list[tuple[str, str, dict]] = []
+    total, heavy = 0.0, 0.0
     by_task: dict = {}
     for sid, lead, agents in ledger.find_sessions(paths, sids):
         if lead:
-            r = scan(lead)
-            if not (since and r["first"] and r["first"] < since):  # an old lead still owns its in-stage subagents
-                rows.append(("lead", "-", r))
-                total += r["units"]
-                sig.extend(_lead_signals(sid, r))
+            total += _add_lead(sid, lead, since, rows, sig)
         for path, meta in agents:
             r = scan(path)
-            if since and r["first"] and r["first"] < since:
+            if _before(r, since):
                 continue
             kind = meta.get("agentType") or "?"
             rows.append((kind, meta.get("description") or "", r))
@@ -449,6 +462,15 @@ def resolved_lines(orch_path):
     ]
 
 
+def _gate_outcome(evs, k, task):
+    """-> counter key for one local pre-review report at index k: 'skipped', or '<fail|ok>_<pass|fail|open>' with the paid reviewer's verdict."""
+    if evs[k].get("verdict") == "SKIPPED":  # the gate judged nothing: neither a pass nor a miss
+        return "skipped"
+    local = "fail" if evs[k].get("verdict") == "FAIL" else "ok"
+    rv = [e.get("verdict") for e in evs[k + 1 :] if e.get("task") == task and e.get("ev") == "report" and e.get("role") == "reviewer"]
+    return f"{local}_" + ("open" if not rv else "pass" if rv[0] == "PASS" else "fail")
+
+
 def prereview_lines(orch_path):
     """One retro line on the local pre-review gate: what it caught and what the paid reviewer then said. [] when it never ran."""
     if not orch_path or not os.path.exists(orch_path):
@@ -460,14 +482,8 @@ def prereview_lines(orch_path):
     c = {"fail_pass": 0, "fail_fail": 0, "fail_open": 0, "ok_pass": 0, "ok_fail": 0, "ok_open": 0, "skipped": 0}  # nosec  # false positive: dict keys, not a password
     for i, task in ids.items():
         k = _report_index(evs, i)
-        if k is None:
-            continue
-        if evs[k].get("verdict") == "SKIPPED":  # the gate judged nothing: neither a pass nor a miss
-            c["skipped"] += 1
-            continue
-        local = "fail" if evs[k].get("verdict") == "FAIL" else "ok"
-        rv = [e.get("verdict") for e in evs[k + 1 :] if e.get("task") == task and e.get("ev") == "report" and e.get("role") == "reviewer"]
-        c[f"{local}_" + ("open" if not rv else "pass" if rv[0] == "PASS" else "fail")] += 1
+        if k is not None:
+            c[_gate_outcome(evs, k, task)] += 1
     return [
         (
             f"pre-review (local gate): {len(ids) - c['skipped']} gated; local FAIL {c['fail_pass'] + c['fail_fail'] + c['fail_open']} (paid reviewer then PASS {c['fail_pass']}, FAIL {c['fail_fail']}, not yet {c['fail_open']}); "
@@ -635,13 +651,29 @@ def digest_check(metrics_path, digest_path):
     return []
 
 
+def _stage_window(orch_path):
+    """-> (lo, hi) time window of the stage from its orchestrator log; (0.0, 0.0) without one."""
+    return lead_cost.window([orch_path]) if orch_path else (0.0, 0.0)
+
+
+def _read_metrics(metrics_path):
+    """-> the rows of metrics.jsonl; [] when the file is missing."""
+    return _json_lines(metrics_path) if os.path.exists(metrics_path) else []
+
+
+def _stage_of(rows):
+    """-> the stage name of the first metrics row that has one, or ''."""
+    return next((r.get("stage") for r in rows if r.get("stage")), "")
+
+
 def lead_rows(metrics_path, orch_path, paths):
     """Append one `lead` event per lead session of the stage window to metrics.jsonl (once per sid); -> the rows written."""
-    lo, hi = lead_cost.window([orch_path]) if orch_path else (0.0, 0.0)
+    lo, hi = _stage_window(orch_path)
     if not (metrics_path and hi):
         return []
-    known = {r.get("sid") for r in _json_lines(metrics_path) if r.get("ev") == LEAD_EV} if os.path.exists(metrics_path) else set()
-    stage = next((r.get("stage") for r in _json_lines(metrics_path) if r.get("stage")), "") if os.path.exists(metrics_path) else ""
+    old = _read_metrics(metrics_path)
+    known = {r.get("sid") for r in old if r.get("ev") == LEAD_EV}
+    stage = _stage_of(old)
     out = []
     for p in lead_cost.lead_paths(paths):
         sid, r = os.path.basename(p)[:-6], lead_cost.analyse_lead(p, lo, hi)
@@ -661,12 +693,12 @@ def _new_unmatched(old, count):
 
 def lead_agent_events(metrics_path, orch_path, paths):
     """Append one `lead-agent` event per agent a lead spawned inside the stage window (once per lead sid and agent), and a `lead-agent-unmatched` count when some logs could not be tied to the window; -> the rows written."""
-    lo, hi = lead_cost.window([orch_path]) if orch_path else (0.0, 0.0)
+    lo, hi = _stage_window(orch_path)
     if not (metrics_path and hi):
         return []
-    old = _json_lines(metrics_path) if os.path.exists(metrics_path) else []
+    old = _read_metrics(metrics_path)
     known = {(r.get("sid"), r.get("agent")) for r in old if r.get("ev") == LEAD_AGENT_EV}
-    stage = next((r.get("stage") for r in old if r.get("stage")), "")
+    stage = _stage_of(old)
     rows, unmatched = lead_cost.lead_agent_rows(paths, lo, hi)
     out = [{"ev": LEAD_AGENT_EV, "ts": now(), "stage": stage, **r} for r in rows if (r["sid"], r["agent"]) not in known]
     if _new_unmatched(old, unmatched):

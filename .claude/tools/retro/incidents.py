@@ -73,36 +73,45 @@ def _slow_stub(r):
     }
 
 
-def scan(d, stage):
-    """-> list of incident stubs; also written to .work/<stage>/retro/incidents.json. Slow-suite stubs come first."""
-    base = os.path.join(d, WORK_DIR, stage)
-    evs = _events(os.path.join(base, ORCH_LOG))
-    pdir = os.path.join(base, "patches")
+def _load_patches(pdir):
+    """-> {patch file name: diff text} for the *.patch files in pdir (empty when pdir is missing)."""
     patches = {}
     if os.path.isdir(pdir):
         for name in sorted(os.listdir(pdir)):
             if name.endswith(".patch"):
                 patches[name] = read(os.path.join(pdir, name))
+    return patches
+
+
+def _patch_candidates(patches, evs, text):
+    """-> the task patches whose changed files appear in the failure text."""
+    cands = []
+    for name, body in patches.items():
+        hit = [f for f in _patch_files(body) if f in text]
+        if hit:
+            task = name[: -len(".patch")].split("__")[0]
+            cands.append({"task": task, "patch": name, "files_hit": hit[:8], "reviewer": _reviewer_verdicts(evs, task)})
+    return cands
+
+
+def _trigger_stub(e, evs, patches):
+    """-> incident stub for one trigger event e of the orchestrator log."""
+    text = (read(e.get("file", "")) or str(e.get("why") or "")).strip()
+    return {
+        "trigger": f"{e['task']} {e.get('verdict', '')}".strip(),
+        "event": e.get("id"),
+        "failure": text[-MAX_FAILURE:],
+        "candidates": _patch_candidates(patches, evs, text),
+    }
+
+
+def scan(d, stage):
+    """-> list of incident stubs; also written to .work/<stage>/retro/incidents.json. Slow-suite stubs come first."""
+    base = os.path.join(d, WORK_DIR, stage)
+    evs = _events(os.path.join(base, ORCH_LOG))
+    patches = _load_patches(os.path.join(base, "patches"))
     slow = [_slow_stub(r) for r in _events(os.path.join(base, RETRO_DIR, SLOW_SUITE_FILE)) if _slow_row_ok(r)]
-    trig = []
-    for e in evs:
-        if not _is_trigger(e):
-            continue
-        text = (read(e.get("file", "")) or str(e.get("why") or "")).strip()
-        cands = []
-        for name, body in patches.items():
-            hit = [f for f in _patch_files(body) if f in text]
-            if hit:
-                task = name[: -len(".patch")].split("__")[0]
-                cands.append({"task": task, "patch": name, "files_hit": hit[:8], "reviewer": _reviewer_verdicts(evs, task)})
-        trig.append(
-            {
-                "trigger": f"{e['task']} {e.get('verdict', '')}".strip(),
-                "event": e.get("id"),
-                "failure": text[-MAX_FAILURE:],
-                "candidates": cands,
-            }
-        )
+    trig = [_trigger_stub(e, evs, patches) for e in evs if _is_trigger(e)]
     stubs = slow + trig
     for n, s in enumerate(stubs, 1):
         s["id"] = f"i{n}"
@@ -132,15 +141,31 @@ def render(stubs, stage):
     return out
 
 
-def keep(d, stage, iid, label, cause, task=""):
-    """Write the labelled incident into .notes/incidents/. -> the md path."""
-    if label not in LABELS:
-        raise ValueError(f"label must be one of {', '.join(LABELS)}")
+def _patch_section(base, out, key, cand):
+    """Copy the reviewed patch of cand to out and -> its markdown lines (patch name and task spec)."""
+    patch = read(os.path.join(base, "patches", cand["patch"]))
+    spec = read(os.path.join(base, f"{cand['task']}.md"))
+    with open(os.path.join(out, f"{key}.patch"), "w", encoding="utf-8") as f:
+        f.write(patch)
+    return [f"patch: {key}.patch (the diff the reviewer saw)", "", "task spec:", "", spec]
+
+
+def _stub_by_id(d, stage, iid):
+    """-> the incident stub iid from the stage's retro/incidents.json; ValueError when absent."""
     base = os.path.join(d, WORK_DIR, stage)
     with open(work_path(base, "incidents.json"), encoding="utf-8") as f:
         stub = next((s for s in json.load(f) if s["id"] == iid), None)
     if stub is None:
         raise ValueError(f"no incident {iid} in {base}/retro/incidents.json")
+    return stub
+
+
+def keep(d, stage, iid, label, cause, task=""):
+    """Write the labelled incident into .notes/incidents/. -> the md path."""
+    if label not in LABELS:
+        raise ValueError(f"label must be one of {', '.join(LABELS)}")
+    base = os.path.join(d, WORK_DIR, stage)
+    stub = _stub_by_id(d, stage, iid)
     cand = next((c for c in stub["candidates"] if not task or c["task"] == task), None)
     out = os.path.join(d, ".notes", "incidents")
     os.makedirs(out, exist_ok=True)
@@ -150,11 +175,7 @@ def keep(d, stage, iid, label, cause, task=""):
         lines.append(f"reviewer verdicts: {'/'.join(map(str, cand['reviewer'])) or 'none'}")
     lines += ["", "failure:", "", stub["failure"], ""]
     if label == "reviewer-miss" and cand:
-        patch = read(os.path.join(base, "patches", cand["patch"]))
-        spec = read(os.path.join(base, f"{cand['task']}.md"))
-        with open(os.path.join(out, f"{key}.patch"), "w", encoding="utf-8") as f:
-            f.write(patch)
-        lines += [f"patch: {key}.patch (the diff the reviewer saw)", "", "task spec:", "", spec]
+        lines += _patch_section(base, out, key, cand)
     path = os.path.join(out, f"{key}.md")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")

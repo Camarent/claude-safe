@@ -108,24 +108,31 @@ def blocks(ev):
     return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
 
 
+def _note_block(b, day, cmds, calls, denials):
+    """Record one content block: a Bash call (into cmds and calls) or a denied result (into denials)."""
+    if b.get("type") == "tool_use" and b.get("name") == "Bash":
+        cmds[b.get("id")] = (b.get("input") or {}).get("command", "")
+        calls.append(day)
+    elif b.get("type") == "tool_result" and b.get("is_error") and b.get("tool_use_id") in cmds:
+        text = result_text(b)
+        if DENY_RE.search(text):
+            denials.append((day, text, cmds[b["tool_use_id"]]))
+
+
 def scan_file(path, cutoff):
     """Return (call days, denials) of one transcript; a denial is (day, text, cmd)."""
     events = list(read_events(path))
     if any(e.get("entrypoint") == "cli" for e in events):
         return [], []
-    cmds, calls, denials = {}, [], []
+    cmds: dict[str, str] = {}
+    calls: list[str] = []
+    denials: list[tuple[str, str, str]] = []
     for ev in events:
         day = str(ev.get("timestamp", ""))[:10]
         if day < cutoff:
             continue
         for b in blocks(ev):
-            if b.get("type") == "tool_use" and b.get("name") == "Bash":
-                cmds[b.get("id")] = (b.get("input") or {}).get("command", "")
-                calls.append(day)
-            elif b.get("type") == "tool_result" and b.get("is_error") and b.get("tool_use_id") in cmds:
-                text = result_text(b)
-                if DENY_RE.search(text):
-                    denials.append((day, text, cmds[b["tool_use_id"]]))
+            _note_block(b, day, cmds, calls, denials)
     return calls, denials
 
 

@@ -252,23 +252,27 @@ def median_or_none(xs):
     return statistics.median(xs) if xs else None
 
 
+def _arm_summary(rs):
+    """Medians of output, words, turns; sum usd; verdict agreement for the rows of one role and arm."""
+    agreed = [r["agree"] for r in rs if r["agree"] is not None]
+    return {
+        "n": len(rs),
+        "output": median_or_none([r["output"] for r in rs]),
+        "words": median_or_none([r["words"] for r in rs]),
+        "usd": sum(r["usd"] for r in rs),
+        "turns": median_or_none([r["turns"] for r in rs]),
+        "agree": f"{sum(agreed)}/{len(agreed)}" if agreed else "-",
+    }
+
+
 def summarise(rows):
     """Per role and arm: medians of output, words, turns, seconds; sum usd; verdict agreement (reviewer)."""
     out = {}
     for role in ROLES:
         for arm in ARMS:
             rs = [r for r in rows if r["role"] == role and r["arm"] == arm]
-            if not rs:
-                continue
-            agreed = [r["agree"] for r in rs if r["agree"] is not None]
-            out[(role, arm)] = {
-                "n": len(rs),
-                "output": median_or_none([r["output"] for r in rs]),
-                "words": median_or_none([r["words"] for r in rs]),
-                "usd": sum(r["usd"] for r in rs),
-                "turns": median_or_none([r["turns"] for r in rs]),
-                "agree": f"{sum(agreed)}/{len(agreed)}" if agreed else "-",
-            }
+            if rs:
+                out[(role, arm)] = _arm_summary(rs)
     return out
 
 

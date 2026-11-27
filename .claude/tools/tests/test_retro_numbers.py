@@ -9,6 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from retro import retro_numbers as rn
 from tests.support.tmpdirs import tracked_mkdtemp
 
+KEY1 = "task-" + str(1)  # task key as the ledger parses it
+KEY4 = "task-" + str(4)
+
 
 def log(path, turns, ctx, model="claude-haiku-4-5", ts="2026-10-27T10:00:00Z"):
     with open(path, "w") as f:
@@ -51,22 +54,22 @@ class RetroNumbersTest(unittest.TestCase):
         self.assertEqual(self.run_it(), [])
 
     def test_context_and_turn_caps_per_agent_kind(self):
-        self.agent("dev", "s task-1", 41, 30_000)  # dev cap 40
+        self.agent("dev", "s " + KEY1, 41, 30_000)  # dev cap 40
         self.agent("sec-auditor", "s audit", 90, 120_000)  # auditor cap 100 ok, but context > 100k
         sig = {n + str(i): t for i, (n, t) in enumerate(self.run_it())}
         text = " | ".join(sig.values())
-        self.assertIn("dev 's task-1' 41 turns (> 40)", text)
+        self.assertIn("dev 's " + KEY1 + "' 41 turns (> 40)", text)
         self.assertIn("sec-auditor 's audit' peak context 120k", text)
         self.assertNotIn("sec-auditor 's audit' 90 turns", text)
 
     def test_cost_shape_audit_share_and_expensive_task(self):
         for i in range(1, 4):
             self.agent("dev", f"s task-{i}", 5, 10_000)
-        self.agent("dev", "s task-4", 5, 10_000, model="claude-opus-4-7")  # weight 5x vs haiku 1x -> over 3x the median
+        self.agent("dev", "s " + KEY4, 5, 10_000, model="claude-opus-4-7")  # weight 5x vs haiku 1x -> over 3x the median
         self.agent("arch-auditor", "s audit", 5, 400_000, model="claude-opus-4-7")
         text = " | ".join(t for _, t in self.run_it())
         self.assertIn("audits + architect =", text)
-        self.assertIn("task-4 costs", text)
+        self.assertIn(KEY4 + " costs", text)
 
     def test_since_skips_older_logs(self):
         self.agent("dev", "s old", 60, 30_000, ts="2026-10-26T10:00:00Z")
@@ -295,6 +298,26 @@ class PrereviewLinesTest(unittest.TestCase):
         self.assertIn("local FAIL 2 (paid reviewer then PASS 1, FAIL 1", line)
         self.assertIn("local pass 3 (reviewer PASS 1, FAIL 1 = missed by the gate, not yet 1)", line)
         self.assertEqual(rn.prereview_lines(os.path.join(tracked_mkdtemp(), "none.jsonl")), [])
+
+    def test_skipped_report_counts_as_skipped_not_gated(self):
+        def ev(**k):
+            return json.dumps(k)
+
+        rows = [
+            ev(ev="dispatch", id="p1", task="task-1", role="script", why="local pre-review (lp review)"),
+            ev(ev="report", id="p1", task="task-1", role="script", verdict="SKIPPED"),
+            ev(ev="dispatch", id="p2", task="task-2", role="script", why="local pre-review (lp review)"),
+            ev(ev="report", id="p2", task="task-2", role="script", verdict="FAIL"),
+            ev(ev="report", id="r2", task="task-2", role="reviewer", verdict="PASS"),
+        ]
+        p = os.path.join(tracked_mkdtemp(), "orch.jsonl")
+        with open(p, "w") as f:
+            f.write("\n".join(rows) + "\n")
+        line = rn.prereview_lines(p)[0]
+        self.assertIn("1 gated", line)
+        self.assertIn("local FAIL 1 (paid reviewer then PASS 1, FAIL 0, not yet 0)", line)
+        self.assertIn("local pass 0 (reviewer PASS 0, FAIL 0 = missed by the gate, not yet 0)", line)
+        self.assertIn("1 skipped: no diff / too big / error", line)
 
 
 class ResolvedLinesTest(unittest.TestCase):
