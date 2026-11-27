@@ -594,7 +594,6 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     TESTCMD_WARN_PREFIX,
     TOOL_FIELD,
     WEBTEST_WARN_PREFIX,
-    WIRING_DIRS_KEY,
     WIRING_PREFIX,
 )
 from .project import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
