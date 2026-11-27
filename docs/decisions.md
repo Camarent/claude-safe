@@ -16,7 +16,7 @@ Reason: The `write_guard` PreToolUse hook denies a Write/Edit to a main-checkout
 
 ## Problem 4
 
-Reason: `flags: docs` with no docs root is reported at plan time. A retry conflict is recorded as a blocked step with the conflict text (`.claude/tools/pipeline/cli_orch.py:453`).
+Reason: `flags: docs` with no docs root is reported at plan time. A retry conflict is recorded as a blocked step with the conflict text (`.claude/tools/pipeline/cli_orch.py:463`).
 
 ## Problem 5
 
