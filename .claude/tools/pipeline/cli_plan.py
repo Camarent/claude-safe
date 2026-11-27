@@ -7,7 +7,8 @@
     cs-plan next-phase --feature F                        JSON of the first open phase whose depends are done
     cs-plan stage-init --stage S --goal G [--flags "ui docs"] [--pr-title "<type>(<area>): <what>"]   TASKS.md skeleton
     cs-plan task --stage S --id N --title T --paths p1,p2 --test CMD --done TEXT [--wave W] [--depends N,M]
-                 [--pattern file:line] [--affected "tests|none"] [--turns 25]   task-N.md + TASKS.md entry + Graph (same-wave tasks must not share paths)
+                 [--pattern file:line] [--affected "tests|none"] [--turns 25]
+                 [--type code|report|webtest|research] [--outputs p] [--inputs p,q]   task-N.md + TASKS.md entry + Graph (same-wave tasks must not share paths)
     cs-plan edit-task --stage S --id N --depends M[,K]   add dependencies (no cycle; the task moves to a later wave when needed); it is held until they are merged
     cs-plan task --stage S --before N --title T --paths p1,p2 --test CMD --done TEXT [--depends N,M]   insert a task ahead of task-N, also while waves run (see ORCHESTRATOR.md)
     cs-plan edit-task --stage S --id N --field F --value V [--field F2 --value V2]   replace fields of task-N.md (title paths pattern test done turns); TASKS.md kept in sync
@@ -457,12 +458,17 @@ def build() -> argparse.ArgumentParser:
         pattern="",
         affected="",
         turns=25,
+        type="",
+        outputs="",
+        inputs="",
     )
     for act in sub.choices["task"]._actions:
         if act.dest == "wave":
             act.type = int
         if act.dest == "model":
             act.choices = [MODEL_HAIKU, MODEL_SONNET]
+        if act.dest == "type":
+            act.choices = list(pf.TASK_TYPES)
     add("batch", cmd_batch, stage=True, file=True)
     add("edit-task", cmd_edit_task, stage=True, id=True)
     ep = sub.choices["edit-task"]
