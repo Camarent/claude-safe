@@ -273,6 +273,11 @@ def readonly_git(sub, rest):
     lead, opts, pos = READONLY_GIT[sub]
     if sub == "config":
         rest = config_args(rest)
+    return _readonly_form(lead, opts, pos, rest)
+
+
+def _readonly_form(lead, opts, pos, rest):
+    """-> True when REST (the words after SUB, non-empty) is the allowed lead word, options and positionals only."""
     if (rest[0] not in lead) if lead else not rest[0].startswith("-"):
         return False
     if any(a.startswith("-") and a not in lead | opts | pos for a in rest):
@@ -405,10 +410,15 @@ def head_denied(cmd, args):
     return cmd in DENIED_HEADS or (cmd == "find" and bool(FIND_DENIED & set(args))) or (cmd == "xargs" and xargs_denied(args))
 
 
+def _writes_files(cmd, args):
+    """-> True when CMD is a file writer: tee, a WRITERS command, or sed in place (-i, --in-place)."""
+    return cmd == "tee" or cmd in WRITERS or (cmd == "sed" and any(a.startswith("--in-place") or short_flag(a, "i") for a in args))
+
+
 def writer_verdict(cmd, args, cwd, root):
     """-> deny reason when CMD writes a file outside ROOT (tee, WRITERS, sed -i, dd of=), else ''."""
     files = write_files(cmd, args)
-    if cmd == "tee" or cmd in WRITERS or (cmd == "sed" and any(a.startswith("--in-place") or short_flag(a, "i") for a in args)):
+    if _writes_files(cmd, args):
         bad = [f for f in files if not write_ok(f, cwd, root)]
         if bad:
             return outside(f"`{cmd} {bad[0]}`", root)
@@ -460,6 +470,11 @@ def segment_verdict(seg, cwd, root, exported=False):
     h = head_words(seg)
     if not h:
         return "", cwd
+    return _head_verdict(h, words, cwd, root, exported)
+
+
+def _head_verdict(h, words, cwd, root, exported):
+    """-> (deny reason or '', new cwd) for the command words H of one segment (WORDS: the segment's words, quotes kept)."""
     cmd, args = os.path.basename(h[0]), h[1:]
     if head_denied(cmd, args):
         return denied_form(cmd), cwd

@@ -116,31 +116,40 @@ def strip_quotes(cmd):
     return re.sub(r"'[^']*'|\"[^\"]*\"", lambda m: m.group(0)[0] + re.sub(r"[;&|\n]", "_", m.group(0)[1:-1]) + m.group(0)[-1], cmd)
 
 
-def parse(seg):
-    """-> (env_prefix, command head, assigns) for one command segment."""
-    words = seg.lstrip("({ ").split()
-    env = assigns = False
+def _after_timeout(words):
+    """-> the words after `timeout [flags] DURATION` (the words start at `timeout`)."""
+    words = words[1:]
+    while words and words[0].startswith("-"):
+        takes_value = words.pop(0) in TIMEOUT_VALUE_FLAGS
+        if takes_value and words:
+            words.pop(0)  # the value of `-k 5` or `-s TERM` is not the duration
+    return words[1:]  # the duration
+
+
+def _strip_prefix(words):
+    """-> (words from the command head on, True when an env prefix, wrapper or VAR=value word was dropped)."""
+    env = False
     while words:
         w = words[0]
         if w in WRAPPERS or w.startswith("-"):
             env = env or w == "env"
             words.pop(0)
         elif w == "timeout":
-            words = words[1:]
-            while words and words[0].startswith("-"):
-                takes_value = words.pop(0) in TIMEOUT_VALUE_FLAGS
-                if takes_value and words:
-                    words.pop(0)  # the value of `-k 5` or `-s TERM` is not the duration
-            words = words[1:]  # the duration
+            words = _after_timeout(words)
         elif VAR_WORD.match(w):
             env = True
             words.pop(0)
         else:
             break
+    return words, env
+
+
+def parse(seg):
+    """-> (env_prefix, command head, assigns) for one command segment."""
+    words, env = _strip_prefix(seg.lstrip("({ ").split())
     if not words:
         return env, "", env
-    if words[0] in ASSIGN_WORDS and any("=" in w for w in words[1:]):
-        assigns = True
+    assigns = words[0] in ASSIGN_WORDS and any("=" in w for w in words[1:])
     return env, " ".join(words), assigns
 
 
@@ -369,14 +378,22 @@ def rewrite_cd_git(cmd):
                 return ""
             scope.enter(words, orig, op, len(out))
             continue
-        new = scope.git_seg(out, seg_text, orig, rewrote) if scope.dir and git_words(seg_text) else orig
-        if not new or not scope.keep_cd(seg_text, piped, rewrote):
+        rewrote = _append_seg(scope, out, rewrote, (seg_text, orig, op, piped))
+        if rewrote is None:
             return ""
-        rewrote = rewrote or (scope.seen and bool(git_words(seg_text)))
-        out.append((new, op))
     if scope.group:
         return ""  # no git command after the cd: nothing to rewrite
     return "".join(o + p for o, p in out).strip() if rewrote else ""
+
+
+def _append_seg(scope, out, rewrote, row):
+    """-> `rewrote` after the non-cd segment ROW (text, orig, op, piped) is appended to OUT, or None when it cannot be kept equivalent."""
+    seg_text, orig, op, piped = row
+    new = scope.git_seg(out, seg_text, orig, rewrote) if scope.dir and git_words(seg_text) else orig
+    if not new or not scope.keep_cd(seg_text, piped, rewrote):
+        return None
+    out.append((new, op))
+    return rewrote or (scope.seen and bool(git_words(seg_text)))
 
 
 def _group_body(pairs):
@@ -411,21 +428,21 @@ def _sed_scripts(args):
 def sed_why(segs):
     """-> deny reason for a `sed -n` call whose script is not one print command (`N`, `N,M`, `$`, `/re/`, `N~M` addresses with `p`; several print scripts go in several -e) or that has an option other than -e (-i, -f, -s, ...): no w/e/r/s commands. `sed -n` is the only form the default allowlist opens (SED_PRINT_ALLOW), so only it is checked here; any other sed form is left to the project's own allow rules. Else ''."""
     deny = "`sed -n` is allowed only to print lines (`sed -n 'A,Bp' <file>`, addresses N, N,M, $, /re/, N~M with p). Read a slice with the Read tool (offset, limit) and change files with the Edit tool."
-    for seg in segs:
-        try:  # shell words, quotes removed: a quoted `;` or space stays inside one script word
-            words = shlex.split(parse(seg)[1])
-        except ValueError:  # unbalanced quotes: a sed call like that is denied, any other segment is left alone
-            if "sed" in seg:
-                return deny
-            continue
-        if len(words) > 2 and os.path.basename(words[0]) == "snip" and words[1] == "run":
-            words = words[3:] if words[2] == "--" else words[2:]
-        if not words or os.path.basename(words[0]) != "sed" or not any(_quiet_flag(w) for w in words[1:]):
-            continue
-        scripts = _sed_scripts(words[1:])
-        if scripts is None or not all(re.fullmatch(SED_PRINT_CMD, s) for s in scripts):  # one print command per script; several go in several -e
-            return deny
-    return ""
+    return deny if any(_sed_bad(seg) for seg in segs) else ""
+
+
+def _sed_bad(seg):
+    """-> True when SEG is a `sed -n` call (run through `snip run` too) whose script is not one print command, or has an option other than -e or the quiet flag."""
+    try:  # shell words, quotes removed: a quoted `;` or space stays inside one script word
+        words = shlex.split(parse(seg)[1])
+    except ValueError:  # unbalanced quotes: a sed call like that is denied, any other segment is left alone
+        return "sed" in seg
+    if len(words) > 2 and os.path.basename(words[0]) == "snip" and words[1] == "run":
+        words = words[3:] if words[2] == "--" else words[2:]
+    if not words or os.path.basename(words[0]) != "sed" or not any(_quiet_flag(w) for w in words[1:]):
+        return False
+    scripts = _sed_scripts(words[1:])
+    return scripts is None or not all(re.fullmatch(SED_PRINT_CMD, s) for s in scripts)  # one print command per script; several go in several -e
 
 
 def servectl_why(segs):
