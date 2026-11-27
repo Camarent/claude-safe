@@ -9,7 +9,7 @@ Host-side tools for the repo itself. Run from a checkout, never inside the conta
 They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 
 ## Public surface
-- `scripts/dev.sh` subcommands: `sync` (`scripts/dev.sh:19`), `check` (`:21`), `fix` (`:22`), `test` (alias `ptest`, `:23`), `pytest` (`:24`), `itest` (`:25`, needs `PIPELINE_PROJECT_DIR`), `cov` (`:27`), `covserial` (`:28`), `dead` (`:29`), `sec` (`:30`), `ccn` (`:31`), `clean` (`:32`), `gate [--ext|--pytest]` (`:33`: `--ext` = check, dead, sec, ccn; `--pytest` = unit suite; no flag = both). Dispatch: `scripts/dev.sh:18`. Gate run times are checked against `gate_time_warn_s` (pipeline.json), merge-only test files come from `merge_only_tests`.
+- `scripts/dev.sh` subcommands: `sync` (`scripts/dev.sh:20`), `check` (`:22`), `fix` (`:23`), `test` (alias `ptest`, `:24`), `pytest` (`:25`), `itest` (`:26`, needs `PIPELINE_PROJECT_DIR`), `cov` (`:28`), `covserial` (`:29`), `dead` (`:30`), `sec` (`:31`), `ccn` (`:32`), `clean` (`:39`), `gate [--ext|--pytest]` (`:33`: `--ext` = check, dead, sec, ccn; `--pytest` = unit suite; no flag = both). Dispatch: `scripts/dev.sh:19`. Gate run times are checked against `gate_time_warn_s` (pipeline.json), merge-only test files come from `merge_only_tests`.
 - `scripts/release.sh` (no args; any arg prints usage, exit 2 at `:10`). Pre-PR gate: host checks, then container suite and gitleaks.
 - `scripts/image_test.sh [IMAGE]` (`scripts/image_test.sh:5`, default `$RELEASE_IMAGE`, then `claude-safe:rust`). Runs the test suite in the image, repo mounted read-only.
 - `scripts/sync-claude-config.sh [--apply|--compare] [REF]`: sync `~/.claude` from a git ref; dry run by default (lists the files that would be overwritten, writes nothing), `--apply` writes; `--compare [REF]` writes nothing and exits 0 when `~/.claude` matches REF, 10 when a file would be overwritten (the driver's `pipeline_install_check`; it runs even while a driver holds the lock); refuses while a driver holds `.work/*/wave.lock` (`driver_running` at `scripts/sync-claude-config.sh:40`, guard at `:52`).
@@ -17,15 +17,15 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `scripts/pipeline_auto.py run NAME` (or `feature NAME`): execs `cs-wave <args>` with the full default flags and permission mode `auto` (opt-in). Args pass through unchanged; old aliases `feature --feature F` and `run --stage S` still accepted. `auto_flags` at `scripts/pipeline_auto.py:28`, `plan` at `:36`, `main` at `:45`. First argument other than `feature` or `run` exits 2 (`:51`).
 
 ## Key files
-- `scripts/dev.sh` - dev checks; all tool caches live in `./.uv` (`:10`), or `DEV_UV_DIR`.
+- `scripts/dev.sh` - dev checks; all tool caches live in `./.uv` (`:11`), or `DEV_UV_DIR`.
 - `scripts/release.sh` - refuses on uncommitted tracked changes (`:15`). Never merges or pushes.
 - `scripts/host_agents.py` - renders `.claude/agents/*.md` for the host: `lp` lines become Grep/Glob, `cs-*` names become wrapper paths. Dry run unless `--apply`.
 - `scripts/install-claude-config.sh` - installs `~/.claude` from this checkout's `.claude/` dir; rerunnable, prints `skip claude-config: already done` when nothing changes.
 - `scripts/sync-claude-config.sh` - runs `install-claude-config.sh` from a detached worktree of a git ref: dry run by default (no flag), `--apply` to write.
-- `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode; imports `pipeline.configuration` from `.claude/tools` (`scripts/pipeline_auto.py:16`).
+- `scripts/pipeline_auto.py` - starts a planned stage or feature in auto permission mode; imports `pipeline.configuration` from `.claude/tools` (`scripts/pipeline_auto.py:17`).
 - `scripts/image_test.sh`, `scripts/dev.sh` - the image and host tests share `.claude/tools/ptest.py`.
 - Ledger figures (`cs-ledger`, `.claude/tools/retro/ledger.py`): the lead part covers a session only when its transcript has a `subagents/` dir next to it. Headless driver sessions have no `subagents/` dir: they are counted only with `--metrics`, which takes their ids from `metrics.jsonl`; without it they are left out. The `LEAD-COST` lines cover the lead session by stage window. Log layout and session ids: `docs/headless-session-logs.md`.
-- `.claude/tools/pipeline/docs_impact.py` - stage gate: a doc that cites a file or top-level def the job diff changed must change too; `check` at `.claude/tools/pipeline/docs_impact.py:72`.
+- `.claude/tools/pipeline/docs_impact.py` - stage gate: a doc that cites a file or top-level def the job diff changed must change too; `check` at `.claude/tools/pipeline/docs_impact.py:81`.
 - `.claude/tools/pipeline/entry.py` - shared entry helpers: the status-line formatter, the shared run flags, the open-phase resolver and the feature-level BLOCKED copy; `write_blocked` writes it.
 - `.claude/tools/pipeline/gitx.py` - `gitx.ignored(repo, paths)`: the paths git ignores (one `check-ignore` call per path; tracked and outside-repo paths are not reported). Shared by the plan checks and the callers that used to copy it.
 - `.claude/tools/pipeline/task_text.py` - the shared task-file field parser: `field(text, name)` and `lines(text, *names)` read `NAME:` lines, skipping fenced code blocks. Used by brieflint and the plan checks.
@@ -33,8 +33,8 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - `.claude/tools/pipeline/empty_tests.py` - stage gate: lists test functions in a Python test file that assert nothing; `find` at `.claude/tools/pipeline/empty_tests.py:46`.
 
 ## Invariants and gotchas
-- `dev.sh` uses `UV_PYTHON_PREFERENCE=only-system` (`scripts/dev.sh:13`): never downloads an interpreter.
-- A worktree's `.uv` is a symlink to the main checkout's venv; `dev.sh sync` refuses there (`scripts/dev.sh:19`).
+- `dev.sh` uses `UV_PYTHON_PREFERENCE=only-system` (`scripts/dev.sh:14`): never downloads an interpreter.
+- A worktree's `.uv` is a symlink to the main checkout's venv; `dev.sh sync` refuses there (`scripts/dev.sh:20`).
 - `release.sh` scans a copy of tracked and untracked-but-not-ignored files, not the working dir, so ignored data is not walked.
 - `host_agents.py` imports `.claude/tools/pipeline/cmdindex.py` (`scripts/host_agents.py:16`); the wrappers must exist (`gen-bin`) or it stops with an error.
 
