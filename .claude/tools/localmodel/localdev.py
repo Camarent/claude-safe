@@ -627,7 +627,7 @@ def _code_test(test, wt):
 
 def _code_summary(root, cid, verdict, branch, wt, files, viol, t, res, rep):
     """Print the two result lines of a code task: verdict, files, test, turns, reverts; then branch and report."""
-    test_state = "OK" if t.returncode == 0 else "FAIL"
+    test_state = "OK" if t.returncode == 0 else FAIL
     print(f"LOCALDEV code {verdict} id={cid} files={files} test={test_state} turns={res['turns']} secs={res['secs']}" + (f" reverted={viol}" if viol else ""))
     state = "committed" if verdict == PASS else "left as is for inspection"
     print(f"branch {branch} (worktree {wt}, {state})   report: {os.path.relpath(rep, root)}")
