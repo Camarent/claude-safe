@@ -52,6 +52,8 @@ KIND_LEVELS = {
     "cite-short": ERROR,  # planned: task-7
     "carried-notes": ERROR,
     "wiring": ERROR,  # a new module under a wiring dir with no mount (plan_wiring)
+    "tool-block": ERROR,  # a Test/Done names a JS tool whose smoke probe fails (plan_toolblock)
+    "knip-prod": ERROR,  # a Test/Done runs knip --production with no knip entry key (plan_toolblock)
 }
 
 KIND_RE = re.compile(r"([a-z][a-z-]*):")  # a problem line starts with this token

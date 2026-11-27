@@ -16,7 +16,7 @@ PLANNING = os.path.join(PIPELINE, "configuration", "planning.py")
 WARN_CONST_RE = re.compile(r'(?m)^([A-Z_]+_WARN_PREFIX)\s*=\s*"([a-z][a-z-]*):"')
 KIND_IN_TEXT_RE = re.compile(r"([a-z][a-z-]*):(?=\s|$)")
 # kinds of plan_*.py strings that are no check problem: a log line, a raised message, a header, an input value
-NOT_PROBLEMS = frozenset(("cycle", "model", "note", "plan", "pr-title", "tool", "warn"))
+NOT_PROBLEMS = frozenset(("cycle", "model", "note", "plan", "pr-title", "tool", "warn", "warning"))
 
 
 def emitted_kinds(source):
