@@ -28,6 +28,7 @@ from .configuration import (
     MAX_TRIES,
     METRICS_LOG,
     MODEL_SONNET,
+    NIT_PASS_WHY,
     PASS,
     PHASES_DIR,
     PLAN_NOTES_FILE,
@@ -90,7 +91,7 @@ from .steps_history import (
 from .steps_verify import VERIFY_WHY, blocked_for_checks
 from .steps_verify import command as verify_command
 from .util import append_event, append_jsonl, now, paths, read_text, work_path, write_text
-from .verdicts import is_unclear
+from .verdicts import is_nit_only_fail, is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
 
@@ -600,11 +601,31 @@ def _after_reviewer(a, task, mine, rid, s, last):
         if last["verdict"] == FAIL and (d := _docfix_dispatch(a, task, mine, rid, last)) is not None:
             return d
         if s.rounds > MAX_ROUNDS - 1:
+            if last["verdict"] == FAIL and is_nit_only_fail(read_text(last["file"])):  # nits only: no defect left, PASS with the nits as notes
+                return _nit_pass(a, task, mine, rid, last)
             if _extra_rounds_ran(mine) < REVIEW_EXTRA_ROUNDS:
                 return _extra_round(a, task, mine, rid)
             return {"action": "ask_main", "message": f"{task['id']}: review failed {s.rounds} rounds; findings {last['file']}" + hint(a, task["id"])}
         # first FAIL: Haiku rework; Sonnet once the failed rounds passed HAIKU_REWORK_TRIES (e1.model_for, event a)
         return _disp(a, task, rid, "dev", rework=last["file"], mine=mine)
+    return None
+
+
+def _nit_pass(a, task, mine, rid, last):
+    """A nit-only reviewer FAIL after the failed rounds: a PASS report event with the nits file as its notes, so the task passes (None). No extra round, no lead."""
+    append_event(
+        paths(a)[1],
+        {
+            "ev": EV_REPORT,
+            "id": rid,
+            "task": task["id"],
+            "role": "reviewer",
+            "verdict": PASS,
+            "reason": NIT_PASS_WHY,
+            "why": NIT_PASS_WHY,
+            "file": last["file"],
+        },
+    )
     return None
 
 

@@ -13,6 +13,7 @@ MAX_ROUNDS = 2  # failed review rounds before the lead is asked
 MAX_TRIES = 4  # runs of one role (dev, reviewer) per task, any model; a fifth goes to the lead
 REVIEW_EXTRA_ROUNDS = 1  # extra dev rounds after the last failed review round (MAX_ROUNDS), each with the verbatim findings; 0 = the lead is asked at once
 EXTRA_ROUND_WHY = "extra review round: the dev reworks the verbatim text of every failed review"  # dispatch reason of an extra dev round (counted from the log)
+NIT_PASS_WHY = "nit-only review FAIL after the failed rounds: PASS with the nits as notes"  # nosec B105  # a log reason text, not a password; reason of the PASS report that closes such a task (its file names the nits)
 REVIEW_SKIP_RC = 3  # `lp review` exit code for "skipped: diff too big"; callers treat it as no review, never as FAIL
 LOCAL_CONTEXT_TOKENS = 131072  # the Strata launch `--max-context`: one request must fit it
 LOCAL_ANSWER_TOKENS = 5000  # thinking + answer budget of a pre-review call
