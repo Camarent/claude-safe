@@ -264,7 +264,11 @@ def install_check(a, run=subprocess.run) -> str | None:
     cmd = cfg.get("pipeline_install_check")
     if not cmd:
         return None
-    cmd = cmd.replace(WORK_BRANCH_PLACEHOLDER, work_branch(cfg, getattr(a, "feature", None) or a.stage))
+    own = getattr(a, "feature", None) or a.stage
+    if rival := cli_wave.other_driver(a.dir, own):  # a driver of another stage switches branches in the main checkout: the sync would race it
+        print(f"install check skipped: driver of {rival} running")
+        return None
+    cmd = cmd.replace(WORK_BRANCH_PLACEHOLDER, work_branch(cfg, own))
     r = run(cmd, shell=True, cwd=repo_dir(a.dir, cfg), capture_output=True, text=True, timeout=LONG_CMD_TIMEOUT_S, check=False)  # nosec B602,B604  # the command is set by the project's pipeline.json, not by user input
     if r.returncode == 0:
         return None

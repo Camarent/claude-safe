@@ -4,6 +4,9 @@ install_check takes an injected runner; the _run_phase cases patch its collabora
 phase state) so only the order of the steps is under test.
 """
 
+import contextlib
+import fcntl
+import io
 import json
 import os
 import shutil
@@ -16,8 +19,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import cli_feature
+from pipeline import cli_feature, cli_wave
 from pipeline import plan_files as pf
+from pipeline.configuration import STAGE_LOCK, WORK_DIR
 
 REPO = Path(__file__).resolve().parents[3]
 CFG_KEY = "pipeline_install_check"
@@ -119,6 +123,85 @@ class RunPhaseInstallCheckTests(unittest.TestCase):
         self.assertEqual(rc, 4)
         self.block.assert_called_once_with(self.a, self.check.return_value)
         self.mark.assert_called_once()  # the phase stays done: the relaunch continues with 02-b
+
+
+class OtherDriverTests(unittest.TestCase):
+    """cli_wave.other_driver: a live driver of another stage (its wave.lock flock-held) is a rival of the install check."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def _lock(self, stage, held=True):
+        path = Path(self.tmp, WORK_DIR, stage, STAGE_LOCK)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+        if held:  # flock is per open file description: a second fd in this process sees the conflict, as another driver would
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.addCleanup(os.close, fd)
+        else:
+            os.close(fd)
+        return path
+
+    def test_held_lock_of_other_stage_is_a_rival(self):
+        self._lock("other", held=True)
+        self.assertEqual(cli_wave.other_driver(self.tmp, "mine"), "other")
+
+    def test_free_lock_is_no_rival_and_the_probe_takes_nothing(self):
+        path = self._lock("other", held=False)
+        self.assertIsNone(cli_wave.other_driver(self.tmp, "mine"))
+        self.assertTrue(path.exists())  # the probe creates no file ...
+        fd = os.open(path, os.O_RDWR)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # ... and leaves no lock behind
+
+    def test_own_stage_and_its_phases_do_not_count(self):
+        self._lock("mine", held=True)
+        self._lock("mine/phases/01-a", held=True)
+        self.assertIsNone(cli_wave.other_driver(self.tmp, "mine"))
+
+    def test_phase_stage_of_another_feature_is_found(self):
+        self._lock("feat/phases/01-a", held=True)
+        self.assertEqual(cli_wave.other_driver(self.tmp, "mine"), "feat/phases/01-a")
+
+    def test_no_work_dir_is_no_rival(self):
+        self.assertIsNone(cli_wave.other_driver(self.tmp, "mine"))
+
+    def test_driver_retries_past_a_probe_holding_the_lock_shared(self):
+        path = Path(self.tmp, "wave.lock")
+        real_flock = fcntl.flock
+        calls = []
+
+        def probe_first(fd, op):  # the first attempt meets other_driver's shared probe, the next ones find the lock free
+            calls.append(op)
+            if len(calls) == 1:
+                raise BlockingIOError(11, "probe holds the lock shared")
+            return real_flock(fd, op)
+
+        with mock.patch.object(cli_wave.fcntl, "flock", side_effect=probe_first), mock.patch.object(cli_wave.time, "sleep") as sleep:
+            self.assertTrue(cli_wave._take_lock(str(path)))
+        self.addCleanup(cli_wave._release_lock, str(path))
+        self.assertEqual(len(calls), 2)
+        sleep.assert_called_once()
+
+    def test_install_check_skips_while_other_driver_runs(self):
+        self._lock("other", held=True)
+        self._lock("mine", held=True)  # own lock: not a reason to skip
+        a = types.SimpleNamespace(dir=self.tmp, feature="mine", stage="mine")
+        run = mock.Mock()
+        out = io.StringIO()
+        with mock.patch.object(cli_feature, "project", return_value=_cfg("scripts/sync-claude-config.sh --compare")), contextlib.redirect_stdout(out):
+            self.assertIsNone(cli_feature.install_check(a, run=run))
+        run.assert_not_called()
+        self.assertEqual(out.getvalue(), "install check skipped: driver of other running\n")
+
+    def test_install_check_runs_when_no_other_driver(self):
+        self._lock("mine", held=True)  # only our own lock
+        a = types.SimpleNamespace(dir=self.tmp, feature="mine", stage="mine")
+        run = mock.Mock(return_value=subprocess.CompletedProcess("x", 0, "", ""))
+        with mock.patch.object(cli_feature, "project", return_value=_cfg("check")), mock.patch.object(cli_feature, "repo_dir", return_value=self.tmp):
+            self.assertIsNone(cli_feature.install_check(a, run=run))
+        run.assert_called_once()
 
 
 if __name__ == "__main__":
