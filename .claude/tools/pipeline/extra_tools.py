@@ -248,6 +248,21 @@ def _parser():
     return p
 
 
+def _needed_by_checks(a, bad) -> tuple[list, list[str], str]:
+    """-> (bad, warn, note) of the `--needed-by` file: the failures the stage does not need (split_needed) and the audit tools note."""
+    stage = task_text(a.stage_dir) if a.stage_dir else ""
+    bad, warn = split_needed(bad, read_text(a.needed_by) if os.path.exists(a.needed_by) else "", stage)
+    return bad, warn, audit_tools_note(a.needed_by)
+
+
+def _proj_note(proj) -> str:
+    """-> the `--proj` part of the verdict note: (re)creates the eslint/knip scaffold, then the ci-drift warnings of the project."""
+    ensure_proj(proj)
+    with contextlib.suppress(ValueError):
+        return "".join(f"warning: ci-drift: {w}\n" for w in drift(proj, project(proj)))
+    return ""
+
+
 def main(argv=None) -> None:
     a = _parser().parse_args(argv)
     rs = rows(read_text(TABLE))
@@ -259,13 +274,9 @@ def main(argv=None) -> None:
     warn: list[str] = []
     note = ""
     if a.needed_by is not None:
-        stage = task_text(a.stage_dir) if a.stage_dir else ""
-        bad, warn = split_needed(bad, read_text(a.needed_by) if os.path.exists(a.needed_by) else "", stage)
-        note = audit_tools_note(a.needed_by)
+        bad, warn, note = _needed_by_checks(a, bad)
     if a.proj:
-        ensure_proj(a.proj)
-        with contextlib.suppress(ValueError):
-            note += "".join(f"warning: ci-drift: {w}\n" for w in drift(a.proj, project(a.proj)))
+        note += _proj_note(a.proj)
     if a.browser:
         ensure_browser_user()
         (ok if browser_ok() else bad).append("chrome-devtools MCP")

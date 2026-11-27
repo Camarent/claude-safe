@@ -115,6 +115,15 @@ def _validate(a, ents, target, started):
     return deps
 
 
+def _default_wave(ents, by, deps, target, started) -> int:
+    """-> the wave of the new task when --wave is not given: after its latest dependency, else the first idle wave if TARGET started, else TARGET's own wave."""
+    if deps:
+        return max(by[x]["wave"] for x in deps) + 1
+    if target in started:
+        return _first_idle_wave(ents, started)
+    return by[target]["wave"]
+
+
 def _plan(a, d, ents, before):
     """-> (new entry, renumber map, old wave per new id); changes ENTS in memory, raises on a bad request. Nothing is written."""
     target, started = f"task-{before}", pf.started_tasks(d)
@@ -122,7 +131,7 @@ def _plan(a, d, ents, before):
     ren = _renumber_map(ents, before, started)
     new_id = target if ren else f"task-{max(int(e['id'][5:]) for e in ents) + 1}"
     by = {e["id"]: e for e in ents}
-    wave = a.wave or (max(by[x]["wave"] for x in deps) + 1 if deps else _first_idle_wave(ents, started) if target in started else by[target]["wave"])
+    wave = a.wave or _default_wave(ents, by, deps, target, started)
     old_paths = {ren.get(e["id"], e["id"]): pf.task_path_modes(d, e["id"]) for e in ents}
     old_wave = {ren.get(e["id"], e["id"]): e["wave"] for e in ents}
     for e in ents:

@@ -362,6 +362,16 @@ def _worktree_report(a, d):
     return f if os.path.isfile(f) else None
 
 
+def _fill_report_file(a, d, f) -> None:
+    """Fill the main report F of dispatch D: take the job worktree's report when F has no VERDICT line, then --text only fills a missing/blank F."""
+    if not _VERDICT_LINE.search(read_text(f)):  # the main report has no VERDICT line: take the job worktree's report when it has one
+        wt_f = _worktree_report(a, d)
+        if wt_f and _VERDICT_LINE.search(read_text(wt_f)):
+            write_text(f, read_text(wt_f))
+    if a.text and not read_text(f).strip():  # --text only fills a missing/blank file
+        write_text(f, a.text)
+
+
 def cmd_report(a) -> None:
     w, log = paths(a)
     evs = read_jsonl(log)
@@ -370,12 +380,7 @@ def cmd_report(a) -> None:
         sys.exit(f"orch: unknown dispatch id {a.id}")
     d = d[0]
     f = work_path(w, f"report-{a.id}.md", create=True)
-    if not _VERDICT_LINE.search(read_text(f)):  # the main report has no VERDICT line: take the job worktree's report when it has one
-        wt_f = _worktree_report(a, d)
-        if wt_f and _VERDICT_LINE.search(read_text(wt_f)):
-            write_text(f, read_text(wt_f))
-    if a.text and not read_text(f).strip():  # --text only fills a missing/blank file
-        write_text(f, a.text)
+    _fill_report_file(a, d, f)
     body = read_text(f)
     v, reason = _report_verdict(d, body, a.id)
     v, ignored = _remit_verdict(a, d, v, body)
@@ -414,6 +419,12 @@ def _job_has_commits(a):
     return bool(r) and str(r).strip().isdigit() and int(str(r).strip()) > 0
 
 
+def _next_retry_id(evs) -> str:
+    """-> the next `retry-N` report id after the retry reports in EVS."""
+    nums = [int(m.group(1)) for e in evs if (m := re.fullmatch(r"retry-(\d+)", str(e.get("id", ""))))]
+    return f"retry-{max(nums, default=0) + 1}"
+
+
 def _blocked_dev_is_green(a, log):
     """retry of a task whose last dev report is BLOCKED: run its Test lines and the gates in its worktree. -> True when both are green and `done` is recorded (no model call)."""
     evs = read_jsonl(log)
@@ -426,8 +437,7 @@ def _blocked_dev_is_green(a, log):
     if not ok:
         return False
     note, n = ok
-    nums = [int(m.group(1)) for e in evs if (m := re.fullmatch(r"retry-(\d+)", str(e.get("id", ""))))]
-    rid = f"retry-{max(nums, default=0) + 1}"
+    rid = _next_retry_id(evs)
     f = work_path(paths(a)[0], f"report-{rid}.md", create=True)
     write_text(f, f"VERDICT: DONE\nretry check, no model call: {note}; {n} gate command(s) green.\n")
     append_event(
@@ -453,8 +463,7 @@ def _reset_fix_chain(log, a):
 def _record_conflict(a, log, e):
     """retry hit a rebase conflict: record the step BLOCKED (a dev report, so the next retry and the lead see it) with the conflicting files and the resolve command. -> the reason text."""
     evs = read_jsonl(log)
-    nums = [int(m.group(1)) for x in evs if (m := re.fullmatch(r"retry-(\d+)", str(x.get("id", ""))))]
-    rid = f"retry-{max(nums, default=0) + 1}"
+    rid = _next_retry_id(evs)
     files = ", ".join(e.files) or "none listed (timeout)"
     reason = (
         f"rebase onto {e.base} conflicts in {files}; resolve: git -C {e.path} rebase {e.base}, "
@@ -535,12 +544,8 @@ def _apply_addendum(a):
 
 def _unmerged_prereqs(a, evs):
     """retry: the other tasks the step's task file or note names (`task-N`) that are DONE (a dev DONE report) with a job branch the stage branch does not hold yet. A retry starts from the stage branch, so it would lack them. Advisory: any error gives []. -> [task ids]."""
-    path = os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")
-    if not os.path.isfile(path):
-        return []
-    try:
-        text = read_text(path) + "\n" + (getattr(a, "note", "") or "")
-    except (OSError, ValueError):
+    text = _step_text(a)
+    if text is None:
         return []
     named = sorted({f"task-{n}" for n in re.findall(r"\btask-(\d+)\b", text)} - {a.step}, key=lambda t: int(t[5:]))
     done = {e.get("task") for e in evs if e["ev"] == EV_REPORT and e.get("role") == "dev" and e.get("verdict") == DONE}
@@ -548,6 +553,17 @@ def _unmerged_prereqs(a, evs):
         return [t for t in named if t in done and worktree.live_job(a.dir, a.stage, t) and not worktree.is_merged(a.dir, a.stage, t)]
     except (RuntimeError, OSError):
         return []
+
+
+def _step_text(a):
+    """-> the task file of the step plus its note, or None when the task file is missing or unreadable."""
+    path = os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")
+    if not os.path.isfile(path):
+        return None
+    try:
+        return read_text(path) + "\n" + (getattr(a, "note", "") or "")
+    except (OSError, ValueError):
+        return None
 
 
 def _prereq_warning(a, ids):

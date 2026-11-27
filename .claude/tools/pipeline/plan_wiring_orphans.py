@@ -90,18 +90,20 @@ def _module_key(spec: str, importer: str) -> str:
     return _file_key(posixpath.normpath(path))
 
 
-def orphans(repo, base, dirs) -> list[str]:
-    """-> the source files added between BASE and HEAD under DIRS that no other tracked source file imports (sorted; [] when none)."""
+def _candidates(repo, base, dirs) -> list[str]:
+    """-> the source files added between BASE and HEAD under DIRS, minus tests and the knip `entry` globs."""
     entries = _entry_globs(repo)
     added = _z_out(repo, "diff", "-z", "--name-only", "--diff-filter=A", f"{base}..HEAD")
-    candidates = [
+    return [
         p
         for p in added
         if p.endswith(WIRING_SOURCE_EXTS) and _under(p, dirs) and not re.search(WIRING_TEST_RE, p) and not any(fnmatch.fnmatchcase(p, g) for g in entries)
     ]
-    if not candidates:
-        return []
-    importers: dict[str, set[str]] = {}  # resolved module key -> the tracked files whose import lines name it
+
+
+def _importers(repo) -> dict[str, set[str]]:
+    """-> resolved module key (see _module_key) -> the tracked source files whose import lines name it."""
+    importers: dict[str, set[str]] = {}
     for p in _z_out(repo, "ls-files", "-z"):
         if not p.endswith(WIRING_SOURCE_EXTS):
             continue
@@ -113,6 +115,15 @@ def orphans(repo, base, dirs) -> list[str]:
         for line in text.splitlines():
             for spec in _module_specs(line, p):
                 importers.setdefault(_module_key(spec, p), set()).add(p)
+    return importers
+
+
+def orphans(repo, base, dirs) -> list[str]:
+    """-> the source files added between BASE and HEAD under DIRS that no other tracked source file imports (sorted; [] when none)."""
+    candidates = _candidates(repo, base, dirs)
+    if not candidates:
+        return []
+    importers = _importers(repo)
     return sorted(c for c in candidates if not (importers.get(_file_key(c), set()) - {c}))
 
 

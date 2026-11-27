@@ -26,6 +26,23 @@ REGISTRY_FILES_KEY = "registry_files"  # pipeline.json: [{"path", "when"}]: a ta
 FINAL_GATES_KEY = "gates_final"  # gates that run only in the final test (.claude/tools/audit/final_check.py): once per stage, never in a task, at a wave merge or in the preflight
 
 
+def _gate_entry(g, key, seen) -> dict:
+    """-> the validated {"name", "cmd", [parallel]} of one `key` entry G; ConfigError when the name is missing or repeated (SEEN), the cmd is empty or the group is not a string."""
+    name = str(g.get("name") or "").strip() if isinstance(g, dict) else ""
+    cmd = str(g.get("cmd") or "").strip() if isinstance(g, dict) else ""
+    if not name:
+        raise ConfigError(f"pipeline.json: every `{key}` entry needs a non-empty `name`")
+    if name in seen:
+        raise ConfigError(f"pipeline.json: duplicate gate name `{name}` in `{key}`")
+    if not cmd:
+        raise ConfigError(f"pipeline.json: `{key}` entry `{name}` has an empty `cmd`")
+    group = g.get(GATE_PARALLEL_KEY)
+    if group is not None and not isinstance(group, str):
+        raise ConfigError(f"pipeline.json: `{key}` entry `{name}`: `{GATE_PARALLEL_KEY}` must be a string")
+    seen.add(name)
+    return {"name": name, "cmd": cmd, **({GATE_PARALLEL_KEY: group.strip()} if group and group.strip() else {})}
+
+
 def gates_of(cfg, key=GATES_KEY) -> list[dict]:
     """-> [{"name", "cmd"}] from cfg `gates` (validated: a list, unique names, non-empty cmds); [] when absent. A gate's optional string GATE_PARALLEL_KEY (group name) is kept; gates of one group run concurrently, so a group must never share a build dir."""
     raw = cfg.get(key)
@@ -33,22 +50,8 @@ def gates_of(cfg, key=GATES_KEY) -> list[dict]:
         return []
     if not isinstance(raw, list):
         raise ConfigError(f"pipeline.json: `{key}` must be a list of {{name, cmd}} objects")
-    seen, out = set(), []
-    for g in raw:
-        name = str(g.get("name") or "").strip() if isinstance(g, dict) else ""
-        cmd = str(g.get("cmd") or "").strip() if isinstance(g, dict) else ""
-        if not name:
-            raise ConfigError(f"pipeline.json: every `{key}` entry needs a non-empty `name`")
-        if name in seen:
-            raise ConfigError(f"pipeline.json: duplicate gate name `{name}` in `{key}`")
-        if not cmd:
-            raise ConfigError(f"pipeline.json: `{key}` entry `{name}` has an empty `cmd`")
-        group = g.get(GATE_PARALLEL_KEY)
-        if group is not None and not isinstance(group, str):
-            raise ConfigError(f"pipeline.json: `{key}` entry `{name}`: `{GATE_PARALLEL_KEY}` must be a string")
-        seen.add(name)
-        out.append({"name": name, "cmd": cmd, **({GATE_PARALLEL_KEY: group.strip()} if group and group.strip() else {})})
-    return out
+    seen: set = set()
+    return [_gate_entry(g, key, seen) for g in raw]
 
 
 def merge_gates_of(cfg) -> list[dict]:
