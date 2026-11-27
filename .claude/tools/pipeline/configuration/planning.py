@@ -164,6 +164,7 @@ IGNORED_DONE_EXT_RE = r"\.[A-Za-z0-9]{1,8}$"  # a token with a file extension is
 IGNORED_DONE_URL = "://"  # a token with this mark is a URL, never a path
 IGNORED_DONE_TRIM = "`'\"()[]<>,;:."  # punctuation stripped from both ends of a token before the path test
 RESEARCH_PREFIX = "research:"  # error prefix of plan_research.check_research: a research task has one tracked Outputs: path and a later task that depends on it names that path
+RESEARCH_HINT_PREFIX = "research-hint:"  # warning prefix of plan_research_hint.check_research_hint: a Goal/Done with a trigger word and no research dependency
 PINS_PREFIX = "pins:"  # error prefix of plan_pins.check_pinned_tests: a task edits a data or setting file that a test pins, and does not list that test
 PIN_DATA_EXTS = (".json", ".txt", ".csv", ".toml", ".yaml", ".yml")  # a Predicted path with one of these ends is a data file a test may pin
 PIN_DATA_DIR = "configuration"  # a Predicted path under a folder of this name is a setting file (plan_pins)

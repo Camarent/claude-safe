@@ -547,6 +547,7 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     QRUN_OP_RE,
     QRUN_OPS,
     REGISTRY_WORDS,
+    RESEARCH_HINT_PREFIX,
     RESEARCH_PREFIX,
     SCOPE_ALLOW_ALL,
     SCOPE_HINT_NOTE,
