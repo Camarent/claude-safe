@@ -14,6 +14,11 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import cli_orch, cli_wave, graph
 
+# fixed task ids: asserts compare these names, never a literal task id inside an assert
+PREREQ = "task-33"
+STEP = "task-26"
+UNMERGED = "task-2"
+
 
 class RetryPrereq(unittest.TestCase):
     def setUp(self):
@@ -44,7 +49,7 @@ class RetryPrereq(unittest.TestCase):
 
     def test_an_unmerged_named_task_is_warned_about_and_the_retry_still_happens(self):
         r = self.retry()
-        self.assertIn("task-33", r["warn"])
+        self.assertIn(PREREQ, r["warn"])
         self.assertIn("not merged into the stage branch yet", r["warn"])
         self.assertEqual(r["recorded"], "retry")
 
@@ -52,12 +57,13 @@ class RetryPrereq(unittest.TestCase):
         os.remove(f"{self.t}/.work/s/task-26.md")
         with open(f"{self.t}/.work/s/task-26.md", "w", encoding="utf-8") as f:
             f.write("Test: true\n")
-        self.assertIn("task-33", self.retry(note="also see task-33")["warn"])
-        self.merged.add("task-33")
-        self.assertNotIn("warn", self.retry(note="also see task-33"))
+        note = f"edit .claude/tools/pipeline/cli_orch.py:523 also see {PREREQ}"
+        self.assertIn(PREREQ, self.retry(note=note)["warn"])
+        self.merged.add(PREREQ)
+        self.assertNotIn("warn", self.retry(note=note))
         self.merged.clear()
         self.live.clear()
-        self.assertNotIn("warn", self.retry(note="also see task-33"))
+        self.assertNotIn("warn", self.retry(note=note))
 
     def test_a_task_that_is_not_done_yet_does_not_warn_and_an_error_never_aborts_the_retry(self):
         with open(f"{self.t}/.work/s/orch.jsonl", "w", encoding="utf-8") as f:
@@ -79,7 +85,7 @@ class RetryPrereq(unittest.TestCase):
 
     def test_the_task_itself_is_never_its_own_prerequisite(self):
         self.live = {"task-26"}
-        self.assertNotIn("warn", self.retry(note="task-26 again"))
+        self.assertNotIn("warn", self.retry(note=f"edit .claude/tools/pipeline/cli_orch.py:523 {STEP} again"))
 
 
 class ResetChain(unittest.TestCase):
@@ -129,7 +135,7 @@ class StatusLine(unittest.TestCase):
         out = io.StringIO()
         with mock.patch.object(graph, "_unmerged_done", return_value=["task-2"]), contextlib.redirect_stdout(out):
             cli_wave.cmd_status(a)
-        self.assertIn("unmerged (done, job branch not merged into the stage branch): task-2", out.getvalue())
+        self.assertIn(f"unmerged (done, job branch not merged into the stage branch): {UNMERGED}", out.getvalue())
         out = io.StringIO()
         with mock.patch.object(graph, "_unmerged_done", return_value=[]), contextlib.redirect_stdout(out):
             cli_wave.cmd_status(a)

@@ -37,7 +37,7 @@ import re
 import subprocess
 import sys
 
-from . import gitx, lead_context, verify_retry, worktree
+from . import gitx, lead_context, retry_note, verify_retry, worktree
 from .briefs import last_report_file, lead_note_line, leads_for
 from .configuration import (
     ADDENDUM_HEADING,
@@ -517,6 +517,16 @@ def _skip_timeout_guard(a, log) -> bool:
     return timed_out
 
 
+def _lint_retry_note(a) -> None:
+    """retry --note: refuse a note that names no path[:line]; print a warning for a path outside the task's scope. Runs before any write."""
+    path = os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")
+    msgs = retry_note.lint(a.note, read_text(path) if os.path.isfile(path) else "")
+    if retry_note.refused(a.note):
+        sys.exit(msgs[0])
+    for m in msgs:
+        print(m, file=sys.stderr)
+
+
 def _apply_addendum(a):
     """retry --addendum: write the block to the task file, then fold the addendum into the note the dev reads first."""
     _write_addendum(a)
@@ -576,21 +586,32 @@ def _target_stage(a) -> tuple[str, str]:
         sys.exit(f"orch: {a.cmd} refused: {e}")
 
 
+def _retry_prepare(a, log) -> tuple[bool, list]:
+    """retry checks before any write -> (done: step was verified or green, no event needed; unmerged prereq warnings)."""
+    if getattr(a, "note", ""):  # a refused note changes nothing: lint before any write
+        _lint_retry_note(a)
+    if getattr(a, "addendum", ""):  # before any other write: a refused script step changes nothing
+        _apply_addendum(a)
+    if _verify_or_green(a, log):
+        return True, []
+    warn = _unmerged_prereqs(a, read_jsonl(log))  # before the retry writes anything
+    _refresh_job(a, log)
+    return False, warn
+
+
 def cmd_reset(a) -> None:
     """retry: forget a step's history so it runs again. skip: count the step as satisfied (the owner decided)."""
     a.stage, a.dir = _target_stage(a)
     _w, log = paths(a)
     timed_out = False
+    warn: list = []
     if a.cmd == "skip":
         _skip_guard(a)
         timed_out = _skip_timeout_guard(a, log)  # before any write: a refused skip changes nothing
-    if a.cmd == "retry" and getattr(a, "addendum", ""):  # before any other write: a refused script step changes nothing
-        _apply_addendum(a)
-    if a.cmd == "retry" and _verify_or_green(a, log):
-        return
-    warn = _unmerged_prereqs(a, read_jsonl(log)) if a.cmd == "retry" else []  # before the retry writes anything
-    if a.cmd == "retry":
-        _refresh_job(a, log)
+    else:
+        done, warn = _retry_prepare(a, log)
+        if done:
+            return
     ev = {
         "ev": a.cmd,
         "task": a.step,
