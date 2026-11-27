@@ -9,7 +9,7 @@ Host-side tools for the repo itself. Run from a checkout, never inside the conta
 They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 
 ## Public surface
-- `scripts/dev.sh` subcommands: `sync` (`scripts/dev.sh:20`), `check` (`:22`), `fix` (`:23`), `test` (alias `ptest`, `:24`), `pytest` (`:25`), `itest` (`:26`, needs `PIPELINE_PROJECT_DIR`), `cov` (`:28`), `covserial` (`:29`), `dead` (`:30`), `sec` (`:31`), `ccn` (`:32`), `clean` (`:39`), `gate [--ext|--pytest]` (`:33`: `--ext` = check, dead, sec, ccn; `--pytest` = unit suite; no flag = both). Dispatch: `scripts/dev.sh:19`. Gate run times are checked against `gate_time_warn_s` (pipeline.json), merge-only test files come from `merge_only_tests`.
+- `scripts/dev.sh` subcommands: `sync` (`scripts/dev.sh:28`), `check` (`:30`), `fix` (`:31`), `test` (alias `ptest`, `:32`), `pytest` (`:33`), `itest` (`:34`, needs `PIPELINE_PROJECT_DIR`), `cov` (`:36`), `covserial` (`:37`), `dead` (`:38`), `sec` (`:39`), `ccn` (`:40`, `ccn_check` at `:20`: `-C N` and PATHs override the default 15 and `.claude/tools`), `clean` (`:47`), `gate [--ext|--pytest]` (`:41`: `--ext` = check, dead, sec, ccn; `--pytest` = unit suite; no flag = both). Dispatch: `scripts/dev.sh:27`. Gate run times are checked against `gate_time_warn_s` (pipeline.json key; default in `.claude/tools/pipeline/configuration/defaults.py`), merge-only test files come from `merge_only_tests`.
 - `scripts/release.sh` (no args; any arg prints usage, exit 2 at `:10`). Pre-PR gate: host checks, then container suite and gitleaks.
 - `scripts/image_test.sh [IMAGE]` (`scripts/image_test.sh:5`, default `$RELEASE_IMAGE`, then `claude-safe:rust`). Runs the test suite in the image, repo mounted read-only.
 - `scripts/sync-claude-config.sh [--apply|--compare] [REF]`: sync `~/.claude` from a git ref; dry run by default (lists the files that would be overwritten, writes nothing), `--apply` writes; `--compare [REF]` writes nothing and exits 0 when `~/.claude` matches REF, 10 when a file would be overwritten (the driver's `pipeline_install_check`; it runs even while a driver holds the lock); refuses while a driver holds `.work/*/wave.lock` (`driver_running` at `scripts/sync-claude-config.sh:40`, guard at `:52`).
@@ -34,7 +34,7 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 
 ## Invariants and gotchas
 - `dev.sh` uses `UV_PYTHON_PREFERENCE=only-system` (`scripts/dev.sh:14`): never downloads an interpreter.
-- A worktree's `.uv` is a symlink to the main checkout's venv; `dev.sh sync` refuses there (`scripts/dev.sh:20`).
+- A worktree's `.uv` is a symlink to the main checkout's venv; `dev.sh sync` refuses there (`scripts/dev.sh:28`).
 - `release.sh` scans a copy of tracked and untracked-but-not-ignored files, not the working dir, so ignored data is not walked.
 - `host_agents.py` imports `.claude/tools/pipeline/cmdindex.py` (`scripts/host_agents.py:16`); the wrappers must exist (`gen-bin`) or it stops with an error.
 
