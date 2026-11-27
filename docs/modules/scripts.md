@@ -72,7 +72,7 @@ Each paragraph names the code file that holds the change.
 - qrun summary (`.claude/tools/qrun.py`, `_ruff_summary`): a ruff failure prints a one-line `ruff: <findings>` summary before the excerpts.
 - Acceptance order (`.claude/tools/pipeline/phases.py`, `_acceptance`): the acceptance items run in the order the plan lists them, after the planned tasks and before the docs step.
 - PR update-branch retry (`.claude/tools/pipeline/pr_ops.py`): a merge refused because the head is behind its base gets one `gh pr update-branch` and one more merge try.
-- Nit-only PASS (`.claude/tools/pipeline/verdicts.py`, `is_nit_only_fail`; used by `.claude/tools/pipeline/steps.py`, `_nit_pass`): a reviewer FAIL whose counts are wrong 0, risky 0, nit above 0 is read as nit-only; after the failed rounds the task gets a PASS with the nits file as its notes.
+- Nit-only PASS (`.claude/tools/pipeline/verdicts.py`, `is_nit_only_fail`; used by `.claude/tools/pipeline/steps_review.py`, `_nit_pass`): a reviewer FAIL whose counts are wrong 0, risky 0, nit above 0 is read as nit-only; after the failed rounds the task gets a PASS with the nits file as its notes.
 - Stage branch (`.claude/tools/pipeline/branches.py`): the main checkout's dirty guard and the switch to the stage or feature branch both use the stage name.
 - Gate slots (`.claude/tools/pipeline/gate_slots.py`, `held`): the host-wide gate cap is the `gate_slots` setting; `.claude/tools/testrun.py` runs each Test line inside one slot.
 - Retry refresh (`.claude/tools/pipeline/steps_history.py`, `_after_retry`): a task's history after a retry marker keeps only the events after that marker, so a reset starts the review rounds again.

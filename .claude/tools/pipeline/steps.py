@@ -6,7 +6,8 @@ import re
 import shlex
 
 from . import gitx, maincheck, webtest_report
-from .briefs import ENV_DRY_NO_CCN, last_report_file, plan_fix_prompt, prompt_for, qualityrun_on, research_prompt, testrun_on, webtest_prompt
+from .briefs import ENV_DRY_NO_CCN, last_report_file, prompt_for, qualityrun_on, research_prompt, testrun_on, webtest_prompt
+from .briefs import plan_fix_prompt as plan_fix_prompt
 from .classify import STOP, classify_test_run, env_failure
 from .configuration import (
     ARCHITECT,
@@ -20,15 +21,12 @@ from .configuration import (
     EV_REPORT,
     EV_RETRY,
     EV_SKIP,
-    EXTRA_ROUND_WHY,
     FAIL,
     GATE_FREE_ROUNDS,
     GATE_PLAN_ERROR,
-    MAX_ROUNDS,
     MAX_TRIES,
     METRICS_LOG,
     MODEL_SONNET,
-    NIT_PASS_WHY,
     PASS,
     PHASES_DIR,
     PLAN_NOTES_FILE,
@@ -48,6 +46,8 @@ from .configuration import (
     repo_dir,
     tool_cmd,
 )
+from .configuration import EXTRA_ROUND_WHY as EXTRA_ROUND_WHY
+from .configuration import MAX_ROUNDS as MAX_ROUNDS
 from .configuration import (
     PLAN_ERROR as PLAN_ERROR,
 )
@@ -56,7 +56,8 @@ from .plan_files import paths_in, task_type
 from .report_preflight import PREFLIGHT_WHY, diff_paths, done_line
 from .routing_log import UNLOGGED_WHY, unlogged_routes
 from .stagedir import resolve_stage
-from .steps_docfix import DOCFIX_WHY, repeated_pair
+from .steps_docfix import DOCFIX_WHY
+from .steps_docfix import repeated_pair as repeated_pair
 from .steps_env import ENV_REPAIR_WHY, GATES_KIND, TEST_KIND, env_repair, env_repair_kind
 from .steps_history import (  # moved names, re-exported here (`X as X`) for the callers of pipeline.steps
     PLAN_ERROR_RE as PLAN_ERROR_RE,
@@ -65,16 +66,10 @@ from .steps_history import (
     _after_retry as _after_retry,
 )
 from .steps_history import (
-    _extra_rounds_ran,
-    _failed_review_reports,
-    _plan_error,
-    _reviewer_reports,
-    _TaskState,
-    failed_event,
-    failing_reports,
-    hint,
-    history,
-    script_ids,
+    _extra_rounds_ran as _extra_rounds_ran,
+)
+from .steps_history import (
+    _failed_review_reports as _failed_review_reports,
 )
 from .steps_history import (
     _failed_rounds as _failed_rounds,
@@ -83,15 +78,44 @@ from .steps_history import (
     _is_report as _is_report,
 )
 from .steps_history import (
+    _plan_error as _plan_error,
+)
+from .steps_history import (
     _reports as _reports,
+)
+from .steps_history import (
+    _reviewer_reports as _reviewer_reports,
+)
+from .steps_history import (
+    _TaskState,
+    failed_event,
+    failing_reports,
+    hint,
+    history,
+    script_ids,
 )
 from .steps_history import (
     sonnet_dev_dispatched as sonnet_dev_dispatched,
 )
+from .steps_review import (  # moved names, re-exported here (`X as X`) for the callers of pipeline.steps
+    _after_reviewer as _review_branch,
+)
+from .steps_review import (
+    _docfix_dispatch as _docfix_dispatch,
+)
+from .steps_review import (
+    _extra_round as _extra_round,
+)
+from .steps_review import (
+    _plan_fix as _plan_fix,
+)
+from .steps_review import (
+    _script as _script,
+)
 from .steps_verify import VERIFY_WHY, blocked_for_checks
 from .steps_verify import command as verify_command
 from .util import append_event, append_jsonl, now, paths, read_text, work_path, write_text
-from .verdicts import is_nit_only_fail, is_unclear
+from .verdicts import is_unclear
 from .worktrees import deliverable_texts, files_sha, job_diff, job_dirty, job_heads, uncommitted_diff
 
 
@@ -170,10 +194,6 @@ def _no_commit_ask(a, task, mine):
         "message": f"{task['id']}: rework added no commit since reviewer FAIL {fail['id']}; the reviewer is not run again on the same code. "
         f"Decide: fix by hand and commit, `orch.py retry`, or `orch.py skip`; finding {fail['file']}" + hint(a, task["id"]),
     }
-
-
-def _script(task, rid, why, cmd):
-    return {"action": "dispatch", "id": rid, "agent": "script", "model": None, "task": task["id"], "role": "script", "why": why, "prompt": cmd}
 
 
 def _test_run_script(a, task, rid, why="test run (the task's Test lines in its worktree); FAIL goes back to the dev"):
@@ -456,20 +476,9 @@ def _script_followup(a, task, mine, rid, s, last):
     return None
 
 
-def _docfix_dispatch(a, task, mine, rid, last):
-    """A reviewer FAIL that repeats one docs-only one-line finding (the same `old -> new` line in the last two FAIL reports): a script applies it, then the reviewer runs again. None otherwise; once per task."""
-    if script_ids(mine, DOCFIX_WHY):
-        return None
-    fails = _failed_review_reports(mine)
-    if len(fails) < 2 or fails[-1]["id"] != last["id"]:
-        return None
-    pair = repeated_pair(read_text(fails[-2]["file"]), read_text(fails[-1]["file"]))
-    if pair is None:
-        return None
-    path, old, new = pair
-    return _script(
-        task, rid, DOCFIX_WHY, f"{tool_cmd('pipeline/steps_docfix.py')} --file {shlex.quote(path)} --old {shlex.quote(old)} --new {shlex.quote(new)}"
-    )
+def _after_reviewer(a, task, mine, rid, s, last):
+    """The reviewer-report branch (steps_review): the dispatch helper and the extra-round limit come from this module, so a patch here reaches it."""
+    return _review_branch(a, task, mine, rid, s, last, _disp, REVIEW_EXTRA_ROUNDS, append_event)
 
 
 def _docfix_done(a, task, mine, rid, s, last):
@@ -575,78 +584,6 @@ def _after_taskgates(a, task, mine, rid, s, last):
     if s.sonnet_dev:  # red after the Sonnet rework: the lead decides
         return {"action": "ask_main", "message": f"{task['id']}: task gates still red after Sonnet; output {last['file']}" + hint(a, task["id"])}
     return _disp(a, task, rid, "dev", rework=_taskgates_all(a, task, rid, fails), mine=mine)
-
-
-def _extra_round(a, task, mine, rid):
-    """One extra dev round after the last failed review round: one rework file with the verbatim text of every failed review; the model is e1.model_for's."""
-    fails = _failed_review_reports(mine)
-    f = work_path(os.path.join(getattr(a, "dir", "."), WORK_DIR, a.stage), f"reviews-all-{task['id']}-{rid}.md", create=True)
-    write_text(f, "".join(f"## review {i}\n{read_text(e['file'])}\n" for i, e in enumerate(fails, 1)))
-    d = _disp(a, task, rid, "dev", rework=f, mine=mine)
-    d["why"] = "; ".join(x for x in (d.get("why"), EXTRA_ROUND_WHY) if x)  # the log keeps the reason; _extra_rounds_ran counts these dispatches
-    return d
-
-
-def _after_reviewer(a, task, mine, rid, s, last):
-    if last["verdict"] == ESCALATE and _reviewer_reports(mine, ESCALATE) > 1:  # E4: a second reviewer ESCALATE blocks to the lead
-        return {
-            "action": "ask_main",
-            "message": f"{task['id']}: second reviewer ESCALATE blocks to the lead: {last.get('reason', '')}; findings {last['file']}" + hint(a, task["id"]),
-        }
-    if last["verdict"] == ESCALATE:  # E1(c): a reviewer ESCALATE sends the task to the Sonnet reviewer (e1.model_for)
-        return _disp(a, task, rid, "reviewer", mine=mine)
-    if (why := _plan_error(last)) is not None:
-        return _plan_fix(a, task, mine, rid, last, why)
-    if last["verdict"] in (FAIL, ESCALATE):
-        if last["verdict"] == FAIL and (d := _docfix_dispatch(a, task, mine, rid, last)) is not None:
-            return d
-        if s.rounds > MAX_ROUNDS - 1:
-            if last["verdict"] == FAIL and is_nit_only_fail(read_text(last["file"])):  # nits only: no defect left, PASS with the nits as notes
-                return _nit_pass(a, task, mine, rid, last)
-            if _extra_rounds_ran(mine) < REVIEW_EXTRA_ROUNDS:
-                return _extra_round(a, task, mine, rid)
-            return {"action": "ask_main", "message": f"{task['id']}: review failed {s.rounds} rounds; findings {last['file']}" + hint(a, task["id"])}
-        # first FAIL: Haiku rework; Sonnet once the failed rounds passed HAIKU_REWORK_TRIES (e1.model_for, event a)
-        return _disp(a, task, rid, "dev", rework=last["file"], mine=mine)
-    return None
-
-
-def _nit_pass(a, task, mine, rid, last):
-    """A nit-only reviewer FAIL after the failed rounds: a PASS report event with the nits file as its notes, so the task passes (None). No extra round, no lead."""
-    append_event(
-        paths(a)[1],
-        {
-            "ev": EV_REPORT,
-            "id": rid,
-            "task": task["id"],
-            "role": "reviewer",
-            "verdict": PASS,
-            "reason": NIT_PASS_WHY,
-            "why": NIT_PASS_WHY,
-            "file": last["file"],
-        },
-    )
-    return None
-
-
-def _plan_fix(a, task, mine, rid, last, why):
-    """Reviewer PLAN-ERROR: one architect round on the task file (not a dev try), then the reviewer runs again; a second plan error goes to the lead."""
-    if any(e["ev"] == EV_DISPATCH and e["role"] == ARCHITECT for e in mine):
-        return {
-            "action": "ask_main",
-            "message": f"{task['id']}: plan error again after the architect fix: {why}; findings {last['file']}" + hint(a, task["id"]),
-        }
-    return {
-        "free": True,
-        "action": "dispatch",
-        "id": rid,
-        "agent": ARCHITECT,
-        "model": None,
-        "task": task["id"],
-        "role": ARCHITECT,
-        "prompt": plan_fix_prompt(a, task, rid, why, last["file"]),
-        "why": "reviewer found a plan error in the task file",
-    }
 
 
 def _after_plan_fix(a, task, mine, rid, s, last):
