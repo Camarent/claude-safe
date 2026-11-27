@@ -532,6 +532,7 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     IGNORED_DONE_URL,
     JQ_FILE_MAX_BYTES,
     MARKUP_TAGS,
+    MOUNTS_FIELD,
     NEG_GREP_RE,
     NEG_WARN_PREFIX,
     NO_TASKS_HINT,
@@ -547,6 +548,8 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     QRUN_OP_PREFIX,
     QRUN_OP_RE,
     QRUN_OPS,
+    REACH_PREFIX,
+    REACH_PROOF_RE,
     REGISTRY_WORDS,
     RESEARCH_HINT_PREFIX,
     RESEARCH_PREFIX,
@@ -577,6 +580,8 @@ from .planning import (  # noqa: F401  (re-export: the facade keeps every name i
     TESTCMD_WARN_PREFIX,
     TOOL_FIELD,
     WEBTEST_WARN_PREFIX,
+    WIRING_DIRS_KEY,
+    WIRING_PREFIX,
 )
 from .project import (  # noqa: F401  (re-export: the facade keeps every name importable from pipeline.configuration)
     _PROJECT_CACHE,

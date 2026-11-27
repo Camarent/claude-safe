@@ -29,6 +29,7 @@ KIND_LEVELS = {
     "webtest": WARN,
     "generated": WARN,
     "research-hint": WARN,  # planned: plan warning from task-10
+    "reach": WARN,  # a Mounts: header whose Done names no entry proof (plan_wiring)
     # errors
     "publish": ERROR,
     "ci-drift": ERROR,
@@ -50,6 +51,7 @@ KIND_LEVELS = {
     "ignored-done": ERROR,  # planned: task-5
     "cite-short": ERROR,  # planned: task-7
     "carried-notes": ERROR,
+    "wiring": ERROR,  # a new module under a wiring dir with no mount (plan_wiring)
 }
 
 KIND_RE = re.compile(r"([a-z][a-z-]*):")  # a problem line starts with this token
