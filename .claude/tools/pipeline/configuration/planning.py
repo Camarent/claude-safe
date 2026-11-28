@@ -156,6 +156,9 @@ TEST_BAN_KEY = "test_ban"  # pipeline.json: list of {"pattern": regex, "use": te
 TEST_BAN_PREFIX = "testban:"  # error prefix of plan_testcmd.check_test_ban
 TEST_WRAP_KEY = "test_wrap"  # pipeline.json: list of {"match": regex, "require": text, "use": wrapper}; a task `Test:` line matching `match` must contain `require` (plan_testwrap.check_test_wrap)
 TEST_WRAP_PREFIX = "testwrap:"  # error prefix of plan_testwrap.check_test_wrap
+GATE_MODE_PREFIX = (
+    "gatemode:"  # error prefix of plan_gatemode.check_gate_modes: a final gate runs a script in its full mode though the script header lists modes
+)
 QRUN_OP_PREFIX = "qrun-op:"  # error prefix of plan_testcmd.check_qrun_operator
 QRUN_OPS = ("!", "&&", "||", "|", ";")  # a word right after `cs-qrun --` that is a shell operator: cs-qrun runs a program, not a shell (exit 127)
 QRUN_OP_RE = r"\bcs-qrun\s+--\s+(\S+)"  # the first word after `cs-qrun --` in a Test: line (plan_testcmd.check_qrun_operator)
