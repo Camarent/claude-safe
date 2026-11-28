@@ -75,10 +75,16 @@ def driver_gates_on(cfg) -> bool:
 
 
 def each_of(cfg) -> list[dict]:
-    """-> cfg `each` entries; an optional GATE_PARALLEL_KEY must be a string (kept stripped, dropped when blank). Other keys are left as they are."""
+    """-> cfg `each` entries; each entry is an object with a non-empty string `glob` and `cmd` (ConfigError otherwise); an optional GATE_PARALLEL_KEY must be a string (kept stripped, dropped when blank). Other keys are left as they are."""
     out = []
     for i, e in enumerate(cfg.get("each") or []):
-        group = e.get(GATE_PARALLEL_KEY) if isinstance(e, dict) else None
+        if not isinstance(e, dict):
+            raise ConfigError(f"pipeline.json: each[{i}] must be an object with `glob` and `cmd`")
+        for field in ("glob", "cmd"):
+            value = e.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigError(f"pipeline.json: each[{i}] needs a non-empty string `{field}`")
+        group = e.get(GATE_PARALLEL_KEY)
         if group is not None and not isinstance(group, str):
             raise ConfigError(f"pipeline.json: each[{i}]: `{GATE_PARALLEL_KEY}` must be a string")
         rest = {k: v for k, v in e.items() if k != GATE_PARALLEL_KEY}
