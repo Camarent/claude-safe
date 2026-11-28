@@ -172,6 +172,8 @@ IGNORED_DONE_URL = "://"  # a token with this mark is a URL, never a path
 IGNORED_DONE_TRIM = "`'\"()[]<>,;:."  # punctuation stripped from both ends of a token before the path test
 RESEARCH_PREFIX = "research:"  # error prefix of plan_research.check_research: a research task has one tracked Outputs: path and a later task that depends on it names that path
 RESEARCH_HINT_PREFIX = "research-hint:"  # warning prefix of plan_research_hint.check_research_hint: a Goal/Done with a trigger word and no research dependency
+RESEARCH_WEB_PREFIX = "research-web:"  # error prefix of plan_research.check_research: a research task's Goal names a web source (scout has no web access: an ops step runs the researcher agent)
+RESEARCH_WEB_RE = r"://|\bon the web\b|\bonline\b|\bupstream (docs|source|project)\b"  # a research Goal with one of these marks needs web access (plan_research.check_research)
 NEEDS_PREFIX = "plan-gap:"  # error prefix of plan_needs.check_needs: a `Needs: <path> :: <literal>` line whose repo file is missing or lacks the literal, and no dependency creates it
 NEEDS_SEP = "::"  # separates the repo path from the literal on a `Needs:` line
 WIRING_DIRS_KEY = "wiring_dirs"  # pipeline.json key: list of source dirs; a new module under one needs a mount (plan_wiring.check_wiring); absent = no check
