@@ -93,6 +93,39 @@ class T(unittest.TestCase):
         ph = {"dir": "01-a", "done_when": "git rev-parse refs/tags/x.json", "paths": []}
         self.assertEqual(plan_rules.done_when_problems(ph, self.d, [], ""), [])
 
+    def test_done_when_ref_glob_is_not_a_file_glob(self):
+        ph = {"dir": "01-a", "done_when": "git describe --match refs/tags/v*", "paths": []}
+        self.assertEqual(plan_rules.done_when_problems(ph, self.d, [], ""), [])
+
+    def _repo_with(self, *rels):
+        for rel in rels:
+            os.makedirs(os.path.dirname(os.path.join(self.d, rel)), exist_ok=True)
+            with open(os.path.join(self.d, rel), "w", encoding="utf-8") as f:
+                f.write("x\n")
+
+    def _acc(self, cmd):
+        return plan_rules.acceptance_problems(f"## Acceptance checklist\n- cmd: {cmd}\n", self.d)
+
+    def test_glob_matching_no_file_is_a_problem(self):
+        self._repo_with(".claude/tools/tests/test_other.py")
+        self.assertTrue(any("matches no file" in p for p in self._acc("python3 -m pytest test_gate_cache*")))
+        got = self.dw("python3 -m pytest test_gate_cache*")
+        self.assertTrue(any("matches no file" in p for p in got))
+        self.assertEqual(plan_check.errors_of(got), got)
+
+    def test_glob_matching_only_non_test_files_is_a_problem(self):
+        self._repo_with("src/gate_cache.py", ".claude/tools/tests/test_gate.py")
+        got = self._acc("python3 -m pytest src/gate_cache*")
+        self.assertTrue(any("only non-test files" in p for p in got))
+        self.assertEqual(len(got), 1)
+
+    def test_glob_matching_a_test_file_passes(self):
+        self._repo_with(".claude/tools/tests/test_gate_cache_a.py", "src/gate_cache.py")
+        self.assertEqual(self._acc("python3 -m pytest test_gate_cache*"), [])
+        self.assertEqual(self._acc("python3 -m pytest .claude/tools/tests/test_gate_cache*"), [])
+        self.assertEqual(self.dw("python3 -m pytest test_gate_cache*"), [])
+        self.assertEqual(self._acc("python3 -c 'print(1*2)'"), [])
+
     def test_release_flag_only_in_some_phases(self):
         a, b = os.path.join(self.d, "a"), os.path.join(self.d, "b")
         for p, fl in ((a, "flags: no-release"), (b, "flags: ui")):

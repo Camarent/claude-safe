@@ -27,6 +27,7 @@ They check code, gate a branch before PR, and copy `.claude/` into `~/.claude`.
 - Ledger figures (`cs-ledger`, `.claude/tools/retro/ledger.py`): the lead part covers a session only when its transcript has a `subagents/` dir next to it. Headless driver sessions have no `subagents/` dir: they are counted only with `--metrics`, which takes their ids from `metrics.jsonl`; without it they are left out. The `LEAD-COST` lines cover the lead session by stage window. Log layout and session ids: `docs/headless-session-logs.md`.
 - `.claude/tools/pipeline/docs_impact.py` - stage gate: a doc that cites a file or top-level def the job diff changed must change too; `check` at `.claude/tools/pipeline/docs_impact.py:91`.
 - `.claude/tools/pipeline/entry.py` - shared entry helpers: the status-line formatter, the shared run flags, the open-phase resolver and the feature-level BLOCKED copy; `write_blocked` writes it.
+- `.claude/tools/pipeline/gate_slots.py` - the shared gate-slot cap: `held(slots)` takes one of N flock slot files under the temp dir, so gate commands from every driver on the host run at most N at once. N is the `gate_slots` setting (default 3 in `.claude/tools/pipeline/configuration/defaults.py`; 0 = no cap). `testrun.py` `run` runs each Test line inside a slot (`_run_line`).
 - `.claude/tools/pipeline/gitx.py` - `gitx.ignored(repo, paths)`: the paths git ignores (one `check-ignore` call per path; tracked and outside-repo paths are not reported). Shared by the plan checks and the callers that used to copy it.
 - `.claude/tools/pipeline/task_text.py` - the shared task-file field parser: `field(text, name)` and `lines(text, *names)` read `NAME:` lines, skipping fenced code blocks. Used by brieflint and the plan checks.
 - `.claude/tools/pipeline/plan_problem.py` - `Problem(kind, level, text)`: a str equal to its text that also carries its `kind:` token and level. `KIND_LEVELS` maps each kind to `ERROR` or `WARN`; an unknown kind is an error.
@@ -59,6 +60,22 @@ Other pieces of the wiring checks:
 - `webtest_report.py` (`.claude/tools/pipeline/webtest_report.py`): writes the browser-check report stamped with the branch HEAD (`HEAD: <sha>` line). `stale(text, head)` at `.claude/tools/pipeline/webtest_report.py:46` returns a `stale webtest:` reason when that HEAD line is missing or differs from the branch HEAD. Example line: `HEAD: 3f2a9c1`.
 
 The brieflint pre-flight (`.claude/tools/brieflint.py`) also rejects a `Test:` line with `;` or `|`, a `&&` chain whose later segment is not `cs-qrun --` or a read-only command, or a first segment that is not `cs-qrun --`.
+
+## Followup behaviour (retro-m25-followup)
+Each paragraph names the code file that holds the change.
+
+- Plan check `ptest_selector_problems` (`.claude/tools/pipeline/plan_ptest.py`): a `Test:` line whose ptest selector matches no test file fails `cs-plan check`.
+- Plan size and gate rules (`.claude/tools/pipeline/plan_rules.py`): the task size cap and the protected gates a task may not drop are checked at plan time.
+- Bare cite rewrite (`.claude/tools/pipeline/cite_rewrite.py`, `rewrite_bare_cites`): a bare module-name cite in a dev report is rewritten to its full repo-relative path before the cite check runs.
+- Feature install check (`.claude/tools/pipeline/cli_feature.py`, `install_check`): after each phase merge, while another phase is open, the driver runs the install check; a nonzero exit blocks before the next phase and the phase stays done.
+- Settings (`.claude/tools/pipeline/configuration/project.py`): `pipeline.json` is overlaid by `pipeline.local.json` in the workspace, and the `PIPELINE_OVERRIDES` env JSON is overlaid last.
+- qrun summary (`.claude/tools/qrun.py`, `_ruff_summary`): a ruff failure prints a one-line `ruff: <findings>` summary before the excerpts.
+- Acceptance order (`.claude/tools/pipeline/phases.py`, `_acceptance`): the acceptance items run in the order the plan lists them, after the planned tasks and before the docs step.
+- PR update-branch retry (`.claude/tools/pipeline/pr_ops.py`): a merge refused because the head is behind its base gets one `gh pr update-branch` and one more merge try.
+- Nit-only PASS (`.claude/tools/pipeline/verdicts.py`, `is_nit_only_fail`; used by `.claude/tools/pipeline/steps_review.py`, `_nit_pass`, which `.claude/tools/pipeline/steps.py` re-exports): a reviewer FAIL whose counts are wrong 0, risky 0, nit above 0 is read as nit-only; after the failed rounds the task gets a PASS with the nits file as its notes.
+- Stage branch (`.claude/tools/pipeline/branches.py`): the main checkout's dirty guard and the switch to the stage or feature branch both use the stage name.
+- Gate slots (`.claude/tools/pipeline/gate_slots.py`, `held`): the host-wide gate cap is the `gate_slots` setting; `.claude/tools/testrun.py` runs each Test line inside one slot.
+- Retry refresh (`.claude/tools/pipeline/steps_history.py`, `_after_retry`): a task's history after a retry marker keeps only the events after that marker, so a reset starts the review rounds again.
 
 ## Depends on / used by
 - Depends on: `.claude/tools/ptest.py`, `.claude/tools/tests/`, `.claude/tools/pipeline/cmdindex.py`, `Dockerfile`, `profiles/`, the `claude-safe:rust` image (docker), `uv`, `flock`, `git`.

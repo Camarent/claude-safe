@@ -1,0 +1,32 @@
+# Efficiency audit: retro-m25, m26-fixes, docs-cleanup (item 12)
+
+## Before
+
+Sources: retro-m25 phase `orch.jsonl` dispatch/retry events (8 phases, top-level files only; `tmp/` test copies skipped) and its `metrics.jsonl`; docs-cleanup top-level `orch.jsonl` and `metrics.jsonl`. m26-fixes: its logs are absent from this tree (no run folder), so every number is `not available`.
+
+| sink | retro-m25 | m26-fixes | docs-cleanup |
+|---|---|---|---|
+| repeat reads | 0 explore tool calls (7 phase context lines) | not available | not available |
+| re-planning | 15 architect dispatches | not available | 2 architect sessions (metrics) |
+| review rounds | 125 reviewer dispatches | not available | 5 reviewer sessions (metrics) |
+| Opus calls without a stated reason | 0 | not available | 0 (no opus model in logs) |
+| other | 18 retry events | not available | 3 retry events |
+
+## Fixes
+
+Fix candidates `defaults.py` `prereview_skip` and `plan_check_task.py` were dropped: `defaults.py` is a predicted path of task-12 (C3), and brieflint already runs at plan time (`plan_check.py` calls it for every task). Next sinks taken: review rounds (late findings) and other (retries from a malformed brief Test line).
+
+- review rounds: `.claude/agents/reviewer.md:124` tells the reviewer to list every finding in the first verdict, so no extra round is spent on held-back findings. Saving: about 0.008 USD per avoided reviewer session. done: grep -n "One review round per diff" .claude/agents/reviewer.md
+- other (retries): `.claude/agents/dev.md:118` tells the dev to reply BLOCKED on a malformed brief Test line at turn one, not to burn retries (3 of 18 retries were Test-line defects). Saving: about 0.009 USD per avoided dev retry (docs-cleanup haiku dev average). done: grep -n "Brief Test line malformed" .claude/agents/dev.md
+
+## After
+
+No run is started here; numbers are expected from the Before counts and the per-session averages above.
+
+| sink | retro-m25 | m26-fixes | docs-cleanup |
+|---|---|---|---|
+| repeat reads | 0 (expected, unchanged) | not available | not available |
+| re-planning | 15 (expected, unchanged) | not available | 2 (expected, unchanged) |
+| review rounds | 100 (expected: about 25 avoided reviewer sessions) | not available | 4 (expected: 1 avoided) |
+| Opus calls without a stated reason | 0 (expected, unchanged) | not available | 0 (expected, unchanged) |
+| other | 15 (expected: 3 avoided retries) | not available | 2 (expected: 1 avoided) |

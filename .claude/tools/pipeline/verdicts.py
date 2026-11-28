@@ -27,6 +27,15 @@ ESCALATE_DEFECT_RE = re.compile(r"\b[\w./-]+\.\w+:\d+\b")  # E1(c): a reviewer E
 WRONG_NONZERO_RE = re.compile(
     r"^\W*wrong\W*[1-9]|^\W*wrong\W*0\W+risky\W*[1-9]", re.I | re.M
 )  # a wrong or risky finding anywhere in the report keeps the ESCALATE
+NIT_ONLY_RE = re.compile(
+    r"^\W*wrong\W*0\W+risky\W*0\W+nit\W*[1-9]\d*\b", re.I | re.M
+)  # the reviewer rubric counts line with nits only: `wrong 0, risky 0, nit N` (N>0)
+WRONG_BULLET_RE = re.compile(
+    r"^\W*(?:wrong|risky)\W*:", re.I | re.M
+)  # a `- wrong:` / `- risky: <finding>` bullet: a defect named in prose even when the counts line says 0
+CITED_BULLET_RE = re.compile(
+    r"^\s*[-*]\s*[\w./-]+\.\w+:\d+\b", re.M
+)  # a bullet opening with a file:line cite names a defect even when the counts line says 0 (a nit bullet has no cite)
 ZERO_TAIL_LINES = 8  # the wrong-0 counts line sits among the last lines of a reviewer report
 ESCALATE_LINE_RE = re.compile(r"^\s*ESCALATE:\s*\S", re.M)  # reviewer.md: the line that names a security class
 NEED_LINE_RE = re.compile(
@@ -97,6 +106,11 @@ def _zero_wrong_downgrade(role, m, text):
     lines = [ln for ln in text.splitlines() if ln.strip()]
     tail = "\n".join(lines[-ZERO_TAIL_LINES:])
     return bool(ZERO_COUNTS_RE.search(tail)) and not WRONG_NONZERO_RE.search(text) and not ESCALATE_LINE_RE.search(text)
+
+
+def is_nit_only_fail(text) -> bool:
+    """True for a report whose counts line says `wrong 0, risky 0, nit N` (N>0) and no line says `wrong N` or `wrong 0, risky N` (N>0): nits only, no defect."""
+    return bool(NIT_ONLY_RE.search(text)) and not WRONG_NONZERO_RE.search(text) and not WRONG_BULLET_RE.search(text) and not CITED_BULLET_RE.search(text)
 
 
 def _reviewer_undefined_escalate(role, m, text):

@@ -241,6 +241,7 @@ def _gates_gate(repo, cfg, br, runner=None):
 
 
 CI_OFF_NOTE = "CI unavailable by setting: merged on green local gates"
+HEAD_BEHIND_TEXT = "head branch is not up to date"  # lowercase: gh's refusal of a squash merge whose PR head lags its base
 
 
 def ci_off(cfg) -> bool:
@@ -390,12 +391,35 @@ def _merge(a_dir, repo, cfg, stage, br, clock=SystemClock):
     _mergeable_gate(repo, cfg, br, clock)
     _checks_gate(repo, cfg, br, clock)
     title = pr_base._merge_title(a_dir, stage, br)
-    r = pr_base._run(["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", _merge_body(cfg, stage)], repo, 300)
+    args = ["gh", "pr", "merge", br, "--squash", "--delete-branch", "--subject", title, "--body", _merge_body(cfg, stage)]
+    r = pr_base._run(args, repo, 300)
+    if r.returncode and HEAD_BEHIND_TEXT in (r.stderr + r.stdout).lower():
+        r = _update_and_retry(repo, cfg, br, clock, args, r)
     if r.returncode:
         if pr_base._view(repo, br, "state") == "MERGED":  # merged remotely; only the local branch cleanup failed
             return f"PR squash-merged: {title} (local cleanup failed: {(r.stderr or r.stdout).strip()[-200:]})"
         raise Blocked(f"gh pr merge failed: {(r.stderr or r.stdout).strip()[-300:]}")
     return _merged_text(cfg, title)
+
+
+def _head_read(repo, br, before):
+    """-> the head sha of `br` once it differs from `before` (the sha before update-branch), else None."""
+    sha = pr_base._view(repo, br, "headRefOid")
+    return sha if sha != before else None
+
+
+def _update_and_retry(repo, cfg, br, clock, args, first):
+    """-> the second merge result. A refusal because the head is behind its base gets one `gh pr update-branch`, a wait until the head sha moves, the checks gate, then one retry; a second failure raises Blocked with both outputs."""
+    behind = (first.stderr or first.stdout).strip()[-300:]
+    before = pr_base._view(repo, br, "headRefOid")
+    pr_base._run(["gh", "pr", "update-branch", br], repo, 300)
+    if _poll(lambda: _head_read(repo, br, before), checks_timeout(cfg), clock, what=f"head of {br}") is None:
+        raise Blocked(f"the head of {br} did not move after update-branch: merge by hand, then skip master-merged")
+    _checks_gate(repo, cfg, br, clock)
+    again = pr_base._run(args, repo, 300)
+    if again.returncode:
+        raise Blocked(f"gh pr merge failed (head behind), then again after update-branch: {behind} / {(again.stderr or again.stdout).strip()[-300:]}")
+    return again
 
 
 def _mergeable_gate(repo, cfg, br, clock):

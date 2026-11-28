@@ -36,6 +36,12 @@ failures:
 
 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
 """
+RUFF_F811 = """a.py:5:5: F811 Redefinition of unused `f` from line 1
+  |
+help: Remove definition: `f`
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+"""
 
 
 class T(unittest.TestCase):
@@ -112,6 +118,28 @@ class T(unittest.TestCase):
         f = self.w("fix.txt", "test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured\n")
         rc, _out = self.run_q("cat", f)
         self.assertEqual(rc, 3)
+
+    def test_ruff_f811_keeps_location_and_fix(self):
+        f = self.w("ruff.txt", RUFF_F811)
+        rc, out = self.run_q("bash", "-c", f"cat {f}; exit 1")
+        self.assertEqual(rc, 1)
+        self.assertIn("a.py:5:5: F811 Redefinition of unused `f` from line 1", out)
+        self.assertIn("help: Remove definition: `f`", out)
+        self.assertIn("ruff: 1 findings", out)
+
+    def test_ruff_finding_kept_in_long_output(self):
+        # mutation check: with 30 noise lines after the finding, the old tail-only excerpt (lines[-15:]) loses it
+        f = self.w("ruff.txt", RUFF_F811 + "".join(f"  | noise {n}\n" for n in range(30)))
+        rc, out = self.run_q("bash", "-c", f"cat {f}; exit 1")
+        self.assertEqual(rc, 1)
+        self.assertIn("a.py:5:5: F811 Redefinition of unused `f` from line 1", out)
+
+    def test_other_tool_failure_excerpt_unchanged(self):
+        f = self.w("plain.txt", "x\nAssertionError: boom\n")
+        rc, out = self.run_q("bash", "-c", f"cat {f}; exit 1")
+        self.assertEqual(rc, 1)
+        self.assertIn("AssertionError: boom", out)
+        self.assertNotIn("ruff:", out)
 
     @unittest.skipUnless(shutil.which("cargo"), "no cargo")
     def test_cargo_real(self):

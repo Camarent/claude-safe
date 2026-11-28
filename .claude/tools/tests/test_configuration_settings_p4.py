@@ -10,7 +10,10 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pipeline.configuration import LIMIT_RECHECK_S, PROJECT_DEFAULTS, SCRIPT_TIMEOUT_S, literals
+from pipeline import docs_impact
+from pipeline.configuration import DOCS_IMPACT_KEY, LIMIT_RECHECK_S, PROJECT_DEFAULTS, SCRIPT_TIMEOUT_S, literals
+from pipeline.configuration.env import ENV_OVERRIDES, LOCAL_CONFIG_FILE
+from pipeline.configuration.errors import ConfigError
 from pipeline.configuration.project import project
 
 SWALLOWED = "pipeline.util.swallowed"
@@ -87,6 +90,84 @@ class ProjectDefaultsP4Test(unittest.TestCase):
         self.assertEqual(cfg["acceptance_timing_flag"], "--durations=10")
         self.assertEqual(cfg["pipeline_install_check"], "python3 -m pip check")
         self.assertIs(cfg["ci_available"], False)
+
+
+class PerRunOverridesTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop(ENV_OVERRIDES, None)
+
+    def _ws(self, files):
+        """-> a fresh workspace dir holding {name: text} files."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for name, text in files.items():
+            with open(os.path.join(tmp.name, name), "w", encoding="utf-8") as f:
+                f.write(text)
+        return tmp.name
+
+    def _write(self, ws, name, text):
+        with open(os.path.join(ws, name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_order_is_defaults_then_pipeline_json_then_local_then_env(self):
+        ws = self._ws({"pipeline.json": json.dumps({"x": "json", "y": "json"}), LOCAL_CONFIG_FILE: json.dumps({"y": "local", "z": "local"})})
+        os.environ[ENV_OVERRIDES] = json.dumps({"x": "env"})
+        cfg = project(ws)
+        self.assertEqual(cfg["x"], "env")
+        self.assertEqual(cfg["y"], "local")
+        self.assertEqual(cfg["z"], "local")
+
+    def test_local_file_without_pipeline_json_overlays_defaults(self):
+        cfg = project(self._ws({LOCAL_CONFIG_FILE: json.dumps({"ci_available": False})}))
+        self.assertIs(cfg["ci_available"], False)
+
+    def test_local_file_change_shows_at_once(self):
+        ws = self._ws({LOCAL_CONFIG_FILE: json.dumps({"y": "aa"})})
+        self.assertEqual(project(ws)["y"], "aa")
+        self._write(ws, LOCAL_CONFIG_FILE, json.dumps({"y": "b"}))
+        self.assertEqual(project(ws)["y"], "b")
+
+    def test_env_change_shows_at_once(self):
+        ws = self._ws({})
+        os.environ[ENV_OVERRIDES] = json.dumps({"y": "aa"})
+        self.assertEqual(project(ws)["y"], "aa")
+        os.environ[ENV_OVERRIDES] = json.dumps({"y": "b"})
+        self.assertEqual(project(ws)["y"], "b")
+
+    def test_broken_local_file_raises_naming_it(self):
+        for text in ("{not json", "[1, 2]"):
+            with self.subTest(text=text):
+                ws = self._ws({LOCAL_CONFIG_FILE: text})
+                with self.assertRaisesRegex(ConfigError, LOCAL_CONFIG_FILE):
+                    project(ws)
+
+    def test_broken_env_raises_naming_the_variable(self):
+        for text in ("{not json", "[1, 2]"):
+            with self.subTest(text=text):
+                os.environ[ENV_OVERRIDES] = text
+                with self.assertRaisesRegex(ConfigError, ENV_OVERRIDES):
+                    project(self._ws({}))
+
+    def test_docs_impact_gate_off_via_env_leaves_pipeline_json(self):
+        ws = self._ws({"pipeline.json": json.dumps({DOCS_IMPACT_KEY: True})})
+        os.environ[ENV_OVERRIDES] = json.dumps({DOCS_IMPACT_KEY: False})
+        cfg = project(ws)
+        self.assertFalse(docs_impact.gate_on(cfg[DOCS_IMPACT_KEY], "any-stage"))
+        with open(os.path.join(ws, "pipeline.json"), encoding="utf-8") as f:
+            self.assertIs(json.load(f)[DOCS_IMPACT_KEY], True)
+
+    def test_unrelated_env_var_is_ignored(self):
+        ws = self._ws({"pipeline.json": json.dumps({"y": "json"})})
+        os.environ["PIPELINE_OVERRIDES_DECOY"] = json.dumps({"y": "decoy"})
+        self.assertEqual(project(ws)["y"], "json")
+
+    def test_gitignore_lists_the_local_file(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        with open(os.path.join(repo, ".gitignore"), encoding="utf-8") as f:
+            self.assertIn(LOCAL_CONFIG_FILE, [line.strip() for line in f])
 
 
 if __name__ == "__main__":

@@ -17,7 +17,20 @@ from pathlib import Path
 sys.path[:0] = [os.path.dirname(os.path.abspath(__file__))]  # -I drops the script dir
 import wt  # noqa: E402  (sys.path set above)
 from localmodel.prereview import job_diff  # noqa: E402  (sys.path set above)
-from pipeline import cite_check, dev_gate_audit, docs_impact, empty_tests, gate_paths, gate_record, gate_secrets, gitx, linkguard, maincheck, worktree  # noqa: E402  (sys.path set above)
+from pipeline import (  # noqa: E402  (sys.path set above)
+    cite_check,
+    dev_gate_audit,
+    docs_impact,
+    empty_tests,
+    gate_paths,
+    gate_record,
+    gate_secrets,
+    gate_slots,
+    gitx,
+    linkguard,
+    maincheck,
+    worktree,
+)
 from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     ADD_REPO_CMD,
     BLOCKED,
@@ -34,6 +47,8 @@ from pipeline.configuration import (  # noqa: E402  (sys.path set above)
     EMPTY_TEST_MARKER_DEFAULT,
     EMPTY_TEST_MARKER_KEY,
     FAIL,
+    GATE_SLOTS_DEFAULT,
+    GATE_SLOTS_KEY,
     GATE_TIMEOUT_S,
     GIT_TIMEOUT_S,
     TASKS_FILE,
@@ -180,10 +195,11 @@ def _red_verdict(cwd, c, p):
     return FAIL, f"`{c}` exited {p.returncode}:\n{out}"
 
 
-def _run_line(cwd, c, runner):
-    """-> (BLOCKED or FAIL, note) when the Test line C could not run or exited non-zero, else None."""
+def _run_line(cwd, c, runner, slots):
+    """-> (BLOCKED or FAIL, note) when the Test line C could not run or exited non-zero, else None. The command runs inside one of the `slots` gate slots (gate_slots.held), so parallel drivers share the cap."""
     try:
-        p = runner(shlex.split(c), cwd=cwd, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_S)
+        with gate_slots.held(slots):
+            p = runner(shlex.split(c), cwd=cwd, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_S)
     except (OSError, ValueError, subprocess.TimeoutExpired) as e:
         return BLOCKED, f"`{c}` could not run: {e}"
     return _red_verdict(cwd, c, p) if p.returncode != 0 else None
@@ -250,6 +266,7 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
     except OSError as e:
         return BLOCKED, f"task brief unreadable, Test lines not run: {e}"
     cmds, leads = test_lines(text), lead_lines(text)
+    slots = project(d).get(GATE_SLOTS_KEY, GATE_SLOTS_DEFAULT)
     outside = outside_writes(d, stage, task)
     if outside:
         return outside_verdict(outside)
@@ -268,7 +285,7 @@ def run(stage, task, d, runner=subprocess.run, scan=gate_findings, diff_fn=job_d
         if hit:
             skipped.append(f"skipped {c}: {gate_record.skip_note(cwd, hit)}")
             continue
-        red = _run_line(cwd, c, runner)
+        red = _run_line(cwd, c, runner, slots)
         if red:
             return red
     lead_notes = _run_lead(cwd, leads, runner)  # a red lead-verified line is a note, never a BLOCKED or FAIL of the dev

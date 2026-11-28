@@ -6,7 +6,7 @@ import os
 import re
 
 from .defaults import PROJECT_DEFAULTS
-from .env import ENV_LEAD_LOG, QUALITY_TOOLS
+from .env import ENV_LEAD_LOG, ENV_OVERRIDES, LOCAL_CONFIG_FILE, QUALITY_TOOLS
 from .errors import ConfigError
 from .gitbranch import GIT_DETECTED_CACHE, GIT_DIRS_CACHE, detected_release_branch
 from .layout import PUBLISH_KEY
@@ -96,8 +96,8 @@ def lead_logs(workspace) -> list[str]:
 
 
 _PROJECT_CACHE: dict[
-    tuple[str, tuple[int, int] | None], dict
-] = {}  # (abs workspace, pipeline.json (mtime_ns, size) or None) -> project() result; see clear_cache()
+    tuple[str, tuple[int, int] | None, tuple[int, int] | None, str], dict
+] = {}  # (abs workspace, pipeline.json sig, pipeline.local.json sig, env ENV_OVERRIDES text) -> project() result; sig = (mtime_ns, size) or None; see clear_cache()
 
 
 def clear_cache() -> None:
@@ -107,19 +107,27 @@ def clear_cache() -> None:
     GIT_DETECTED_CACHE.clear()
 
 
-def project(workspace) -> dict:
-    """-> PROJECT_DEFAULTS overlaid with <workspace>/pipeline.json (unknown keys kept; a missing file means defaults, a broken one raises ConfigError).
-    An invalid `gates`, or a legacy `full_test` key, raises ConfigError.
-    Memoized per process on the workspace and the pipeline.json mtime/size: the pipeline.json part only. The release branch detected from git is memoized on the git state signature (detected_release_branch), so repo HEAD/branch changes show at once. Returns a fresh copy."""
-    path = os.path.join(workspace, "pipeline.json")
+def _file_sig(path):
+    """-> (mtime_ns, size) of PATH, None when it is absent."""
     try:
         st = os.stat(path)
-        sig = (st.st_mtime_ns, st.st_size)
     except FileNotFoundError:
-        sig = None
-    key = (os.path.abspath(workspace), sig)
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def project(workspace) -> dict:
+    """-> PROJECT_DEFAULTS overlaid, in this order, with <workspace>/pipeline.json, then <workspace>/pipeline.local.json (git-ignored per-run overrides), then the JSON object in env ENV_OVERRIDES (unknown keys kept; a missing file or variable means nothing to overlay, a broken one raises ConfigError naming its source).
+    An invalid `gates`, or a legacy `full_test` key, raises ConfigError.
+    Memoized per process on the workspace, the pipeline.json and pipeline.local.json mtime/size, and the env text: a change to any of them shows at once. The release branch detected from git is memoized on the git state signature (detected_release_branch), so repo HEAD/branch changes show at once. Returns a fresh copy."""
+    key = (
+        os.path.abspath(workspace),
+        _file_sig(os.path.join(workspace, "pipeline.json")),
+        _file_sig(os.path.join(workspace, LOCAL_CONFIG_FILE)),
+        os.environ.get(ENV_OVERRIDES, ""),
+    )
     if key not in _PROJECT_CACHE:
-        _PROJECT_CACHE[key] = _load_project(workspace)
+        _PROJECT_CACHE[key] = _load_project(workspace, key[3])
     cfg = copy.deepcopy(_PROJECT_CACHE[key])
     if not cfg.get("branch_release"):  # git-derived: re-checked against the git state on every call, the repo HEAD or branches may change in-process
         cfg["branch_release"] = detected_release_branch(repo_dir(workspace, cfg), cfg)
@@ -127,7 +135,40 @@ def project(workspace) -> dict:
     return cfg
 
 
-def _load_project(workspace):
+def _object_of(data, source) -> dict:
+    """-> DATA when it is a JSON object; ConfigError naming SOURCE otherwise."""
+    if not isinstance(data, dict):
+        raise ConfigError(f"{source}: must be a JSON object")
+    return data
+
+
+def _local_overrides(workspace) -> dict:
+    """-> the JSON object of <workspace>/pipeline.local.json; {} when the file is absent, ConfigError naming it when it is broken."""
+    path = os.path.join(workspace, LOCAL_CONFIG_FILE)
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except FileNotFoundError:
+        return {}
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise ConfigError(f"{path}: not valid JSON ({e})") from e
+    return _object_of(data, path)
+
+
+def _env_overrides(text) -> dict:
+    """-> the JSON object of env ENV_OVERRIDES (TEXT); {} when unset or blank, ConfigError naming the variable when it is broken."""
+    if not text.strip():
+        return {}
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise ConfigError(f"{ENV_OVERRIDES}: not valid JSON ({e})") from e
+    return _object_of(data, ENV_OVERRIDES)
+
+
+def _load_project(workspace, env_text=""):
     cfg = dict(PROJECT_DEFAULTS)
     path = os.path.join(workspace, "pipeline.json")
     try:
@@ -139,6 +180,8 @@ def _load_project(workspace):
         raise ConfigError(f"{path}: not valid JSON ({e})") from e
     if isinstance(data, dict):
         cfg.update(data)
+    cfg.update(_local_overrides(workspace))
+    cfg.update(_env_overrides(env_text))
     if "full_test" in cfg:
         raise ConfigError('pipeline.json: `full_test` is no longer supported; move its commands into `gates` ([{"name": ..., "cmd": ...}])')
     if "gates" in cfg:

@@ -253,3 +253,12 @@ Reason: a denied command must tell the agent the allowed form at once, and an Op
 - Routing log checks (`pipeline/routing_log.py`, fb6b78c): `unlogged_routes` lists a Sonnet or Opus dispatch with neither an E1 letter nor a `route:` prefix; `off_rule` lists an E1(a) dev dispatch before its Haiku tries and an E1(b) dev dispatch before its dev ESCALATE reports (E4). Both read the task's own events in `orch.jsonl`.
 - Docs: `practices/orch-pipeline.md` "Rounds and fix routes" names `routing_log.py` and the `route:` why; `ORCHESTRATOR.md` "Models: Haiku first" has one line on what the off-rule check flags.
 - Phase 05 note: `docs/modules/pipeline.md` (created by phase 05) lists `routing_log.py`. This phase does not touch it.
+
+## Retro m25 followup (retro-m25-followup)
+
+Reason: the fixes of the followup stage, each named by its behaviour and code file (see `docs/modules/scripts.md`, "Followup behaviour").
+
+- Override order: the project settings are the defaults (`.claude/tools/pipeline/configuration/defaults.py`), then `pipeline.json`, then `pipeline.local.json` in the workspace, then the `PIPELINE_OVERRIDES` env JSON last. A later layer wins. Mechanism: `project()` in `.claude/tools/pipeline/configuration/project.py`. Reason: a machine-local value must override the shared file without a commit, and a one-off run must override both.
+- Gate cap: the host-wide gate limit is the `gate_slots` setting (`.claude/tools/pipeline/gate_slots.py`), not a wave-width option. Reason: the cap must hold across every driver on the host, and a wave width is per stage, so it cannot bound the gate runs of two stages at once.
+- Audit result: the efficiency audit result is kept in `.claude/tools/retro/efficiency-audit.txt`. Reason: the audit numbers are a recorded result, so a later retro reads the same file instead of a re-run.
+- Verify (owner or lead step, not run by this stage): run one gate-on cleanup stage in the kata repo, and one stage that uses the new plan checks, both without a hand-made block. Pass means neither stage needs a manual block to reach its gates. Until this step passes, the followup is verified only by its tests.

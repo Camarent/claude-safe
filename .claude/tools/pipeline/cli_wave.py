@@ -16,6 +16,7 @@ import re
 import shutil
 import signal
 import tempfile
+import time
 import unicodedata
 from pathlib import Path
 
@@ -35,6 +36,8 @@ from .configuration import (
     EXIT_BLOCKED,
     EXIT_LIMIT,
     FAIL,
+    LOCK_RETRY_MAX,
+    LOCK_RETRY_S,
     NO_TASKS_HINT,
     PASS,
     PGID_FILE_NAME,
@@ -217,14 +220,26 @@ def recover_unreported(c) -> int:
 _HELD: dict[str, int] = {}  # lock path -> open fd; the kernel lock lives as long as the fd, so a dead driver never leaves a stale lock
 
 
+def _flock_ex(fd) -> bool:
+    """-> True when the exclusive flock on `fd` is taken. EWOULDBLOCK may come from another driver (a real holder: refused after the retries) or from a probe (other_driver) that holds the lock shared for a moment: the retries let that probe finish."""
+    for attempt in range(LOCK_RETRY_MAX + 1):
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:  # EWOULDBLOCK: another open file description holds it (another driver, a probe, or this process already)
+            if attempt == LOCK_RETRY_MAX:
+                return False
+            time.sleep(LOCK_RETRY_S)
+        else:
+            return True
+    return False
+
+
 def _take_lock(lock):
     """-> True when this process now holds the lock `lock` (flock on the open file). The kernel drops it when the process dies, so there is no stale-lock check, no pid reuse and no takeover guard.
     The file holds the pid for humans. A file that was removed between our open and our lock (the holder released it) is not the lock any more: open again."""
     while True:
         fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:  # EWOULDBLOCK: another open file description holds it (another driver, or this process already)
+        if not _flock_ex(fd):
             os.close(fd)
             return False
         try:
@@ -248,6 +263,29 @@ def _release_lock(lock):
     with contextlib.suppress(OSError):
         os.remove(lock)
     os.close(fd)
+
+
+def other_driver(a_dir, own) -> str | None:
+    """-> the stage of another live driver (its STAGE_LOCK is flock-held), else None. A probe only: a shared flock taken and dropped at once, the lock is never taken and no file is created.
+    `own` (a stage or a feature) and the stages under it (`own/phases/...`) are not a rival. A lock file left by a dead driver is free: the kernel dropped its flock."""
+    root = Path(a_dir, WORK_DIR)
+    for lock in sorted(root.glob(f"**/{STAGE_LOCK}")):
+        stage = lock.parent.relative_to(root).as_posix()
+        if own and (stage == own or stage.startswith(own + "/")):
+            continue
+        try:
+            fd = os.open(lock, os.O_RDONLY)
+        except FileNotFoundError:  # released between the glob and the open
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:  # EWOULDBLOCK: a driver holds it exclusively
+            return stage
+        else:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+    return None
 
 
 def cmd_run(a) -> int:

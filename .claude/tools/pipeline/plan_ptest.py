@@ -14,6 +14,7 @@ from .util import read_text
 
 TEST_LINE_RE = re.compile(r"(?m)^Test:\s*(.*)$")
 PTEST_DIR = ".claude/tools/tests"  # ptest.py default --dir (its tests folder, relative to the repo)
+TEST_SUFFIX = ".py"  # a selector matches only Python test files, never a fixture such as a golden json
 PTEST_VALUE_OPTS = ("--jobs", "--dir")  # ptest options that take a value (the next token is not a pattern)
 DEV_TEST_CMD = ("scripts/dev.sh", "test")  # the wrapper's test subcommand, which passes its arguments to ptest.py
 
@@ -69,12 +70,12 @@ def ptest_selector_problems(d, tid, repo) -> list[str]:
     probs = []
     for pat in pats:
         try:
-            if next(Path(root).glob(pat), None) is not None:
+            if any(p.is_file() and p.suffix == TEST_SUFFIX for p in Path(root).glob(pat)):
                 continue
         except (NotImplementedError, ValueError) as e:  # an absolute or empty pattern: report it, never crash the check
             probs.append(f"{tid}: ptest selector {pat} is not a valid pattern under {rel_root} ({e}); use a name relative to the tests dir")
             continue
-        if any(fnmatch.fnmatch(x, os.path.join(rel_root, pat)) for x in made):
+        if any(x.endswith(TEST_SUFFIX) and fnmatch.fnmatch(x, os.path.join(rel_root, pat)) for x in made):
             continue
         probs.append(
             f"{tid}: ptest selector {pat} matches no test file under {rel_root} and no Predicted path creates one "
