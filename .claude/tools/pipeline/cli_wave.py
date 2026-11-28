@@ -15,12 +15,13 @@ import os
 import re
 import shutil
 import signal
+import sys
 import tempfile
 import time
 import unicodedata
 from pathlib import Path
 
-from . import driver, entry, gitx, graph, lead_context, limits, metrics, ops_preflight, pr_ops, progress
+from . import driver, entry, gitx, graph, launcher_guard, lead_context, limits, metrics, ops_preflight, pr_ops, progress
 from . import preflight as env_preflight
 from .branches import dirty_block, ensure_work_branch, red_base_block
 from .briefs import ENV_DRY_NO_CCN
@@ -749,6 +750,10 @@ def main(argv=None, extra_commands=()) -> int:
         add(sub)
     a = ap.parse_args(argv)
     lead_context.check()
+    refusal = launcher_guard.check(project(a.dir), os.environ, a.cmd, getattr(a, "dry_run", False))
+    if refusal is not None:
+        print(refusal, file=sys.stderr)
+        return 2
     if a.cmd == "run":
         return _run_entry(a, ap)
     return a.fn(a)

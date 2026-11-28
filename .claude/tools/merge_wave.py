@@ -68,7 +68,9 @@ def _passed_gates(repo, cmds):
 
 def _log_skipped(a_dir, stage, tasks, skipped, gates):
     """A skipped gate command still gets its gate_cmd metrics record (rc 0, seconds 0)."""
-    final_check.log_gate_cmds(os.path.join(a_dir, WORK_DIR, stage, METRICS_LOG), GATE_KIND_MERGE, [(c, 0, 0, "") for c in skipped], gates, ",".join(tasks))
+    final_check.log_gate_cmds(
+        os.path.join(a_dir, WORK_DIR, stage, METRICS_LOG), GATE_KIND_MERGE, [(c, 0, 0, "") for c in skipped], gates, ",".join(tasks), skipped=True
+    )
 
 
 def _gate_results(a_dir, stage, tasks, cfg, repo, cmds, gates, runner, lines):

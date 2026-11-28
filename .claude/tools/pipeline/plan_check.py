@@ -227,6 +227,7 @@ from .plan_files import (
 from .plan_files import (
     paths_in as paths_in,  # re-exported: pre-split name of pipeline.plan_check
 )
+from .plan_gatemode import check_gate_modes
 from .plan_kinds import check_kinds
 from .plan_lint import (
     classify_shared,
@@ -511,6 +512,7 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
     probs += _limit_problems(d, ents)
     probs += check_docs_target(tasks_path(d), _workspace(d))
     repo = repo or _repo_root(d)
+    probs += check_gate_modes(_workspace(d), repo)
     rows = parse_tasks(tasks_path(d))
     parsed = {t["id"]: t for t in rows}
     ids = {e["id"] for e in ents}

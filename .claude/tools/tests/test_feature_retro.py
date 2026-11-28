@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -9,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import gate_record
-from pipeline.configuration import GATE_KIND_TASK
+from pipeline.configuration import EV_GATE_CMD, GATE_KIND_TASK, METRICS_LOG, WORK_DIR
 from retro import feature_retro
 from test_gate_record import make_repo
 
@@ -100,6 +101,64 @@ class FeatureRetroTest(unittest.TestCase):
         gate_record.record(repo, ["scripts/dev.sh", "test"], 0, secs=10.0, level="serial", kind=GATE_KIND_TASK)
         text = feature_retro.render("f", feature_retro.gather(self.dir), feature_retro.gate_lines(self.dir, repo))
         self.assertIn("## Gate time and dev gate warnings\n(none)", text)
+
+    def _repo(self):
+        """The repo of the feature (its work folder exists, as the stage folders of a real run sit under it)."""
+        path = os.path.join(self.dir, "ws")
+        if not os.path.isdir(path):
+            repo = make_repo(path, {"a.txt": "x\n"})
+            os.makedirs(os.path.join(repo, WORK_DIR))
+        return path
+
+    def _gate_cmd_rows(self, *rows):
+        """Write gate_cmd metrics rows into the phase 01-a of the feature (the metrics.jsonl the retro reads)."""
+        self._repo()
+        with open(os.path.join(self.dir, "phases", "01-a", METRICS_LOG), "w") as fh:
+            fh.writelines(json.dumps({"ev": EV_GATE_CMD, **r}) + "\n" for r in rows)
+
+    def _gate_stat_lines(self):
+        return [x for x in feature_retro.gate_lines(self.dir, self._repo()) if x.startswith("gate stats ")]
+
+    def test_gate_stats_count_old_records_without_mode_concurrent_or_skipped_as_real_runs(self):
+        self._gate_cmd_rows(
+            {"kind": "task", "level": "unit", "seconds": 10.0},
+            {"kind": "task", "level": "unit", "seconds": 30.0},
+            {"kind": "task", "level": "unit", "seconds": 20.0},
+        )
+        lines = self._gate_stat_lines()
+        self.assertEqual(len(lines), 1)
+        self.assertRegex(lines[0], r"^gate stats unit: 3 runs, 0 skipped, median 20\.0s, p90 30\.0s, limit \d+s$")
+
+    def test_gate_stats_do_not_count_skipped_runs_as_real_runs(self):
+        self._gate_cmd_rows(
+            {"kind": "task", "level": "unit", "seconds": 12.0, "skipped": False},
+            {"kind": "task", "level": "unit", "seconds": 0.0, "skipped": True},
+            {"kind": "task", "level": "unit", "seconds": 0.0, "skipped": True},
+        )
+        lines = self._gate_stat_lines()
+        self.assertRegex(lines[0], r"^gate stats unit: 1 runs, 2 skipped, median 12\.0s, p90 12\.0s, limit \d+s$")
+
+    def test_gate_stats_of_an_all_skipped_group_print_dashes(self):
+        self._gate_cmd_rows(
+            {"kind": "merge", "level": "merge", "seconds": 0.0, "skipped": True},
+            {"kind": "merge", "level": "merge", "seconds": 0.0, "skipped": True},
+        )
+        lines = self._gate_stat_lines()
+        self.assertRegex(lines[0], r"^gate stats merge: 0 runs, 2 skipped, median -, p90 -, limit \d+s$")
+
+    def test_gate_stats_take_the_level_of_the_kind_when_a_record_has_none(self):
+        self._gate_cmd_rows({"kind": "full", "seconds": 5.0})
+        lines = self._gate_stat_lines()
+        self.assertRegex(lines[0], r"^gate stats full: 1 runs, 0 skipped, median 5\.0s, p90 5\.0s, limit \d+s$")
+
+    def test_gate_stats_print_nothing_without_metrics(self):
+        self.assertEqual(self._gate_stat_lines(), [])
+
+    def test_gate_stats_skip_when_the_pipeline_config_is_invalid(self):
+        self._gate_cmd_rows({"kind": "task", "level": "unit", "seconds": 5.0})
+        with open(os.path.join(self._repo(), "pipeline.json"), "w") as fh:
+            fh.write("{not json")
+        self.assertEqual(self._gate_stat_lines(), [])
 
 
 if __name__ == "__main__":

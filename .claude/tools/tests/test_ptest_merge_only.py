@@ -63,9 +63,9 @@ class TestMergeOnlySelection(unittest.TestCase):
         with mock.patch.object(ptest, "project", return_value={MERGE_ONLY_TESTS_KEY: []}):
             self.assertEqual(ptest.select_files(d, ["test_*.py"], ptest.merge_only_tests()), ["test_a.py", MERGE_ONLY])
 
-    def test_default_merge_only_is_lsp_e2e(self):
-        self.assertEqual(MERGE_ONLY_TESTS_DEFAULT, [MERGE_ONLY])
-        self.assertEqual(project(tracked_mkdtemp())[MERGE_ONLY_TESTS_KEY], [MERGE_ONLY])
+    def test_default_merge_only_is_empty(self):
+        self.assertEqual(MERGE_ONLY_TESTS_DEFAULT, [])
+        self.assertEqual(project(tracked_mkdtemp())[MERGE_ONLY_TESTS_KEY], [])
 
 
 class TestGateSplit(unittest.TestCase):

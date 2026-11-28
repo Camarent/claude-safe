@@ -1,6 +1,7 @@
 """cs-wave runs the env preflight before the loop: problems -> printed, BLOCKED.md, exit 4; none -> the loop runs; a raising probe -> logged, run goes on."""
 
 import io
+import json
 import os
 import sys
 import unittest
@@ -9,8 +10,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import claude, cli_wave, driver
+from pipeline import claude, cli_wave, driver, launcher_guard
 from pipeline import preflight as pf
+from pipeline.configuration import ENV_CLAUDE_FLAGS, PERMISSION_MODE_AUTO, PERMISSION_MODE_DEFAULT, PERMISSION_MODE_FLAG
 from tests.isolated import isolate_cwd
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -80,6 +82,49 @@ class WavePreflightTest(unittest.TestCase):
             rc, _ = self.run_w()
         self.assertEqual(rc, 0)
         self.assertIn("swallowed in cli_wave.env_preflight: RuntimeError: probe broke", err.getvalue())
+
+
+LAUNCHER = "python3 -I scripts/pipeline_auto.py"
+AUTO_FLAG = f"{PERMISSION_MODE_FLAG} {PERMISSION_MODE_AUTO}"
+
+
+class LauncherGuardTest(unittest.TestCase):
+    """A bare `cs-wave run` is refused in a repo that names a launcher, unless the auto flags are set; preview, status and repos without the key pass."""
+
+    def setUp(self):
+        isolate_cwd(self)
+        self.d = tracked_mkdtemp()
+
+    def test_bare_run_is_refused_and_names_the_launcher(self):
+        msg = launcher_guard.check({"launcher": LAUNCHER}, {}, "run", False)
+        assert msg is not None
+        self.assertIn(LAUNCHER, msg)
+
+    def test_auto_flags_in_env_let_the_run_go_on(self):
+        self.assertIsNone(launcher_guard.check({"launcher": LAUNCHER}, {ENV_CLAUDE_FLAGS: AUTO_FLAG}, "run", False))
+
+    def test_default_mode_in_env_is_refused(self):
+        env = {ENV_CLAUDE_FLAGS: f"{PERMISSION_MODE_FLAG} {PERMISSION_MODE_DEFAULT}"}
+        self.assertIsNotNone(launcher_guard.check({"launcher": LAUNCHER}, env, "run", False))
+
+    def test_no_launcher_key_means_no_guard(self):
+        self.assertIsNone(launcher_guard.check({}, {}, "run", False))
+
+    def test_preview_run_and_status_are_not_refused(self):
+        cfg = {"launcher": LAUNCHER}
+        self.assertIsNone(launcher_guard.check(cfg, {}, "run", True))
+        self.assertIsNone(launcher_guard.check(cfg, {}, "status", False))
+        self.assertIsNone(launcher_guard.check(cfg, {}, "metrics", False))
+
+    def test_cli_bare_run_exits_2_with_the_launcher_on_stderr(self):
+        Path(self.d, "pipeline.json").write_text(json.dumps({"launcher": LAUNCHER}), encoding="utf-8")
+        err = io.StringIO()
+        with mock.patch.dict(os.environ), mock.patch.object(cli_wave, "run_loop", side_effect=AssertionError("loop ran")):
+            os.environ.pop(ENV_CLAUDE_FLAGS, None)
+            with mock.patch("sys.stderr", err):
+                rc = cli_wave.main(["run", "--stage", "s", "--dir", self.d])
+        self.assertEqual(rc, 2)
+        self.assertIn(LAUNCHER, err.getvalue())
 
 
 if __name__ == "__main__":

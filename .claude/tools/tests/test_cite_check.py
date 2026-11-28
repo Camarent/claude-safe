@@ -105,8 +105,21 @@ class CiteCheck(unittest.TestCase):
         added = [("core.md", 9, "see progress.py:100")]
         self.assertEqual(cite_check.check(wt, added, ""), [])
 
-    def test_bare_name_with_two_files_stays_missing(self):
+    def test_bare_name_with_two_files_names_candidates(self):
         wt = self.tree({"a/progress.py": progress_py(136), "b/progress.py": progress_py(136)})
+        added = [("core.md", 9, "see progress.py:100")]
+        self.assertEqual(
+            cite_check.check(wt, added, ""),
+            ["core.md:9 cites progress.py:100 but progress.py is ambiguous: a/progress.py, b/progress.py"],
+        )
+
+    def test_bare_name_ignores_dev_cache_dir(self):
+        wt = self.tree({".uv/venv/lib/progress.py": progress_py(136), "scripts/smoke/progress.py": progress_py(136)})
+        added = [("core.md", 9, "see progress.py:100")]
+        self.assertEqual(cite_check.check(wt, added, ""), [])
+
+    def test_bare_name_with_no_match_stays_missing(self):
+        wt = self.tree({"a/other.py": progress_py(136)})
         added = [("core.md", 9, "see progress.py:100")]
         self.assertEqual(cite_check.check(wt, added, ""), ["core.md:9 cites progress.py:100 but progress.py is missing"])
 

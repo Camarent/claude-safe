@@ -323,7 +323,20 @@ SEARCH_TOOL_NAMES = (
     tuple(dict.fromkeys(cmdnames.names_for(_cs_index(), "lp"))) if _cs_index() and "lp" in _cs_index()["commands"] else ("lp", "local.py")
 )  # from the command index (name, script file, aliases); names of the local search tool in a Bash command (alias on the container, script on the host); lp_share.py and retro_numbers.py count both
 EV_REPORT, EV_DISPATCH, EV_SKIP, EV_SESSION, EV_RETRY = "report", "dispatch", "skip", "session", "retry"  # orch.jsonl / metrics.jsonl event names
-GATE_KIND_TASK, GATE_KIND_MERGE = "task", "merge"  # `kind` of a gate_cmd record: the task gates, a wave merge
+GATE_KIND_TASK, GATE_KIND_MERGE, GATE_KIND_FULL = (
+    "task",
+    "merge",
+    "full",
+)  # `kind` of a gate_cmd record: the task gates, a wave merge, the final full gate (final_check --stage)
+GATE_LEVEL_UNIT, GATE_LEVEL_MERGE, GATE_LEVEL_FULL = (
+    "unit",
+    "merge",
+    "full",
+)  # gate time levels: the gate_time_warn_s keys, and the groups of the retro gate stats (gate_stats.py)
+GATE_STATS_P90 = 0.9  # fraction of the real runs of a gate level at or under the p90 time of the retro gate stats (nearest rank)
+GATE_MODE_FLAG_RE = r"(?<![\w-])--[a-z][a-z-]*(?![\w-])"  # one mode flag of a gate command or script header: a --word token
+GATE_MODE_FULL = "full"  # gate mode of a command or script that names no mode flag
+HEADER_LINES_MAX = 10  # first lines of a script scanned for the modes its header lists
 EV_GATE_CMD = "gate_cmd"  # metrics.jsonl: one record per gate command run by the task gates or a wave merge (gate name, exit code, seconds)
 EV_RETRY_REFRESH = "retry_refresh"  # orch.jsonl: `retry` rebased the job branch (or dropped leftovers); no verdict, so history() must not end on it
 LEAD_EV = "lead"  # metrics.jsonl event of one lead session of a stage (not a "session" row, so session totals stay the agents' sum)

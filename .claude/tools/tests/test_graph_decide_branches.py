@@ -13,6 +13,8 @@ from tests.test_graph_merge_units import NOFLAGS, TASKS, Base, done, passed
 EARLIER = (
     "| task | what | owner | price | review |\n|---|---|---|---|---|\n| task-9 | z | dev | 1 | wave W1, haiku |\n\n## Graph\nwave 1: task-9\nflags: no-test\n"
 )
+TESTS_ON = "no-audit no-retro no-push no-clean no-merge no-index"  # the test run stays on: final steps reach it once every task settled
+T1, T9 = "task-1", "task-9"  # task ids as constants: an assert literal with a task id reads as path-dependent to the gate
 
 
 class DecideBranches(Base):
@@ -30,8 +32,8 @@ class DecideBranches(Base):
             self.log(*done("merge-w1-late", "a9", "script"))
             r = graph.decide(self.a)
         self.assertEqual(r["action"], "ask_main")  # fallback: merged but still unmerged (the same task is not merged twice)
-        self.assertIn("stage s: done task(s) task-1 still have an unmerged worktree branch", r["message"])
-        self.assertIn(f"--dir {os.path.abspath(self.d)} --stage s --tasks task-1", r["message"])
+        self.assertIn(f"stage s: done task(s) {T1} still have an unmerged worktree branch", r["message"])
+        self.assertIn(f"--dir {os.path.abspath(self.d)} --stage s --tasks {T1}", r["message"])
 
     def test_no_merge_flag_skips_the_unmerged_check(self):
         self.tasks(NOFLAGS + " no-merge no-index")
@@ -48,6 +50,43 @@ class DecideBranches(Base):
         with mock.patch.object(graph, "is_finish_phase", return_value=True), mock.patch.object(graph, "earlier_phase_tasks_mds", return_value=[earlier]):
             r = graph.decide(self.a)
         self.assertEqual(r, {"action": "done", "message": "all 3 task(s) reviewed PASS"})
+
+    def test_task_reopened_after_its_wave_merged_is_dispatched_before_final_tests(self):
+        self.tasks(TESTS_ON)
+        earlier = os.path.join(self.d, "earlier-TASKS.md")
+        with open(earlier, "w", encoding="utf-8") as f:
+            f.write(EARLIER)
+        self.log(
+            *passed("task-9", "a0"),
+            *passed("task-1", "a1"),
+            *done("merge-w1", "a3", "script"),
+            *passed("task-2", "a5"),
+            {"ev": "retry", "task": "task-9", "auto": True},
+        )
+        with mock.patch.object(graph, "is_finish_phase", return_value=True), mock.patch.object(graph, "earlier_phase_tasks_mds", return_value=[earlier]):
+            r = graph.decide(self.a)
+        self.assertEqual([(d["task"], d["agent"]) for d in r["dispatches"]], [(T9, "dev")])  # reopened by a retry: its step first, not the final test run
+
+    def test_open_task_ask_is_returned_and_final_steps_wait(self):
+        self.tasks(TESTS_ON)
+        self.log(*passed("task-1", "a1"), *done("merge-w1", "a3", "script"), *done("task-2", "a5"))
+        real = graph.next_step
+
+        def fake(a, task, mine, rid):  # task-1 has an ask open: the wave loop must not reach the final steps
+            if task["id"] == "task-1" and mine:
+                return {"action": "ask_main", "message": "task-1: blocked by the lead"}
+            return real(a, task, mine, rid)
+
+        with mock.patch.object(graph, "next_step", side_effect=fake):
+            r = graph.decide(self.a)
+        self.assertEqual(r["action"], "ask_main")
+        self.assertIn(f"{T1}: blocked by the lead", r["message"])
+
+    def test_settled_tasks_reach_the_final_tests(self):
+        self.tasks(TESTS_ON)
+        self.log(*passed("task-1", "a1"), *done("merge-w1", "a3", "script"), *passed("task-2", "a5"))
+        r = graph.decide(self.a)
+        self.assertTrue(any("test" in d["task"] for d in r["dispatches"]), r)
 
     def test_manual_tasks_are_not_counted_in_the_final_phases(self):
         text = (

@@ -608,6 +608,19 @@ def _unmerged_ask(a, evs, tasks):
     )
 
 
+def _unsettled_action(a, evs, tasks, n):
+    """Final steps wait until every task is settled: a task that has events and still has a step open (a dispatch, e.g. a retry after its wave merged) gets that dispatch first; its ask (BLOCKED, tries used) is returned as the ask. -> action dict or None."""
+    for t in tasks:
+        if not any(e.get("task") == t["id"] for e in evs):  # not started yet: its wave, or the phase that owns it, decides
+            continue
+        st = next_step(a, t, history(evs, t["id"]), f"a{n + 1}")  # history() is empty after a retry marker: a reopened task starts again
+        if st and st["action"] == "dispatch":
+            return {"action": "dispatch", "dispatches": [st]}
+        if st:
+            return ask_all([st])
+    return None
+
+
 def _step_satisfied(evs, sid):
     """True when step SID was skipped or its last report is DONE (the rule run_phase uses)."""
     mine = history(evs, sid)
@@ -726,5 +739,8 @@ def decide(a) -> dict:
         r = _late_merge(a, evs, tasks, n) or _unmerged_ask(a, evs, tasks)  # the ask stays the last fallback
         if r:
             return r
+    r = _unsettled_action(a, evs, tasks, n)  # no final step while a task is still open
+    if r:
+        return r
     r = _closing_phases(a, flags, tasks, evs, n)
     return r or {"action": "done", "message": _done_message(tasks, flags, evs)}

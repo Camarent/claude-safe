@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -31,6 +32,15 @@ class ParallelGates(unittest.TestCase):
         res = self.run_(cmds, g)
         self.assertEqual([r[0] for r in res], cmds)
         self.assertTrue(all(r[1] == 0 for r in res), [r[1] for r in res])  # a barrier gate passes only when the others ran at the same time
+
+    def test_gate_cmd_records_count_the_commands_running_together(self):
+        path = os.path.join(self.d, "metrics.jsonl")
+        cmds = [self.barrier(1, 2), self.barrier(2, 2)]
+        fc.log_gate_cmds(path, "task", self.run_(cmds, {cmds[0]: "js", cmds[1]: "js"}), {}, "t1")
+        fc.log_gate_cmds(path, "task", self.run_(["true"]), {}, "t1")
+        concurrent = [json.loads(line)["concurrent"] for line in open(path, encoding="utf-8")]
+        self.assertEqual(max(concurrent[:2]), 2)  # the group's two commands overlap: at least one starts while the other runs
+        self.assertEqual(concurrent[2], 1)  # a lone command counts 1
 
     def test_serial_without_groups(self):
         cmds = ["touch a; sleep 0.2; touch a.done", "test -e a.done"]  # the second passes only when the first has finished

@@ -3,11 +3,26 @@
 Warnings only: never a verdict, never a changed exit code."""
 
 from . import gate_record
-from .configuration import GATE_KIND_MERGE, GATE_KIND_TASK, GATE_TIME_WARN_KEY, ConfigError, project
+from .configuration import (
+    GATE_KIND_FULL,
+    GATE_KIND_MERGE,
+    GATE_KIND_TASK,
+    GATE_LEVEL_FULL,
+    GATE_LEVEL_MERGE,
+    GATE_LEVEL_UNIT,
+    GATE_TIME_WARN_KEY,
+    ConfigError,
+    project,
+)
 
-LEVEL_UNIT = "unit"  # gate_time_warn_s key of a task gate run
-LEVEL_MERGE = "merge"  # gate_time_warn_s key of a merge gate run
-LEVEL_OF_KIND = {GATE_KIND_TASK: LEVEL_UNIT, GATE_KIND_MERGE: LEVEL_MERGE}  # gate-run record `kind` (PIPELINE_GATE_KIND at the run) -> level
+LEVEL_UNIT = GATE_LEVEL_UNIT  # gate_time_warn_s key of a task gate run
+LEVEL_MERGE = GATE_LEVEL_MERGE  # gate_time_warn_s key of a merge gate run
+LEVEL_FULL = GATE_LEVEL_FULL  # gate_time_warn_s key of the final full gate run
+LEVEL_OF_KIND = {
+    GATE_KIND_TASK: LEVEL_UNIT,
+    GATE_KIND_MERGE: LEVEL_MERGE,
+    GATE_KIND_FULL: LEVEL_FULL,
+}  # gate-run record `kind` (PIPELINE_GATE_KIND at the run) -> level
 LINES_MAX = 15  # warning lines check returns at most (the newest)
 
 

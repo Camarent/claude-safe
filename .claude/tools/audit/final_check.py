@@ -18,21 +18,26 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # -I drops the script dir
-from pipeline import gate_timing
+from pipeline import gate_mode, gate_timing
 from pipeline.configuration import (
     CLEAR_WHY_BAD_RC,
     CLEAR_WHY_GREEN,
     CLEAR_WHY_NO_CMD,
+    ENV_GATE_KIND,
     EV_GATE_CMD,
     FAIL_ID_RES,
     FAIL_IDS_SHOWN,
     GATE_GROUP_MAX_WORKERS,
-    GATE_KIND_TASK,
+    GATE_KIND_FULL,
     GATE_PARALLEL_KEY,
+    GATE_TIME_WARN_KEY,
+    METRICS_LOG,
+    WORK_DIR,
     ConfigError,
     each_of,
     final_gates_of,
@@ -111,18 +116,31 @@ def _fetch_failed(rc, text):
     return rc != 0 and any(m in text for m in FETCH_FAIL_MARKS)
 
 
+_active_lock = threading.Lock()
+_active = 0  # gate commands running now (all threads)
+_concurrent: dict[str, int] = {}  # cmd -> _active when that cmd started; log_gate_cmds consumes it
+
+
 def _run_one(c, repo, env, runner):
     """-> (cmd, rc, secs, text); a red run caused by a fetch failure is retried FETCH_RETRIES times, then labelled FETCH_FAIL_LINE."""
     from pipeline.configuration import FETCH_FAIL_LINE, FETCH_RETRIES
 
-    res = _run_once(c, repo, env, runner)
-    for _ in range(FETCH_RETRIES):
-        if not _fetch_failed(res[1], res[3]):
-            return res
+    global _active
+    with _active_lock:
+        _active += 1
+        _concurrent[c] = _active
+    try:
         res = _run_once(c, repo, env, runner)
-    if _fetch_failed(res[1], res[3]):
-        res = (*res[:3], f"{FETCH_FAIL_LINE}\n{res[3]}")
-    return res
+        for _ in range(FETCH_RETRIES):
+            if not _fetch_failed(res[1], res[3]):
+                return res
+            res = _run_once(c, repo, env, runner)
+        if _fetch_failed(res[1], res[3]):
+            res = (*res[:3], f"{FETCH_FAIL_LINE}\n{res[3]}")
+        return res
+    finally:
+        with _active_lock:
+            _active -= 1
 
 
 def _run_once(c, repo, env, runner):
@@ -166,9 +184,9 @@ def run_all(cmds, repo, env, runner=run_group, groups=None):
     return [r for _, r in sorted(out, key=lambda x: x[0])]
 
 
-def log_gate_cmds(path, kind, results, names, task="", base_red=(), limits=None):
-    """Append one `gate_cmd` metrics record per command of RESULTS ([(cmd, rc, seconds, text)]) to the metrics file PATH: KIND (`task` or `merge`), the gate name, exit code, seconds, the gate time level (unit or merge), and `base_red` when the command was red on the stage base too (its `rc` is then 0: it was cleared, not the task's failure). Returns the gate time warning lines of the runs over their LIMITS (gate_time_warn_s; none when LIMITS is None); the exit codes never change. A failed write is ignored: a metric never stops a gate."""
-    level = gate_timing.LEVEL_UNIT if kind == GATE_KIND_TASK else gate_timing.LEVEL_MERGE
+def log_gate_cmds(path, kind, results, names, task="", base_red=(), limits=None, skipped=False):
+    """Append one `gate_cmd` metrics record per command of RESULTS ([(cmd, rc, seconds, text)]) to the metrics file PATH: KIND (`task`, `merge` or `full`), the gate name, exit code, seconds, the gate time level (unit, merge or full), the gate `mode`, `concurrent` (gate commands running at once when the command started, 1 when it ran alone or never ran here), `skipped` (SKIPPED: the command was not run), and `base_red` when the command was red on the stage base too (its `rc` is then 0: it was cleared, not the task's failure). Returns the gate time warning lines of the runs over their LIMITS (gate_time_warn_s; none when LIMITS is None); the exit codes never change. A failed write is ignored: a metric never stops a gate."""
+    level = gate_timing.LEVEL_OF_KIND.get(kind, gate_timing.LEVEL_MERGE)
     warns = []
     with contextlib.suppress(OSError):
         for cmd, rc, secs, _text in results:
@@ -181,6 +199,9 @@ def log_gate_cmds(path, kind, results, names, task="", base_red=(), limits=None)
                 "rc": rc,
                 "seconds": round(secs, 1),
                 "level": level,
+                "mode": gate_mode.mode_of(cmd),
+                "concurrent": _concurrent.pop(cmd, 1),
+                "skipped": skipped,
             }
             append_jsonl(path, {**rec, "base_red": True} if cmd in base_red else rec)
             if limits is not None and (w := gate_timing.warn(level, secs, limits)):
@@ -321,7 +342,13 @@ def main(argv=None):
         print("VERDICT: FAIL\nno `gates`, `gates_merge` or `gates_final` in pipeline.json: nothing to run")
         return 0
     gates = gate_names(cfg, merge=True, final=True)
-    results = run_all(cmds, repo, {**os.environ, **test_env(cfg, a.dir)}, groups=gate_groups(cfg, repo, merge=True, final=True))
+    env = {**os.environ, **test_env(cfg, a.dir)}
+    if a.stage:
+        env[ENV_GATE_KIND] = GATE_KIND_FULL  # qrun records the run as a full gate run (gate_timing: full limit)
+    results = run_all(cmds, repo, env, groups=gate_groups(cfg, repo, merge=True, final=True))
+    if a.stage:
+        for w in log_gate_cmds(os.path.join(a.dir, WORK_DIR, a.stage, METRICS_LOG), GATE_KIND_FULL, results, gates, limits=cfg[GATE_TIME_WARN_KEY]):
+            print(w, file=sys.stderr)  # a slow gate is a warning line; the report and the exit code stay as they are
     print(report(results, gates))
     return 0
 

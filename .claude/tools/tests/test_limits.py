@@ -1,11 +1,21 @@
 """Synthetic tests: the Sonnet/Opus dispatch limit formula and the tools-check relevance filter."""
 
 import os
+import re
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import limits
+from pipeline import gate_mode, limits
+from pipeline.configuration import (
+    GATE_LEVEL_FULL,
+    GATE_LEVEL_MERGE,
+    GATE_LEVEL_UNIT,
+    GATE_MODE_FLAG_RE,
+    GATE_MODE_FULL,
+    GATE_STATS_P90,
+    HEADER_LINES_MAX,
+)
 from pipeline.extra_tools import split_needed
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -78,3 +88,33 @@ class ConsistencyAt30Tasks(unittest.TestCase):
             self.assertEqual(stage_limit(self.md), 12)
         finally:
             os.environ.pop("ORCH_MAX_DISPATCH", None)
+
+
+class GateMode(unittest.TestCase):
+    def test_mode_of_command_is_its_first_mode_flag_or_full(self):
+        self.assertEqual(gate_mode.mode_of("scripts/dev.sh gate --unit"), "--unit")
+        self.assertEqual(gate_mode.mode_of("scripts/dev.sh gate --merge --py"), "--merge")
+        self.assertEqual(gate_mode.mode_of("scripts/dev.sh test"), GATE_MODE_FULL)
+        self.assertEqual(gate_mode.mode_of(""), GATE_MODE_FULL)
+
+    def test_header_modes_are_the_flags_of_the_header_comments(self):
+        text = "#!/bin/sh\n# usage: gate --unit | --merge | --py\nrun all\n"
+        self.assertEqual(gate_mode.header_modes(text), {"--unit", "--merge", "--py"})
+        self.assertEqual(gate_mode.header_modes('"""Gate script: --unit or --merge."""\nprint(1)\n'), {"--unit", "--merge"})
+        self.assertEqual(gate_mode.header_modes("# no mode named here\nprint(1)\n"), set())
+
+    def test_header_flag_below_the_limit_is_ignored(self):
+        text = "\n" * HEADER_LINES_MAX + "# --unit\n"
+        self.assertEqual(gate_mode.header_modes(text), set())
+
+    def test_mode_flag_regex_is_the_default_word_flag(self):
+        self.assertIsNotNone(re.search(GATE_MODE_FLAG_RE, "x --unit y"))
+        self.assertIsNone(re.search(GATE_MODE_FLAG_RE, "x a--unit y"))
+
+    def test_gate_mode_module_names_no_project(self):
+        with open(gate_mode.__file__, encoding="utf-8") as f:
+            self.assertNotIn("kata", f.read())
+
+    def test_gate_stats_groups_and_p90_fraction_are_named_limits(self):
+        self.assertEqual((GATE_LEVEL_UNIT, GATE_LEVEL_MERGE, GATE_LEVEL_FULL), ("unit", "merge", "full"))
+        self.assertEqual(GATE_STATS_P90, 0.9)

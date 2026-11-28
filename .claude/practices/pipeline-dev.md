@@ -13,7 +13,7 @@ claude-safe/                      git repo (this repo only: master + dev); push 
       pipeline/                   core package; configuration/ holds HOME, TOOLS_DIR, AGENTS_DIR, PRACTICES_DIR, tool_cmd()
       localmodel/                 optional local-model (Strata) tools + eval/ + data/ (localdev policy and profiles)
       tests/                      unit and synthetic tests; tests/support builds throwaway projects; tests/integration needs a real project
-      ptest.py                    THE entry point for the pipeline test suite: one file per process, in parallel (~45 s for all files, measured); also the container entry point. Files named in `merge_only_tests` (pipeline.json; default `test_lsp_e2e.py`) run only in the merge gate: a bare `dev.sh test` skips them, a PATTERN that names one selects it. Never use serial `unittest discover`
+      ptest.py                    THE entry point for the pipeline test suite: one file per process, in parallel (~45 s for all files, measured); also the container entry point. Files named in `merge_only_tests` (pipeline.json; default none) run only in the merge gate: a bare `dev.sh test` skips them, a PATTERN that names one selects it. Never use serial `unittest discover`
     agents/ commands/ practices/ skills/ githooks/ git/   as before
     parked/MANIFEST.md            the only place parked features live (rules inside)
 ```

@@ -1,5 +1,8 @@
 """Synthetic tests for the scripted final verification. Contract only: what runs, what the verdict is, script vs tester choice."""
 
+import contextlib
+import io
+import json
 import os
 import shutil
 import subprocess
@@ -10,7 +13,7 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from audit import final_check as fc
-from pipeline import steps
+from pipeline import gate_mode, steps
 from tests.support.orch_harness import OrchHarness
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -59,6 +62,52 @@ class FinalCheckTest(unittest.TestCase):
         self.assertTrue(rep.startswith("VERDICT: FAIL"))
         self.assertLess(rep.index("FAIL ("), rep.index("ok ("))
         self.assertTrue(fc.report([("x", 0, 0, "")]).startswith("VERDICT: DONE"))
+
+    def test_gate_cmd_record_has_mode_concurrent_and_skipped(self):
+        d = tracked_mkdtemp()
+        path = f"{d}/metrics.jsonl"
+        cmd = "scripts/dev.sh check"
+        res = [(cmd, 0, 1, "")]
+        fc.log_gate_cmds(path, "merge", res, {cmd: "check"})
+        fc.log_gate_cmds(path, "merge", [("scripts/dev.sh test --fast", 0, 0, "")], {}, skipped=True)
+        recs = [json.loads(x) for x in open(path, encoding="utf-8")]
+        self.assertEqual([r["mode"] for r in recs], [gate_mode.mode_of(cmd), gate_mode.mode_of("scripts/dev.sh test --fast")])
+        self.assertEqual([r["concurrent"] for r in recs], [1, 1])  # never ran here: default 1
+        self.assertEqual([r["skipped"] for r in recs], [False, True])
+        self.assertEqual([r["gate"] for r in recs], ["check", "scripts/dev.sh test --fast"])
+
+    def test_final_run_with_stage_logs_full_kind_and_warns_over_full_limit(self):
+        d = tracked_mkdtemp()
+        with open(f"{d}/pipeline.json", "w", encoding="utf-8") as f:
+            json.dump({"gates": [{"name": "exit", "cmd": "exit 0"}], "gate_time_warn_s": {"unit": 120, "merge": 300, "full": 1}}, f)
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            unittest.mock.patch.object(fc, "run_all", return_value=[("exit 0", 0, 5, "")]) as ra,
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            self.assertEqual(fc.main(["--dir", d, "--stage", "s"]), 0)
+        self.assertEqual(ra.call_args.args[2][fc.ENV_GATE_KIND], fc.GATE_KIND_FULL)
+        with open(os.path.join(d, fc.WORK_DIR, "s", fc.METRICS_LOG), encoding="utf-8") as f:
+            recs = [json.loads(x) for x in f]
+        self.assertEqual([(r["kind"], r["level"], r["rc"]) for r in recs], [("full", "full", 0)])
+        self.assertIn("gate time: full gate run 5s over the 1s limit", err.getvalue())
+        self.assertTrue(out.getvalue().startswith("VERDICT: DONE"))  # the report and the exit code do not change
+
+    def test_final_run_without_stage_writes_no_metrics(self):
+        d = tracked_mkdtemp()
+        with open(f"{d}/pipeline.json", "w", encoding="utf-8") as f:
+            json.dump({"gates": [{"name": "exit", "cmd": "exit 0"}]}, f)
+        os.makedirs(os.path.join(d, fc.WORK_DIR))  # pre-created, so a write under a wrong stage path would show
+        with (
+            unittest.mock.patch.object(fc, "run_all", return_value=[("exit 0", 0, 5, "")]) as ra,
+            contextlib.redirect_stdout(io.StringIO()),
+            unittest.mock.patch.dict(os.environ),
+        ):
+            os.environ.pop(fc.ENV_GATE_KIND, None)
+            self.assertEqual(fc.main(["--dir", d]), 0)
+        self.assertNotIn(fc.ENV_GATE_KIND, ra.call_args.args[2])
+        self.assertEqual(os.listdir(os.path.join(d, fc.WORK_DIR)), [])
 
 
 class FinalStepChoice(OrchHarness):

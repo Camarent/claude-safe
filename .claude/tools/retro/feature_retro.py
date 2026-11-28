@@ -10,10 +10,21 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # -I drops the script dir
 from pipeline import dev_gate_audit, gate_timing
-from pipeline.configuration import EV_SESSION, HOME, METRICS_LOG, ORCH_LOG, RETRO_ASK_CAUSE_CHARS, WORK_DIR
+from pipeline.configuration import (
+    EV_GATE_CMD,
+    EV_SESSION,
+    GATE_TIME_WARN_KEY,
+    HOME,
+    METRICS_LOG,
+    ORCH_LOG,
+    RETRO_ASK_CAUSE_CHARS,
+    WORK_DIR,
+    ConfigError,
+    project,
+)
 from pipeline.util import read_jsonl, work_path
 
-from retro import agent_cost, block_causes, lead_cost, ledger
+from retro import agent_cost, block_causes, gate_stats, lead_cost, ledger
 
 SIGNAL_RE = re.compile(r"^RETRO ([\w-]+):\s*(.*)$")
 ASK_TASK_RE = re.compile(r"^[\w.-]*\d[\w.-]*: ")  # "task-5: " or "merge-w1: " (an id with a digit) in front of the cause; "error: ..." is part of the cause
@@ -60,14 +71,22 @@ def _ask_lines(data):
 
 
 def gate_lines(feature_dir, cwd):
-    """-> gate time warning lines of the feature: the recorded gate runs of the repo at cwd over the unit limit, and the dev gate warnings of every task of every phase (warnings only)."""
+    """-> gate time lines of the feature: the recorded gate runs of the repo at cwd over the unit limit, the dev gate warnings of every task of every phase (warnings only), and one gate stats line per gate time group with gate_cmd records in the phases (gate_stats.py)."""
     out = gate_timing.check(cwd, gate_timing.LEVEL_UNIT)
     root = os.path.join(cwd, WORK_DIR)
+    gate_rows = []
     for ph in phase_dirs(feature_dir):
         stage = os.path.relpath(os.path.join(os.path.abspath(feature_dir), "phases", ph), root)
         rows = read_jsonl(os.path.join(root, stage, METRICS_LOG), quiet=True, errors="replace")
+        gate_rows += [r for r in rows if r.get("ev") == EV_GATE_CMD]
         for task in sorted({str(r["task"]) for r in rows if r.get("ev") == EV_SESSION and r.get("agent") == "dev" and r.get("task")}):
             out += dev_gate_audit.warn_task(cwd, stage, task)
+    if gate_rows:
+        try:
+            warn = project(cwd)[GATE_TIME_WARN_KEY]
+        except (KeyError, ConfigError):  # same as gate_timing.check: no limits, no stat lines
+            return out
+        out += gate_stats.lines(gate_rows, warn)
     return out
 
 
