@@ -80,7 +80,7 @@ class MergeWaveTest(unittest.TestCase):
             f.write("task-1")
         wt.commit(self.t, "s", T1, "feat(x): add a")
         job_sha = subprocess.run(["git", "-C", r["root"], "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
-        sh("-C", self.m, "cherry-pick", job_sha)  # the job's commit already on the stage branch
+        sh("-C", self.m, "merge", "--ff-only", job_sha)  # the job's own commit on the stage branch (a cherry-pick kept the sha only within one second)
         with open(f"{self.m}/a", "w") as f:
             f.write("later")
         sh("-C", self.m, "add", "a")

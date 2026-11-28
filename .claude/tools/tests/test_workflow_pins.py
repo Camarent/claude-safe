@@ -15,7 +15,7 @@ SHA_REF = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 # Commit SHA per action, as recorded in the lead's pins table (ops-pins).
 EXPECTED = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
-    "astral-sh/setup-uv": "37802adc94f370d6bfd71619e3f0bf239e1f3b78",
+    "astral-sh/setup-uv": "1db35dd8eee11c5894872e0b383ae6c406cf738d",
 }
 
 
