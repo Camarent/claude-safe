@@ -270,6 +270,11 @@ def refresh(a_dir, stage, task, discard=False) -> dict[str, list]:
         base = _base_branch(src, info["base"])
         if base == "HEAD" or git(path, "rev-list", "--count", f"HEAD..{base}", check=False) in ("", "0"):
             continue
+        # own commits all already on the stage branch under another sha (cherry-pick, merge fix): the patch-id test drops them, nothing is replayed
+        if git(path, "rev-list", "--count", f"{base}..HEAD", check=False) not in ("", "0") and (
+            git(path, "rev-list", "--count", "--cherry-pick", "--right-only", f"{base}...HEAD", check=False) == "0"
+        ):
+            continue
         _rebase_job(path, rel, base, info["branch"])
         res["rebased"].append(rel)
     return res

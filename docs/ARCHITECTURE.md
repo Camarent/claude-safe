@@ -61,6 +61,8 @@ Settle rule (`.claude/tools/pipeline/graph.py`, `_unsettled_action`, called in `
 
 Worktree setup (`.claude/tools/pipeline/worktree.py`, `_run_setup`): after the `worktree_setup` commands, each file matched by the `worktree_requirements` globs (`_requirement_steps`, setting in `.claude/tools/pipeline/configuration/defaults.py`) is installed into the job venv with `python -m pip install -r`, run with the venv python of the `worktree_venv_python` setting (default `.venv/bin/python` under the worktree root). A missing file is skipped; a failing install fails the setup like a failing setup command.
 
+Retry refresh (`.claude/tools/pipeline/worktree.py`, `refresh`): before a job branch is rebased onto the stage, its own commits whose patch is already on the stage branch under another sha (cherry-pick or merge fix; `rev-list --cherry-pick --right-only`) are not replayed. A job whose commits are all on the stage is not rebased; a job commit not on the stage is still rebased.
+
 ## Shared state
 - Tool caches and venv: `./.uv` in the checkout, or `DEV_UV_DIR` (`scripts/dev.sh:10`).
 - Pipeline stage state is runtime data, kept in an ignored work folder, not in the repo.
