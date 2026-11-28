@@ -1,5 +1,6 @@
 """plan_ptest: a ptest selector in a task's Test line must match a test file or a planned one."""
 
+import json
 import os
 import shutil
 import sys
@@ -7,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import plan_check, plan_ptest
+from pipeline import plan_check, plan_ptest, plan_testroot
 
 
 class PtestSelectorTest(unittest.TestCase):
@@ -91,3 +92,59 @@ class PtestSelectorTest(unittest.TestCase):
         self.write("task-2.md", "# T\nPredicted paths: src/x.py\nTest: scripts/dev.sh test test_real\n")
         probs = plan_check._task_file_problems(self.d, {"id": "task-2", "wave": 2, "depends": []}, [], self.repo, [], None, set())
         self.assertTrue(any("ptest selector test_real matches no test file" in p for p in probs), probs)
+
+
+class VitestRootTest(unittest.TestCase):
+    """plan_testroot: a vitest Test: path must not repeat the vitest root of pipeline.json test_roots."""
+
+    def setUp(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        self.ws = td.name
+        self.d = os.path.join(self.ws, ".work", "s")
+        os.makedirs(self.d)
+
+    def cfg(self, **kw):
+        with open(os.path.join(self.ws, "pipeline.json"), "w", encoding="utf-8") as f:
+            json.dump(kw, f)
+
+    def check(self, test_line):
+        with open(os.path.join(self.d, "task-1.md"), "w", encoding="utf-8") as f:
+            f.write(f"Predicted paths: a.ts\nTest: {test_line}\n")
+        return plan_testroot.check_vitest_root(self.d, "task-1", self.ws)
+
+    def test_vitest_path_repeating_root_is_an_error_naming_the_fixed_path(self):
+        self.cfg(test_roots=[{"runner": "vitest", "root": "web/tests"}])
+        got = self.check("`npx vitest run web/tests/foo.test.ts`")
+        self.assertEqual(len(got), 1, got)
+        self.assertTrue(got[0].startswith("testroot:"), got)
+        self.assertIn("use `foo.test.ts`", got[0])
+        self.assertEqual(plan_check.errors_of(got), got)
+
+    def test_root_with_leading_and_trailing_slashes_still_matched(self):
+        self.cfg(test_roots=[{"runner": "vitest", "root": "/web/tests/"}])
+        self.assertEqual(len(self.check("npx vitest run web/tests/a/b.test.ts")), 1)
+
+    def test_dot_slash_path_repeating_root_is_an_error_naming_the_fixed_path(self):
+        self.cfg(test_roots=[{"runner": "vitest", "root": "web/tests"}])
+        got = self.check("npx vitest run ./web/tests/foo.test.ts")
+        self.assertEqual(len(got), 1, got)
+        self.assertIn("use `foo.test.ts`", got[0])
+
+    def test_path_without_root_prefix_is_no_error(self):
+        self.cfg(test_roots=[{"runner": "vitest", "root": "web/tests"}])
+        self.assertEqual(self.check("npx vitest run foo.test.ts"), [])
+        self.assertEqual(self.check("npx vitest run web/tests-extra/foo.test.ts"), [])
+
+    def test_non_vitest_line_with_root_path_is_no_error(self):
+        self.cfg(test_roots=[{"runner": "vitest", "root": "web/tests"}])
+        self.assertEqual(self.check("scripts/dev.sh test web/tests/test_x.py"), [])
+        self.assertEqual(self.check("pytest web/tests/foo.test.ts"), [])
+
+    def test_no_test_roots_or_malformed_entries_is_no_error(self):
+        self.cfg()
+        self.assertEqual(self.check("npx vitest run web/tests/foo.test.ts"), [])
+        self.cfg(test_roots="web/tests")
+        self.assertEqual(self.check("npx vitest run web/tests/foo.test.ts"), [])
+        self.cfg(test_roots=[{"runner": "vitest"}, {"runner": "vitest", "root": "/"}, "web/tests"])
+        self.assertEqual(self.check("npx vitest run web/tests/foo.test.ts"), [])

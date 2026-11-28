@@ -106,6 +106,11 @@ PROJECT_DEFAULTS: dict = {
     "acceptance_prep": [],  # setup commands (npm ci, a venv, a build) the acceptance step runs first in its fresh worktree, before the checklist commands; a failing one fails the step
     "worktree_setup": [],  # commands (venv, npm ci) run with sh -c in each NEW job worktree right after it is created, so a dev starts with a ready environment; a failing one removes the worktree and stops task creation; [] = none
     "worktree_setup_timeout": 900,  # seconds one worktree_setup command may run
+    "worktree_requirements": [],  # repo-relative pip requirements globs (e.g. requirements*.txt) installed with `python -m pip install -r` into each NEW job worktree's venv after worktree_setup; a missing file is skipped; [] = none
+    "worktree_venv_python": ".venv/bin/python",  # repo-relative python of the job worktree's venv (made by worktree_setup); the worktree_requirements installs run with it; a missing one fails the setup
+    "test_roots": [],  # repo-relative test folders (tasks 3, 4 read them); [] = none
+    "test_wrap": [],  # test wrapper command parts (tasks 3, 4 read them); [] = none
+    "roadmap_file": "",  # repo-relative roadmap file (task 13 reads it); "" = none
     "seed_build": [],  # repo-relative build outputs copied (mtime kept) from the main checkout into each new worktree, so tests work before the first build; [] = none
     "branch_work": "stage/{feature}",  # tasks are merged and tested here; {feature} = feature (or stage) name; a fixed name wins
     "branch_release": None,  # the lead merges work -> release; only release is pushed. None = detected per repo (release_branch); project() fills the main repo's

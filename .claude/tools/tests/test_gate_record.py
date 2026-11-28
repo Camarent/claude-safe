@@ -11,6 +11,7 @@ import unittest.mock
 TOOLS = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, TOOLS)
 from pipeline import gate_record as G  # noqa: E402
+from pipeline.configuration import GATE_KIND_FLAKE  # noqa: E402  (the sys.path line above must run first)
 
 IDENT = ("-c", "user.name=t", "-c", "user.email=t@t")
 
@@ -122,6 +123,16 @@ class TestRecord(unittest.TestCase):
         self.assertEqual((rows[0]["secs"], rows[0]["level"]), (2.5, "parallel"))
         self.assertEqual((rows[1]["secs"], rows[1]["level"]), (None, None))
         self.assertIsNotNone(G.find_passed(self.repo, ["t"], base=rows[1]["base"]))
+
+    def test_flake_record_counted_and_never_a_pass(self):
+        G.record(self.repo, ["t"], 0, kind=GATE_KIND_FLAKE)
+        self.assertEqual(G.flake_count(self.repo), 1)
+        self.assertIsNone(G.find_passed(self.repo, ["t"]))
+        G.record(self.repo, ["t"], 0)
+        self.assertEqual(G.flake_count(self.repo), 1)
+        found = G.find_passed(self.repo, ["t"])
+        assert found is not None  # narrows Optional for the type checker
+        self.assertIsNone(found["kind"])
 
 
 if __name__ == "__main__":

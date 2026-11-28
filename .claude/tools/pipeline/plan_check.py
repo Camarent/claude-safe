@@ -202,6 +202,7 @@ from .plan_check_task import (
 from .plan_commands import command_findings
 from .plan_depends import depends_line_problems
 from .plan_docs_counts import check_docs_counts
+from .plan_docs_impact import check_docs_impact
 from .plan_files import (
     PATH_DIRS as PATH_DIRS,  # re-exported: pre-split name of pipeline.plan_check
 )
@@ -233,6 +234,7 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
+from .plan_needs import check_needs
 from .plan_parallel import PARALLEL_WARN_PREFIX as PARALLEL_WARN_PREFIX
 from .plan_parallel import parallel_candidates
 from .plan_problem import ERROR, Problem
@@ -271,6 +273,8 @@ from .plan_rules import (
     nested_repo as nested_repo,  # re-exported: pre-split name of pipeline.plan_check
 )
 from .plan_testcmd import check_bare_test_runner, check_qrun_operator, check_test_ban
+from .plan_testroot import check_vitest_root
+from .plan_testwrap import check_test_wrap
 from .plan_toolblock import check_toolblock
 from .plan_wiring import check_wiring
 from .shellwords import split_commands as split_commands  # re-exported: pre-split name of pipeline.plan_check
@@ -312,7 +316,9 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced, rows=None):
         + check_denied_commands(d, e["id"], _preflight_denied(d))
         + check_bare_test_runner(d, e["id"], _workspace(d))
         + check_test_ban(d, e["id"], _workspace(d))
+        + check_test_wrap(d, e["id"], _workspace(d))
         + check_qrun_operator(d, e["id"])
+        + check_vitest_root(d, e["id"], _workspace(d))
         + check_kinds(d, e, ents, repo)
         + check_task_size(d, e["id"])
         + check_type_inputs(d, e["id"], repo, _workspace(d), ents if rows is None else rows)
@@ -325,6 +331,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced, rows=None):
         + check_affected_tests(d, e["id"], repo)
         + check_unlisted_prereq(d, e, ents)
         + check_docs_wave(d, e, ents)
+        + check_docs_impact(d, e["id"], _workspace(d))
         + check_docs_counts(d, e["id"])
         + check_open_edit(d, e["id"], project(_workspace(d)).get("nested_repo_dir_prefix") or "")
         + check_gate_mentions(d, e["id"], gates)
@@ -518,6 +525,7 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
     produced = _stage_produced(d, ents)
     for e in ents:
         probs += _task_file_problems(d, e, ents, repo, gates, git, produced, rows)
+        probs += check_needs(d, e["id"], repo)
     return len(ents), probs + _overlap_problems(d, ents) + _carried_problems(d, ents) + publish_problems(d, ents) + shared_warnings(
         d, ents
     ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(

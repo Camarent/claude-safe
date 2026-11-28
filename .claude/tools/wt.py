@@ -58,6 +58,7 @@ from pipeline.worktree import (  # noqa: F401  (the library lives in pipeline/wo
     review_marker,
     review_pending,
     review_reset,
+    settled_job,
     skip_blocker,
 )
 

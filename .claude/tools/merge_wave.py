@@ -128,7 +128,9 @@ def _remove_all(a_dir, stage, tasks, lines):
 def run(a_dir, stage, tasks, runner=None):
     """-> (verdict, report text)."""
     lines: list[str] = []
-    refreshed, stale = wt.refresh_stale(a_dir, stage, tasks)
+    settled = [t for t in tasks if wt.settled_job(a_dir, stage, t)]  # nothing left to merge: no rebase, never a conflict
+    lines += [f"{t}: skipped, already on the stage branch" for t in settled]
+    refreshed, stale = wt.refresh_stale(a_dir, stage, [t for t in tasks if t not in settled])
     lines += [f"{t}: job branch rebased onto the stage branch (its base was behind)" for t in refreshed]
     lines += [f"{t}: job branch is behind the stage branch and the rebase conflicts: {why}" for t, why in stale.items()]
     stop = _merge_all(a_dir, stage, tasks, lines)

@@ -88,6 +88,7 @@ Stage decisions, one per task. Reason = the report item it fixes.
 - task-13: dev BLOCKED with committed work and an env/test reason runs the verify path. Reason: stability 2.
 - task-14: rework ladder: Haiku rework first, Sonnet only after it fails; the complexity review route starts on Haiku. Reason: tokens 3, 5.
 - task-15: final-test FAIL reruns failing files alone, then on the preflight head. Reason: stability 6.
+- retro-m25-followup2 task-2: a red whose failing test files pass on one alone rerun is a flake, not a red: the final-test triage (preflight head too: a red base that passes alone) and the pr-ready gates (`pr_ops._settles_alone`) count it green and log it with `gate_record.record(kind=GATE_KIND_FLAKE)` (`flake_count`; never a pass). A red still red alone keeps the fix plan / the Blocked. Reason: each flake blocked a real run.
 - task-16: third round of a repeating docs-only finding becomes a script step; auditor retry is the default. Reason: stability 16, time 11.
 - task-17: task gate skips docs-only diffs; linkguard flags line-number cites. Reason: time 3, 4.
 - task-18: merge dedup by tree hash; red after clean merge goes to the task dev; merger gets conflicted hunks. Reason: time 2, 9, tokens 14.
@@ -262,3 +263,11 @@ Reason: the fixes of the followup stage, each named by its behaviour and code fi
 - Gate cap: the host-wide gate limit is the `gate_slots` setting (`.claude/tools/pipeline/gate_slots.py`), not a wave-width option. Reason: the cap must hold across every driver on the host, and a wave width is per stage, so it cannot bound the gate runs of two stages at once.
 - Audit result: the efficiency audit result is kept in `.claude/tools/retro/efficiency-audit.txt`. Reason: the audit numbers are a recorded result, so a later retro reads the same file instead of a re-run.
 - Verify (owner or lead step, not run by this stage): run one gate-on cleanup stage in the kata repo, and one stage that uses the new plan checks, both without a hand-made block. Pass means neither stage needs a manual block to reach its gates. Until this step passes, the followup is verified only by its tests.
+
+## Stage retro-m25-followup2: docs of the changed behaviours
+
+Reason: the changed behaviours of the followup stages had no doc names; `docs/modules/scripts.md` ("Followup behaviour") and `docs/ARCHITECTURE.md` name each one with its code file now.
+
+- Needs lines: a task file's `Needs: <repo path> :: <literal>` line makes the plan fail when the path is missing or lacks the literal, unless a task the task depends on lists that path in its Predicted paths (it creates the file first). Reason: a task must not start before the fact it needs exists in the repo.
+- roadmap_file marker: a pipeline.json `roadmap_file` names the roadmap; an auditor FIXES list whose severe lines all repeat open roadmap items counts as CLEAN. Reason: a known roadmap item must not block a stage again and again.
+- Finding of `docs/cost-lp-nav.md`: wave 0 cost has a code cause, the job worktree setup (`worktree_setup` and `worktree_requirements` run in each new job worktree). Fix: set the two keys in pipeline.json to reuse one venv. The wave share and the lp nav share are not derivable from the tree. Reason: the setup cost is the cause that the code shows.

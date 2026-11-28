@@ -8,11 +8,17 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import testrun
-from pipeline import docs_impact
-from pipeline.configuration import DOCS_IMPACT_EXEMPT_KEY, DOCS_IMPACT_KEY
+from pipeline import docs_impact, plan_check, plan_docs_impact
+from pipeline.configuration import DOCS_IMPACT_EXEMPT_KEY, DOCS_IMPACT_KEY, DOCS_IMPACT_PLAN_PREFIX
 from tests.support.tmpdirs import tracked_mkdtemp
 
 NO_EXEMPT: dict[str, list[str]] = {DOCS_IMPACT_EXEMPT_KEY: []}
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
 
 
 def file_diff(path, body):
@@ -140,3 +146,80 @@ class TestPlanOff(unittest.TestCase):
         self.assertFalse(docs_impact.plan_off("Docs gate: on\n"))
         self.assertFalse(docs_impact.plan_off("note: Docs gate: off here\n"))
         self.assertFalse(docs_impact.plan_off(""))
+
+
+MAIN = f"task-{2}"  # ids of the plan-check fixtures, built so no literal id sits in an assert
+DOC_TASK = f"task-{3}"
+
+
+class TestPlanDocsImpact(unittest.TestCase):
+    def check(self, tasks, docs, tasks_extra="", cfg=None):
+        """tasks: task id -> Predicted paths; docs: repo path -> text. -> plan_docs_impact.check_docs_impact for the main task."""
+        ws = tracked_mkdtemp()
+        d = os.path.join(ws, ".work", "s")
+        write(os.path.join(d, "TASKS.md"), "# plan\n" + tasks_extra + "".join(f"- {t} t - review: wave W1\n" for t in tasks))
+        for t, paths in tasks.items():
+            write(os.path.join(d, t + ".md"), "# t\nPredicted paths: " + ", ".join(paths) + "\n")
+        for rel, text in docs.items():
+            write(os.path.join(ws, rel), text)
+        if cfg is not None:
+            write(os.path.join(ws, "pipeline.json"), json.dumps(cfg))
+        return plan_docs_impact.check_docs_impact(d, MAIN, ws)
+
+    def test_doc_citing_predicted_path_not_in_predicted_docs_is_flagged(self):
+        # C1: docs/m.md cites a.py which the main task changes; docs/m.md is in no Predicted paths
+        msgs = self.check({MAIN: ["a.py"]}, {"docs/m.md": "see a.py for the parser\n"})
+        self.assertEqual(len(msgs), 1)
+        self.assertTrue(msgs[0].startswith(DOCS_IMPACT_PLAN_PREFIX))
+        self.assertIn(MAIN, msgs[0])
+        self.assertIn("docs/m.md cites a.py", msgs[0])
+
+    def test_doc_listed_in_own_predicted_paths_is_clear(self):
+        # C2: the main task lists the citing doc itself
+        self.assertEqual(self.check({MAIN: ["a.py", "docs/m.md"]}, {"docs/m.md": "see a.py\n"}), [])
+
+    def test_doc_only_task_of_stage_listing_citing_doc_is_clear(self):
+        # C2: a doc-only task of the stage lists the citing doc
+        self.assertEqual(self.check({MAIN: ["a.py"], DOC_TASK: ["docs/m.md"]}, {"docs/m.md": "see a.py\n"}), [])
+
+    def test_doc_citing_no_predicted_path_is_clear(self):
+        # C2 decoy: no doc cites a.py, so no finding
+        self.assertEqual(self.check({MAIN: ["a.py"]}, {"docs/n.md": "see b.py only\n"}), [])
+
+    def test_docs_only_task_is_no_finding(self):
+        self.assertEqual(self.check({MAIN: ["docs/m.md"]}, {"docs/n.md": "see a.py\n"}), [])
+
+    def test_tasks_line_docs_gate_off_is_clear(self):
+        # C4: the stage's TASKS.md turns the gate off
+        self.assertEqual(self.check({MAIN: ["a.py"]}, {"docs/m.md": "see a.py\n"}, tasks_extra="Docs gate: off\n"), [])
+
+    def test_pipeline_gate_off_is_clear(self):
+        # C4: pipeline.json switches the gate off for every stage
+        self.assertEqual(self.check({MAIN: ["a.py"]}, {"docs/m.md": "see a.py\n"}, cfg={DOCS_IMPACT_KEY: False}), [])
+
+    def test_exempt_doc_is_not_read(self):
+        self.assertEqual(self.check({MAIN: ["a.py"]}, {"docs/m.md": "see a.py\n"}, cfg={DOCS_IMPACT_EXEMPT_KEY: ["docs/m.md"]}), [])
+
+
+class TestPlanCheckWiring(unittest.TestCase):
+    """plan_check.check_stage runs check_docs_impact on each task file: the problem reaches the stage's check result."""
+
+    def stage(self, task_paths):
+        root = tracked_mkdtemp()
+        d = os.path.join(root, ".work", "s")
+        os.makedirs(d)
+        write(os.path.join(root, "docs", "m.md"), "see a.py for the parser\n")
+        write(os.path.join(d, "TASKS.md"), "## Tasks\n- [ ] task-1 one - owner: haiku - review: wave W1, haiku\n")
+        write(os.path.join(d, "task-1.md"), f"# t\nPredicted paths: {task_paths}\n")
+        return plan_check.check_stage(d, repo=root)[1]
+
+    def test_stage_reports_docs_impact_for_citing_doc_not_predicted(self):
+        probs = self.stage("a.py")
+        self.assertTrue(
+            any(p.startswith(DOCS_IMPACT_PLAN_PREFIX) and "task-1" in p and "docs/m.md" in p for p in probs),
+            probs,
+        )
+
+    def test_stage_is_clear_when_citing_doc_is_predicted(self):
+        probs = self.stage("a.py, docs/m.md")
+        self.assertEqual([p for p in probs if p.startswith(DOCS_IMPACT_PLAN_PREFIX)], [])

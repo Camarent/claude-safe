@@ -63,6 +63,7 @@ from .graph import decide
 from .plan_files import is_last_phase
 from .requests import take_request
 from .slow_suite import REASON
+from .steps import PLAN_GAP_RE
 from .steps_verify import blocked_for_checks
 from .triggers import is_trigger, log_trigger, retro_signals, trigger_log
 from .util import TOOLS, add_subcommand, append_event, append_jsonl, jprint, now, paths, read_jsonl, read_text, stage_root, unreported, work_path, write_text
@@ -339,10 +340,20 @@ def _materialize_audit(w, d, v, body):
 
 
 def _remit_verdict(a, d, v, body):
-    """-> (verdict, ignored lines). An auditor's FIXES caused only by FAIL lines on Plan.md checklist items outside its remit becomes CLEAN: those findings are logged as ignored, not fixed."""
-    from .audit_phases import checklist_items, out_of_remit_split, plan_rel  # lazy: audit_phases imports this package's graph
+    """-> (verdict, ignored lines). An auditor's FIXES caused only by FAIL lines on Plan.md checklist items outside its remit becomes CLEAN: those findings are logged as ignored, not fixed.
+    An auditor's FIXES whose every severe line is a should-fix that repeats an open roadmap item (pipeline.json `roadmap_file`) becomes CLEAN the same way."""
+    from .audit_phases import checklist_items, out_of_remit_split, plan_rel, roadmap_split  # lazy: audit_phases imports this package's graph
 
-    remit = project(a.dir).get("auditor_remit", AUDITOR_REMIT)
+    cfg = project(a.dir)
+    rel = cfg.get("roadmap_file", "")
+    road = os.path.realpath(os.path.join(a.dir, rel)) if rel else ""
+    inside = road and os.path.commonpath([road, os.path.realpath(a.dir)]) == os.path.realpath(a.dir)  # an absolute or ../ path never leaves the repo
+    if d["role"] in AUDITORS and v == FIXES and inside and os.path.isfile(road):
+        listed, severe = roadmap_split(body, read_text(road))
+        if listed and len(listed) == len(severe):
+            return CLEAN, listed
+
+    remit = cfg.get("auditor_remit", AUDITOR_REMIT)
     if d["role"] not in remit or v != FIXES:
         return v, []
     items = checklist_items(read_text(os.path.join(a.dir, plan_rel(a.stage))))
@@ -548,10 +559,18 @@ def _skip_timeout_guard(a, log) -> bool:
     return timed_out
 
 
-def _lint_retry_note(a) -> None:
-    """retry --note: refuse a note that names no path[:line]; print a warning for a path outside the task's scope. Runs before any write."""
+def _plan_gap_report(a, log) -> str:
+    """-> the file of the step's newest dev report when that report holds a PLAN GAP line, else ''."""
+    evs = read_jsonl(log) if os.path.isfile(log) else []
+    report = last_report_file([e for e in evs if e.get("role") == "dev"], a.step)
+    return report if report and PLAN_GAP_RE.search(read_text(report)) else ""
+
+
+def _lint_retry_note(a, log) -> None:
+    """retry --note: refuse a note that names no path[:line]; print a warning for a path outside the task's scope, or a retry that repeats a PLAN GAP the task file did not close. Runs before any write."""
     path = os.path.join(a.dir, WORK_DIR, a.stage, f"{a.step}.md")
-    msgs = retry_note.lint(a.note, read_text(path) if os.path.isfile(path) else "")
+    has_task = os.path.isfile(path)
+    msgs = retry_note.lint(a.note, read_text(path) if has_task else "", path if has_task else "", _plan_gap_report(a, log))
     if retry_note.refused(a.note):
         sys.exit(msgs[0])
     for m in msgs:
@@ -627,7 +646,7 @@ def _target_stage(a) -> tuple[str, str]:
 def _retry_prepare(a, log) -> tuple[bool, list]:
     """retry checks before any write -> (done: step was verified or green, no event needed; unmerged prereq warnings)."""
     if getattr(a, "note", ""):  # a refused note changes nothing: lint before any write
-        _lint_retry_note(a)
+        _lint_retry_note(a, log)
     if getattr(a, "addendum", ""):  # before any other write: a refused script step changes nothing
         _apply_addendum(a)
     if _verify_or_green(a, log):

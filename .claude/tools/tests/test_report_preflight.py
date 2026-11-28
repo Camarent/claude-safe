@@ -74,6 +74,22 @@ class PreflightRulesTest(unittest.TestCase):
         self.assertEqual(report_preflight.done_line("Title\nDone: one\nTest: x\nDone: two\n"), "Done: one\nDone: two")
         self.assertEqual(report_preflight.done_line("no done here"), "")
 
+    def test_mutation_asked_on_a_later_numbered_done_line_is_checked(self):
+        brief = (
+            "# task-11: numbered Done block\n"
+            "Predicted paths: .claude/tools/pipeline/report_preflight.py\n"
+            "Test: cs-qrun -- scripts/dev.sh ptest\n"
+            "Done: C1 done_line returns every Done line of the brief.\n"
+            "Done: C2 a report with a mutation line gives no message (decoy).\n"
+            "Done: C3 steps.py dispatches the preflight before review: no change there.\n"
+            "Done: C4 mutation: make done_line return only the first Done line; the multi-line test goes red.\n"
+        )
+        done = report_preflight.done_line(brief)
+        msgs = report_preflight.check(done, "C1 C2 C3 done, tests pass")
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("mutation", msgs[0])
+        self.assertEqual(report_preflight.check(done, "mutation: done_line first line only, test red"), [])
+
 
 class PreflightStepTest(_SeqBase):
     def setUp(self):

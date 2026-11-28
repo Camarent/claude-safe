@@ -57,6 +57,7 @@ from .configuration import (
     tool_cmd,
 )
 from .ctx import Ctx
+from .plan_gaps_open import open_gaps
 from .run import Run
 from .tasks import parse_tasks
 from .util import add_subcommand, append_event, read_jsonl, read_text, swallowed, unreported, work_path, write_text
@@ -362,9 +363,20 @@ def _run_locked(a, c):
         return code
     if (code := _run_preflights(a, c)) is not None:
         return code
+    _warn_open_gaps(c)
     for s in ops_preflight.later_ops(c):  # the run goes on: the lead does these after the task they wait for
         print(f"lead step {s['id']} (after {', '.join(s['after'])}): {s['text']}")
     return run_loop(a, c)
+
+
+def _warn_open_gaps(c):
+    """Print the plan-review gaps still open in the stage folder as a warning block; the run goes on (no block). Prints nothing when none are open."""
+    gaps = open_gaps(c.w)
+    if not gaps:
+        return
+    print(f"warning: {len(gaps)} plan-review gap line(s) still open in {c.w}:")
+    for ln in gaps:
+        print(f"  {ln}")
 
 
 def _run_guards(a, c):

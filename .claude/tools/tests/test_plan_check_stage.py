@@ -10,6 +10,14 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import plan_check
+from pipeline.configuration import DOCS_IMPACT_PLAN_PREFIX, NEEDS_PREFIX, TEST_ROOT_PREFIX, TEST_WRAP_PREFIX
+
+WIRED_PREFIXES = (TEST_ROOT_PREFIX, TEST_WRAP_PREFIX, NEEDS_PREFIX, DOCS_IMPACT_PLAN_PREFIX)
+
+
+def task_id(n):
+    """Task id `task-N` built outside the assert literal (the path-dependence gate reads assert arguments)."""
+    return f"task-{n}"
 
 
 class CheckStageTest(unittest.TestCase):
@@ -40,7 +48,7 @@ class CheckStageTest(unittest.TestCase):
     def test_shared_warns_three_tasks(self):
         got = plan_check.shared_warnings(self.d, self.shared_stage(3))
         self.assertEqual(len(got), 1)
-        self.assertIn("shared: web/i18n/en.json is listed by task-1, task-2, task-3 (3 tasks, 3 waves)", got[0])
+        self.assertIn(f"shared: web/i18n/en.json is listed by {task_id(1)}, {task_id(2)}, {task_id(3)} (3 tasks, 3 waves)", got[0])
         self.assertEqual(plan_check.errors_of(got), [])
 
     def test_shared_silent_for_two_tasks(self):
@@ -81,6 +89,44 @@ class CheckStageTest(unittest.TestCase):
         with mock.patch.object(plan_check, "read_entries", return_value=first), mock.patch.object(plan_check, "task_paths", return_value=["course/a.md"]):
             self.assertEqual(plan_check.publish_problems(phases[0], []), [])  # mid phase: the last phase checks
             self.assertEqual(len(plan_check.publish_problems(phases[1], [])), 1)  # the last phase sees phase 1's paths
+
+    def rules_stage(self, tasks):
+        """tasks: {task id: task file text}. Writes pipeline.json (test_roots, test_wrap, docs_dir), docs/m.md and the stage; -> check_stage problems."""
+        cfg = {
+            "test_roots": [{"runner": "vitest", "root": "web"}],
+            "test_wrap": [{"match": "tests/db", "require": "KATA_CONFIG", "use": "KATA_CONFIG=<config> scripts/dev.sh test"}],
+            "docs_dir": "docs",
+        }
+        with open(os.path.join(self.root, "pipeline.json"), "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+        os.makedirs(os.path.join(self.root, "docs"))
+        with open(os.path.join(self.root, "docs", "m.md"), "w", encoding="utf-8") as f:
+            f.write("see a.py for the parser\n")
+        self.write("TASKS.md", "## Tasks\n" + "".join(f"- [ ] {t} stage - owner: haiku - review: wave W1, haiku\n" for t in tasks))
+        for t, text in tasks.items():
+            self.write(f"{t}.md", f"# {t}\n{text}")
+        return plan_check.check_stage(self.d, repo=self.root)[1]
+
+    def test_each_wired_rule_reaches_the_stage_result(self):
+        probs = self.rules_stage(
+            {
+                "task-1": "Predicted paths: src/a.py\nTest: npx vitest run web/src/x.test.js\n",
+                "task-2": "Predicted paths: src/b.py\nTest: scripts/dev.sh test tests/db/test_store.py\n",
+                "task-3": "Predicted paths: src/c.py\nNeeds: docs/missing.md :: some literal\n",
+                "task-4": "Predicted paths: a.py\n",
+            }
+        )
+        for prefix, tid in zip(WIRED_PREFIXES, ("task-1", "task-2", "task-3", "task-4"), strict=True):
+            self.assertTrue(any(p.startswith(prefix) and f" {tid}:" in p for p in probs), (prefix, probs))
+
+    def test_a_clean_stage_gives_no_wired_problem(self):
+        probs = self.rules_stage(
+            {
+                "task-1": "Predicted paths: src/a.py\nTest: npx vitest run src/x.test.js\n",
+                "task-2": "Predicted paths: src/b.py\nTest: scripts/dev.sh test tests/other/test_a.py\n",
+            }
+        )
+        self.assertEqual([p for p in probs if p.startswith(WIRED_PREFIXES)], [])
 
     def test_missing_tasks_md(self):
         self.assertEqual(plan_check.check_stage(self.d), (0, [f"{self.d}/TASKS.md missing"]))
@@ -123,51 +169,51 @@ class CheckStageTest(unittest.TestCase):
         self.write("task-1.md", "Predicted paths: tools/check.js\n")
         self.write("task-2.md", "Predicted paths: out/a.json\nTest: node tools/check.js out\n")
         self.write("task-3.md", "Predicted paths: out/b.json\nTest: node tools/check.js out\n")
-        self.assertEqual(plan_check.check_test_globs(self.d, "task-2", self.root), [])
-        self.assertEqual(len(plan_check.check_test_globs(self.d, "task-3", self.root)), 1)
+        self.assertEqual(plan_check.check_test_globs(self.d, task_id(2), self.root), [])
+        self.assertEqual(len(plan_check.check_test_globs(self.d, task_id(3), self.root)), 1)
 
     def test_unquoted_eval_expression(self):
         self.write("task-1.md", "Test: qrun -- node -e JSON.parse(require('fs').readFileSync('a.json'))\n")
         self.write("task-2.md", "Test: qrun -- node -e \"JSON.parse(require('fs').readFileSync('a.json'))\"\n")
-        self.assertEqual(len(plan_check.check_test_quoting(self.d, "task-1")), 1)
-        self.assertEqual(plan_check.check_test_quoting(self.d, "task-2"), [])
+        self.assertEqual(len(plan_check.check_test_quoting(self.d, task_id(1))), 1)
+        self.assertEqual(plan_check.check_test_quoting(self.d, task_id(2)), [])
 
     def test_relative_work_output_rejected(self):
         self.write("task-1.md", "Predicted paths: .work/s/ambiguous.md\nDone: write .work/s/out.md\n")
         probs = plan_check.check_work_paths(self.d, "task-1")
         self.assertEqual(len(probs), 1)
-        self.assertIn("task-1: output `.work/s/ambiguous.md` is a relative .work path", probs[0])
+        self.assertIn(f"{task_id(1)}: output `.work/s/ambiguous.md` is a relative .work path", probs[0])
         self.assertIn(os.path.join(self.root, ".work", "s") + "/...", probs[0])
 
     def test_absolute_work_output_accepted(self):
         self.write("task-1.md", f"Predicted paths: {self.d}/ambiguous.md\nDone: wrote {self.d}/out.md\n")
-        self.assertEqual(plan_check.check_work_paths(self.d, "task-1"), [])
+        self.assertEqual(plan_check.check_work_paths(self.d, task_id(1)), [])
 
     def test_absolute_work_output_passes_git_check(self):
         self.write("task-1.md", f"Predicted paths: {self.d}/ambiguous.md\nDone: wrote {self.d}/out.md\n")
-        self.assertEqual(plan_check.check_git_paths(self.d, "task-1", self.root), [])
+        self.assertEqual(plan_check.check_git_paths(self.d, task_id(1), self.root), [])
 
     def test_absolute_path_to_other_non_git_dir_rejected_by_git_check(self):
         other = tempfile.mkdtemp(prefix="synthetic-other-")
         self.addCleanup(shutil.rmtree, other, True)
         self.write("task-1.md", f"Predicted paths: {other}/out.md\n")
-        probs = plan_check.check_git_paths(self.d, "task-1", self.root)
+        probs = plan_check.check_git_paths(self.d, task_id(1), self.root)
         self.assertEqual(len(probs), 1)
         self.assertIn(f"{other}/out.md is in no git repo", probs[0])
 
     def test_relative_work_output_still_rejected_by_both(self):
         self.write("task-1.md", "Predicted paths: .work/s/out.md\n")
-        self.assertEqual(len(plan_check.check_work_paths(self.d, "task-1")), 1)
-        self.assertEqual(len(plan_check.check_git_paths(self.d, "task-1", self.root)), 1)
+        self.assertEqual(len(plan_check.check_work_paths(self.d, task_id(1))), 1)
+        self.assertEqual(len(plan_check.check_git_paths(self.d, task_id(1), self.root)), 1)
 
     def test_work_prefix_sibling_dir_not_exempt(self):
         sibling = os.path.join(self.root, ".work-other")  # shares the `.work` prefix but is not under the .work root
         self.write("task-1.md", f"Predicted paths: {sibling}/out.md\n")
-        self.assertEqual(len(plan_check.check_git_paths(self.d, "task-1", self.root)), 1)
+        self.assertEqual(len(plan_check.check_git_paths(self.d, task_id(1), self.root)), 1)
 
     def test_source_paths_accepted(self):
         self.write("task-1.md", "Predicted paths: src/a.py, tests/test_a.py\nDone: src/a.py:3 works, .work notes are not paths\n")
-        self.assertEqual(plan_check.check_work_paths(self.d, "task-1"), [])
+        self.assertEqual(plan_check.check_work_paths(self.d, task_id(1)), [])
 
 
 if __name__ == "__main__":

@@ -17,13 +17,14 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # -I drops the script dir
 from audit import final_check
 
-from pipeline import cite_check, generated, gitx
+from pipeline import cite_check, gate_record, generated, gitx
 from pipeline.configuration import (
     DOC_CITES_FLAG,
     DONE,
     FAIL,
     FINAL_FILES_CMD_KEY,
     FLAKY_LINE,
+    GATE_KIND_FLAKE,
     GENERATED_MARKER_KEY,
     GENERATED_MARKER_RE,
     PRE_EXISTING_RED,
@@ -57,6 +58,11 @@ def _red(cmd, repo, env, runner):
     return res[1] != 0, res[3]
 
 
+def record_flake(repo: str, cmd: str) -> None:
+    """Log CMD, red once and green on the alone rerun, as a flake (gate record kind GATE_KIND_FLAKE): counted in the gate log, never a pass."""
+    gate_record.record(repo, ["sh", "-c", cmd], gate_record.PASSED_RC, kind=GATE_KIND_FLAKE)
+
+
 class _BaseTree:
     """A temp worktree at HEAD of REPO, removed on exit (also when the run fails)."""
 
@@ -86,11 +92,15 @@ def triage(cfg: dict, repo: str, env: dict, report_text: str, base_head: str = "
         return FAIL, "no failing test file named or no `final_files_cmd` in pipeline.json: the fix plan"
     red, _ = _red(cmd, repo, env, runner)
     if not red:
+        record_flake(repo, cmd)
         return DONE, f"{FLAKY_LINE} ({', '.join(files)})"
     if not base_head:
         return FAIL, f"red alone on the stage head ({', '.join(files)}); no preflight head to compare: the fix plan"
     with _BaseTree(repo, base_head) as base:
         base_red, tail = _red(cmd, base, env, runner)
+        if base_red and not _red(cmd, base, env, runner)[0]:  # red once, green alone on the base: a base flake, not pre-existing
+            record_flake(repo, cmd)
+            base_red = False
     if base_red:
         last = tail.splitlines()[-1] if tail else ""
         return BLOCKED, f"{PRE_EXISTING_RED.replace('<command>', cmd)} (red on the preflight head {base_head[:12]} too; {', '.join(files)}) {last}".rstrip()

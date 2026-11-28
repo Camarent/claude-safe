@@ -259,6 +259,25 @@ def out_of_remit_split(report, items, topics) -> tuple[list[str], list[str]]:
     return ignored, severe
 
 
+_SHOULD_FIX_RE = re.compile(r"should[- ]fix", re.I)
+_HARD_RE = re.compile(r"\b(FAIL|blocker)\b", re.I)
+
+
+def roadmap_split(report, roadmap_text) -> tuple[list[str], list[str]]:
+    """-> (listed, severe). `severe`: every report line that says FAIL / blocker / should-fix (or another severity word). `listed`: the should-fix lines whose text (first REMIT_MATCH_CHARS chars, lower case) occurs in the roadmap; a FAIL or blocker line is never listed."""
+    road = roadmap_text.lower()
+    listed, severe = [], []
+    for ln in report.splitlines():
+        if not _SEVERE_RE.search(ln):
+            continue
+        severe.append(ln.strip())
+        text = ln.strip().lstrip("- ")
+        key = (text.split(":", 1)[1] if ":" in text else text).strip().lower()[:REMIT_MATCH_CHARS]
+        if key and _SHOULD_FIX_RE.search(ln) and not _HARD_RE.search(ln) and key in road:
+            listed.append(ln.strip())
+    return listed, severe
+
+
 def checklist_clause(a, cfg, ag) -> str:
     """Audit-brief sentence on the plan's `## Acceptance checklist` ("" when the stage has no Plan.md with one). The auditor `ag` gets only the items in its remit (`auditor_remit`); a role with no remit gets the whole checklist. Stage `F/phases/NN-x` uses `.work/F/Plan.md`."""
     rel = plan_rel(a.stage)
