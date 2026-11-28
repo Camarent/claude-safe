@@ -138,6 +138,16 @@ class GateModeTest(unittest.TestCase):
         self.script("\n" * 10 + "# --unit\necho full\n")
         self.assertEqual(self.problems(), [])
 
+    def test_a_subcommand_without_modes_of_its_own_is_fine(self):
+        self.gate("scripts/gate.sh check")
+        self.script("# gate.sh sync | check | gate [--ext|--pytest]\necho x\n")
+        self.assertEqual(self.problems(), [])
+
+    def test_a_subcommand_with_modes_run_without_a_flag_is_one_problem(self):
+        self.gate("scripts/gate.sh gate")
+        self.script("# gate.sh sync | check | gate [--ext|--pytest]\necho x\n")
+        self.assertEqual(len(self.problems()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
