@@ -75,6 +75,7 @@ Each paragraph names the code file that holds the change.
 - Nit-only PASS (`.claude/tools/pipeline/verdicts.py`, `is_nit_only_fail`; used by `.claude/tools/pipeline/steps_review.py`, `_nit_pass`, which `.claude/tools/pipeline/steps.py` re-exports): a reviewer FAIL whose counts are wrong 0, risky 0, nit above 0 is read as nit-only; after the failed rounds the task gets a PASS with the nits file as its notes.
 - Stage branch (`.claude/tools/pipeline/branches.py`): the main checkout's dirty guard and the switch to the stage or feature branch both use the stage name.
 - Gate slots (`.claude/tools/pipeline/gate_slots.py`, `held`): the host-wide gate cap is the `gate_slots` setting; `.claude/tools/testrun.py` runs each Test line inside one slot.
+- Worktree requirements (`.claude/tools/pipeline/worktree.py`, `_requirement_steps`, `_run_setup`; defaults in `.claude/tools/pipeline/configuration/defaults.py`): the `worktree_requirements` globs are pip-installed into each new job worktree's venv after the `worktree_setup` commands; a missing file is skipped and a failing install removes the worktree.
 - Retry refresh (`.claude/tools/pipeline/steps_history.py`, `_after_retry`): a task's history after a retry marker keeps only the events after that marker, so a reset starts the review rounds again.
 
 ## Depends on / used by

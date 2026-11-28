@@ -2,6 +2,7 @@
 
 import contextlib
 import fnmatch
+import glob
 import os
 import pathlib
 import re
@@ -442,19 +443,35 @@ def _copy_mtimes(src, dst):
             pass
 
 
+def _requirement_steps(root, patterns, python):
+    """The `worktree_requirements` globs (repo-relative) matched in ROOT -> one `python -m pip install -r` step per requirements file, run with PYTHON (the job venv's python), in glob order, each file once. A glob that matches nothing (a missing file) adds no step."""
+    steps, seen = [], set()
+    for pat in patterns:
+        for f in sorted(glob.glob(os.path.join(root, pat))):
+            if os.path.isfile(f) and f not in seen:
+                seen.add(f)
+                rel = os.path.relpath(f, root)
+                steps.append((f"pip install -r {rel}", [python, "-m", "pip", "install", "-r", f]))
+    return steps
+
+
 def _run_setup(a_dir, stage, task, root, cfg, clock=time.monotonic, keep=False):
-    """Run the project's `worktree_setup` commands (pipeline.json; sh -c, cwd = the new worktree) in order. The first failure removes the fresh worktree and raises with its output tail, so no dev starts in a half-ready one (KEEP: a repair of an existing worktree, never removed). Each command logs an `EV_SETUP` metrics line with its exit code and seconds (CLOCK = the time source)."""
-    commands = cfg.get("worktree_setup") or []
+    """Run the project's `worktree_setup` commands (pipeline.json; sh -c, cwd = the new worktree) in order, then install the `worktree_requirements` files with the job venv's python (`worktree_venv_python`, repo-relative; `python -m pip install -r`). The first failure removes the fresh worktree and raises with its output tail, so no dev starts in a half-ready one (KEEP: a repair of an existing worktree, never removed). Each command or install logs an `EV_SETUP` metrics line with its exit code and seconds (CLOCK = the time source)."""
+    venv_python = os.path.join(root, cfg.get("worktree_venv_python") or PROJECT_DEFAULTS["worktree_venv_python"])
+    steps = [(cmd, ["sh", "-c", cmd]) for cmd in cfg.get("worktree_setup") or []]
+    steps += _requirement_steps(root, cfg.get("worktree_requirements") or [], venv_python)
     limit = float(cfg.get("worktree_setup_timeout") or PROJECT_DEFAULTS["worktree_setup_timeout"])  # a cfg without the key (older callers) gets the default
     metrics = os.path.join(os.path.abspath(a_dir), WORK_DIR, stage, METRICS_LOG)
-    for cmd in commands:
+    for cmd, argv in steps:
         t0, rc = clock(), None
         try:
-            r = subprocess.run(["sh", "-c", cmd], cwd=root, capture_output=True, text=True, timeout=limit, check=False)
+            r = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=limit, check=False)
             rc = r.returncode
             why = f"exit {r.returncode}: {(r.stdout + r.stderr).strip()[-300:]}" if r.returncode else ""
         except subprocess.TimeoutExpired:
             why = f"timed out after {limit:.0f}s"
+        except OSError as ex:  # e.g. the job venv python is missing: the setup fails, it does not crash
+            why = f"could not run: {ex}"
         try:  # a timing line is best effort: an unwritable stage dir must not fail the setup
             util.append_jsonl(metrics, {"ev": EV_SETUP, "ts": util.now(), "stage": stage, "for": task, "cmd": cmd, "rc": rc, "seconds": round(clock() - t0, 1)})
         except OSError as ex:
