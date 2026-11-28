@@ -165,6 +165,8 @@ IGNORED_DONE_URL = "://"  # a token with this mark is a URL, never a path
 IGNORED_DONE_TRIM = "`'\"()[]<>,;:."  # punctuation stripped from both ends of a token before the path test
 RESEARCH_PREFIX = "research:"  # error prefix of plan_research.check_research: a research task has one tracked Outputs: path and a later task that depends on it names that path
 RESEARCH_HINT_PREFIX = "research-hint:"  # warning prefix of plan_research_hint.check_research_hint: a Goal/Done with a trigger word and no research dependency
+NEEDS_PREFIX = "plan-gap:"  # error prefix of plan_needs.check_needs: a `Needs: <path> :: <literal>` line whose repo file is missing or lacks the literal, and no dependency creates it
+NEEDS_SEP = "::"  # separates the repo path from the literal on a `Needs:` line
 WIRING_DIRS_KEY = "wiring_dirs"  # pipeline.json key: list of source dirs; a new module under one needs a mount (plan_wiring.check_wiring); absent = no check
 WIRING_PREFIX = "wiring:"  # error prefix of plan_wiring.check_wiring: a new module under a wiring dir has no tracked mount point in its task and no dependent `Mounts:` header
 REACH_PREFIX = "reach:"  # warning prefix of plan_wiring.check_wiring: a task with a `Mounts:` header has no Done line naming an entry proof

@@ -13,8 +13,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import claude, cli_plan, plan_run
-from pipeline.configuration import EXIT_LIMIT, GAPS_FILE, MODEL_SONNET, PLAN_FILE, PLAN_REVIEW_REPORT_FILE, WORK_DIR
+from pipeline import claude, cli_plan, plan_needs, plan_run
+from pipeline.configuration import EXIT_LIMIT, GAPS_FILE, MODEL_SONNET, NEEDS_PREFIX, PLAN_FILE, PLAN_REVIEW_REPORT_FILE, WORK_DIR
+from pipeline.plan_files import bullet, tasks_path
 from tests.isolated import isolate_cwd
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -144,6 +145,67 @@ class TaskAffectedTest(unittest.TestCase):
         argv[argv.index("--paths") + 1] = "b/y.js"
         self.assertEqual(self.p(d, *argv)[0], 0)
         self.assertNotIn("Affected tests:", self.task_text(d))
+
+
+class NeedsCheckTest(unittest.TestCase):
+    """plan_needs.check_needs: a `Needs: <repo path> :: <literal>` line is a plan-gap unless the file holds the literal or a task the task depends on lists the path in Predicted paths."""
+
+    def setUp(self):
+        self.d = tracked_mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d, ignore_errors=True)
+        self.repo = os.path.join(self.d, "repo")
+        os.makedirs(self.repo)
+
+    def stage(self, tasks):
+        """tasks: (id, depends, predicted paths, Needs values) -> TASKS.md and one task file each."""
+        with open(tasks_path(self.d), "w") as f:
+            for tid, deps, _, _ in tasks:
+                f.write(bullet({"id": tid, "title": "t", "wave": 1, "depends": deps}) + "\n")
+        for tid, _, predicted, needs in tasks:
+            body = f"Predicted paths: {', '.join(predicted)}\n" + "".join(f"Needs: {n}\n" for n in needs)
+            with open(os.path.join(self.d, tid + ".md"), "w") as f:
+                f.write(body)
+
+    def test_satisfied_needs_line_gives_no_problem(self):
+        with open(os.path.join(self.repo, "cfg.toml"), "w") as f:
+            f.write("retries = 3\n")
+        self.stage([("task-1", [], [], ["cfg.toml :: retries = 3"])])
+        probs = plan_needs.check_needs(self.d, "task-1", self.repo)
+        self.assertEqual(probs, [])
+
+    def test_missing_file_is_plan_gap_naming_the_line(self):
+        self.stage([("task-1", [], [], ["docs/x.md :: anything"])])
+        probs = plan_needs.check_needs(self.d, "task-1", self.repo)
+        self.assertEqual(len(probs), 1)
+        self.assertTrue(probs[0].startswith(NEEDS_PREFIX))
+        self.assertIn("Needs line `docs/x.md :: anything`", probs[0])
+
+    def test_literal_absent_is_plan_gap(self):
+        with open(os.path.join(self.repo, "cfg.toml"), "w") as f:
+            f.write("retries = 2\n")
+        self.stage([("task-1", [], [], ["cfg.toml :: retries = 3"])])
+        probs = plan_needs.check_needs(self.d, "task-1", self.repo)
+        self.assertEqual(len(probs), 1)
+
+    def test_dependency_that_creates_the_file_exempts_the_line(self):
+        self.stage(
+            [
+                ("task-1", [], ["src/made.py"], []),
+                ("task-2", ["task-1"], [], ["src/made.py :: def main"]),
+            ]
+        )
+        probs = plan_needs.check_needs(self.d, "task-2", self.repo)
+        self.assertEqual(probs, [])
+
+    def test_task_that_is_not_a_dependency_does_not_exempt_the_line(self):
+        self.stage(
+            [
+                ("task-1", [], ["src/made.py"], []),
+                ("task-2", [], [], ["src/made.py :: def main"]),
+            ]
+        )
+        probs = plan_needs.check_needs(self.d, "task-2", self.repo)
+        self.assertEqual(len(probs), 1)
 
 
 if __name__ == "__main__":

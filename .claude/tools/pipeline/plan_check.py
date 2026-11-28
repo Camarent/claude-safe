@@ -233,6 +233,7 @@ from .plan_lint import (
     test_env_errors,
     ux_vars_errors,
 )
+from .plan_needs import check_needs
 from .plan_parallel import PARALLEL_WARN_PREFIX as PARALLEL_WARN_PREFIX
 from .plan_parallel import parallel_candidates
 from .plan_problem import ERROR, Problem
@@ -518,6 +519,7 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
     produced = _stage_produced(d, ents)
     for e in ents:
         probs += _task_file_problems(d, e, ents, repo, gates, git, produced, rows)
+        probs += check_needs(d, e["id"], repo)
     return len(ents), probs + _overlap_problems(d, ents) + _carried_problems(d, ents) + publish_problems(d, ents) + shared_warnings(
         d, ents
     ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(
