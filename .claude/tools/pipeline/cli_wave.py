@@ -56,6 +56,7 @@ from .configuration import (
     project,
     repo_path,
     tool_cmd,
+    work_branch,
 )
 from .ctx import Ctx
 from .plan_gaps_open import open_gaps
@@ -306,6 +307,8 @@ def cmd_run(a) -> int:
             print(f"blocked: another stage runs in {repo_path(a.dir)}")
             return EXIT_BLOCKED
         try:  # the locks are held before the guards: a second driver is refused before it runs gates, the sweep or a branch switch
+            if _closed_by_merged_pr(a):  # a merged PR closes the stage out before the plan is read or a step runs
+                return 0
             return _run_locked(a, c)
         finally:
             _release_lock(checkout)
@@ -368,6 +371,15 @@ def _run_locked(a, c):
     for s in ops_preflight.later_ops(c):  # the run goes on: the lead does these after the task they wait for
         print(f"lead step {s['id']} (after {', '.join(s['after'])}): {s['text']}")
     return run_loop(a, c)
+
+
+def _closed_by_merged_pr(a) -> bool:
+    """-> True when the PR of the stage's work branch is merged: the run closes out here, without reading the plan or the steps. Prints the close-out line."""
+    br = work_branch(project(a.dir), a.stage)
+    if not pr_ops.stage_pr_merged(repo_path(a.dir), br):
+        return False
+    print(entry.done_line(f"PR of {br} is merged: stage closed out"))
+    return True
 
 
 def _warn_open_gaps(c):
