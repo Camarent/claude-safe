@@ -7,7 +7,15 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline import gate_mode, limits
-from pipeline.configuration import GATE_MODE_FLAG_RE, GATE_MODE_FULL, HEADER_LINES_MAX
+from pipeline.configuration import (
+    GATE_LEVEL_FULL,
+    GATE_LEVEL_MERGE,
+    GATE_LEVEL_UNIT,
+    GATE_MODE_FLAG_RE,
+    GATE_MODE_FULL,
+    GATE_STATS_P90,
+    HEADER_LINES_MAX,
+)
 from pipeline.extra_tools import split_needed
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -106,3 +114,7 @@ class GateMode(unittest.TestCase):
     def test_gate_mode_module_names_no_project(self):
         with open(gate_mode.__file__, encoding="utf-8") as f:
             self.assertNotIn("kata", f.read())
+
+    def test_gate_stats_groups_and_p90_fraction_are_named_limits(self):
+        self.assertEqual((GATE_LEVEL_UNIT, GATE_LEVEL_MERGE, GATE_LEVEL_FULL), ("unit", "merge", "full"))
+        self.assertEqual(GATE_STATS_P90, 0.9)

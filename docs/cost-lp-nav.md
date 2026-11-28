@@ -7,7 +7,7 @@ Research for stage retro-m25-followup2, task-14. Two questions: (C1) what wave 0
 **Code-derived cause: job worktree setup.**
 
 - `.claude/tools/pipeline/worktree.py` `_run_setup` (line 458) runs the `worktree_setup` commands in every NEW job worktree. `_requirement_steps` (line 446) turns `worktree_requirements` globs into pip install steps.
-- Each setup command logs an `EV_SETUP` event (`worktree.py:476`; defined at `EV_SETUP` in `.claude/tools/pipeline/configuration/limits.py`) with keys `stage`, `for`, `cmd`, `rc`, `seconds`. The event has no wave key. The gate kind constants `GATE_KIND_TASK`, `GATE_KIND_MERGE` and `GATE_KIND_FULL` (same `limits.py`) name the `kind` of a `gate_cmd` record.
+- Each setup command logs an `EV_SETUP` event (`worktree.py:476`; defined at `EV_SETUP` in `.claude/tools/pipeline/configuration/limits.py`) with keys `stage`, `for`, `cmd`, `rc`, `seconds`. The event has no wave key. The gate kind constants `GATE_KIND_TASK`, `GATE_KIND_MERGE` and `GATE_KIND_FULL` (same `limits.py`; the last is the final full gate) name the `kind` of a `gate_cmd` record.
 - Defaults: `.claude/tools/pipeline/configuration/defaults.py:107-110` set `worktree_setup: []` and `worktree_requirements: []`. The cost exists only in projects that set them.
 
 **Fix per cause:**
