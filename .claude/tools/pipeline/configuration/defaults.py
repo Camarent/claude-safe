@@ -60,7 +60,7 @@ AUDITOR_MAX_TURNS = 40  # `claude --max-turns` for an auditor session (sec-audit
 AUDITOR_ESCALATE_MAX_TURNS = 80  # `--max-turns` of the Opus rerun after an auditor ESCALATE; pipeline.json `auditor_escalate_max_turns`, 0 = no cap
 REMIT_MATCH_CHARS = 30  # a report line names a checklist item when it holds the first this-many characters of the item text (case-insensitive)
 GATE_TIME_WARN_DEFAULT = {"unit": 120, "merge": 300, "full": 540}  # seconds per gate kind; the `gate_time_warn_s` default
-MERGE_ONLY_TESTS_DEFAULT = ["test_lsp_e2e.py"]  # the `merge_only_tests` default: test files only the merge gate runs
+MERGE_ONLY_TESTS_DEFAULT: list[str] = []  # the `merge_only_tests` default: test files only the merge gate runs
 DEV_GATE_FULL_CMDS_DEFAULT = ["scripts/dev.sh cov", "scripts/dev.sh gate"]  # the `dev_gate_full_cmds` default: the dev gate's full commands
 DEV_GATE_REPEAT_MAX_DEFAULT = 1  # the `dev_gate_repeat_max` default: a red dev gate run repeats no more than this many times
 GATE_SLOTS_DEFAULT = 3  # the `gate_slots` default: gate commands running at once on this host; 0 = no cap

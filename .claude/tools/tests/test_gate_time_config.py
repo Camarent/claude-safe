@@ -1,4 +1,4 @@
-"""Gate settings: gate_time_warn_s, gates_merge with the lsp-e2e gate, merge_only_tests, dev_gate_full_cmds and dev_gate_repeat_max read through configuration.project()."""
+"""Gate settings: gate_time_warn_s, gates_merge (empty), merge_only_tests, dev_gate_full_cmds and dev_gate_repeat_max read through configuration.project()."""
 
 import json
 import os
@@ -23,7 +23,6 @@ from tests.support.tmpdirs import tracked_mkdtemp
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.dirname(os.path.dirname(TOOLS))
 PIPELINE_JSON = os.path.join(REPO, "pipeline.json")
-LSP_E2E_GATE = {"name": "lsp-e2e", "cmd": "scripts/dev.sh test test_lsp_e2e.py"}
 # literals the gate settings must not carry in the dev gate code: their values come from configuration
 DEV_GATE_LITERALS = ("test_lsp_e2e.py", "scripts/dev.sh cov", "scripts/dev.sh gate")
 
@@ -42,7 +41,7 @@ class TestDefaults(unittest.TestCase):
         self.assertEqual(GATE_TIME_WARN_DEFAULT, {"unit": 120, "merge": 300, "full": 540})
 
     def test_merge_only_and_dev_gate_defaults(self):
-        self.assertEqual(MERGE_ONLY_TESTS_DEFAULT, ["test_lsp_e2e.py"])
+        self.assertEqual(MERGE_ONLY_TESTS_DEFAULT, [])
         self.assertEqual(DEV_GATE_FULL_CMDS_DEFAULT, ["scripts/dev.sh cov", "scripts/dev.sh gate"])
         self.assertEqual(DEV_GATE_REPEAT_MAX_DEFAULT, 1)
 
@@ -77,12 +76,8 @@ class TestRepoGates(unittest.TestCase):
     def test_gates_final_is_unchanged_cov(self):
         self.assertEqual(self.repo["gates_final"], [{"name": "cov", "cmd": "scripts/dev.sh cov"}])
 
-    def test_gates_merge_holds_only_lsp_e2e(self):
-        self.assertEqual(self.repo["gates_merge"], [LSP_E2E_GATE])
-
-    def test_lsp_e2e_is_not_a_task_or_unit_gate(self):
-        names = [g["name"] for g in self.repo["gates"] + self.repo["gates_final"]]
-        self.assertNotIn(LSP_E2E_GATE["name"], names)
+    def test_gates_merge_is_empty(self):
+        self.assertEqual(self.repo["gates_merge"], [])
 
 
 class TestNoDevGateLiterals(unittest.TestCase):
