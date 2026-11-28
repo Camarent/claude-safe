@@ -6,7 +6,7 @@ import shlex
 from audit import final_check
 
 from .configuration import GATE_MODE_FULL, GATE_MODE_PREFIX, project
-from .gate_mode import header_modes, mode_of
+from .gate_mode import header_modes, mode_of, subcommand_modes
 from .util import read_text
 
 
@@ -22,6 +22,15 @@ def _script(cmd, repo):
     return path if os.path.isfile(path) else None
 
 
+def _subcommand(cmd):
+    """-> the first word after the script in the command CMD when it is not a flag (`dev.sh check` -> `check`); "" when none."""
+    try:
+        words = shlex.split(cmd)
+    except ValueError:
+        return ""
+    return next((w for w in words[1:] if not w.startswith("-")), "")
+
+
 def check_gate_modes(workspace, repo) -> list[str]:
     """`gatemode:` problems: a final gate command of REPO whose script header lists mode flags while the command names none (mode_of is the full mode); the problem names the command and the documented modes."""
     cfg = project(workspace)
@@ -30,7 +39,9 @@ def check_gate_modes(workspace, repo) -> list[str]:
         path = _script(cmd, repo)
         if path is None:
             continue
-        modes = header_modes(read_text(path))
+        text = read_text(path)
+        sub = _subcommand(cmd)
+        modes = subcommand_modes(text, sub) if sub else header_modes(text)
         if modes and mode_of(cmd) == GATE_MODE_FULL:
             problems[
                 f"{GATE_MODE_PREFIX} gate `{cmd}` names no mode flag and runs the full mode; {os.path.basename(path)} documents {', '.join(sorted(modes))}: name one of them in the command"
