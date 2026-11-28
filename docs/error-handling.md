@@ -10,6 +10,8 @@ A silent `except` with no reason is a bug. When a silent swallow stays on purpos
 
 The script-step timeout (`script_timeout()` in `.claude/tools/pipeline/util.py`) is the `script_timeout_s` tool setting (`tool_settings` in pipeline.json), and the env `ORCH_SCRIPT_TIMEOUT` overrides it. A timed-out acceptance step is BLOCKED `timed out, not verified`, never FAIL; any other timed-out driver step is FAIL.
 
+A bare `cs-wave run` in a repo whose `pipeline.json` sets `launcher` is a refusal, not a failure of the stage: it prints a message naming the launcher to stderr and exits 2, unless `WAVE_CLAUDE_FLAGS` carries the auto permission flags (`launcher_guard.py`).
+
 ## search
 
 - `.claude/tools/search/lsp.py:144` - rg prints one JSON object per line; a non-JSON line is skipped, not an error

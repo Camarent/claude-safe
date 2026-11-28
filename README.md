@@ -143,6 +143,8 @@ Read this before you run the pipeline unattended.
   `python3 -I scripts/pipeline_auto.py run --stage S` starts a stage in auto permission mode.
   Claude decides each action; the allowlist prompt is gone. The script keeps the other
   default flags and then runs `cs-wave`. Use it only on a stage you have read.
+  This repo sets `launcher` in `pipeline.json`, so a bare `cs-wave run` (without the auto
+  flags) is refused with exit 2 and names the launcher to use instead.
   claude-safe stages need it: the default `acceptEdits` mode blocks edits under `.claude/`.
   The lead never widens the allowlist to get past a prompt.
 - Container: it starts as root only for the setup steps (see Users and ownership above),

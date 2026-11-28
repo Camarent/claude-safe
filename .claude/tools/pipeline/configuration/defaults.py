@@ -141,6 +141,7 @@ PROJECT_DEFAULTS: dict = {
     "dev_gate_full_cmds": DEV_GATE_FULL_CMDS_DEFAULT,  # commands the dev gate runs in full (dev_gate_audit); [] = none
     "dev_gate_repeat_max": DEV_GATE_REPEAT_MAX_DEFAULT,  # most times the dev gate repeats a red run; 1 = no repeat
     "gate_slots": GATE_SLOTS_DEFAULT,  # gate commands that may run at once across every driver on this host (gate_slots.py); 0 = no cap. Caps the load so a step's gate runs fit the 540 s budget
+    "launcher": "",  # the repo's launcher command (e.g. "python3 -I scripts/pipeline_auto.py"); "" = no guard. A bare `cs-wave run` is refused unless the auto permission flags are set (launcher_guard.py)
 }
 GATE_FLAKE_RERUN_KEY = "gate_flake_rerun"  # the PROJECT_DEFAULTS key above
 GATE_BASE_CHECK_KEY = "gate_base_check"  # the PROJECT_DEFAULTS key above
@@ -150,6 +151,7 @@ MERGE_ONLY_TESTS_KEY = "merge_only_tests"  # the PROJECT_DEFAULTS key above: tes
 DEV_GATE_FULL_CMDS_KEY = "dev_gate_full_cmds"  # the PROJECT_DEFAULTS key above: the dev gate's full commands
 DEV_GATE_REPEAT_MAX_KEY = "dev_gate_repeat_max"  # the PROJECT_DEFAULTS key above: most repeats of a red dev gate run
 GATE_SLOTS_KEY = "gate_slots"  # the PROJECT_DEFAULTS key above: gate commands running at once on this host
+LAUNCHER_KEY = "launcher"  # the PROJECT_DEFAULTS key above: the repo's launcher command (launcher_guard.py)
 PREFLIGHT_KEY = "preflight_gates"  # the PROJECT_DEFAULTS key above
 EMPTY_TEST_KEY = "empty_test_gate"  # the PROJECT_DEFAULTS key (empty_tests.py gate switch)
 EMPTY_TEST_DEFAULT = True  # the key when pipeline.json does not set it

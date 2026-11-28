@@ -1,6 +1,7 @@
 {
   "audit_file": "AUDIT.md",
   "branch_release": "master",
+  "launcher": "python3 -I scripts/pipeline_auto.py",
   "pipeline_install_check": "scripts/sync-claude-config.sh --compare {work_branch}",
   "ci_drift_ignore": [
     "git config",
