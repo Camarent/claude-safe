@@ -202,6 +202,7 @@ from .plan_check_task import (
 from .plan_commands import command_findings
 from .plan_depends import depends_line_problems
 from .plan_docs_counts import check_docs_counts
+from .plan_docs_impact import check_docs_impact
 from .plan_files import (
     PATH_DIRS as PATH_DIRS,  # re-exported: pre-split name of pipeline.plan_check
 )
@@ -328,6 +329,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced, rows=None):
         + check_affected_tests(d, e["id"], repo)
         + check_unlisted_prereq(d, e, ents)
         + check_docs_wave(d, e, ents)
+        + check_docs_impact(d, e["id"], _workspace(d))
         + check_docs_counts(d, e["id"])
         + check_open_edit(d, e["id"], project(_workspace(d)).get("nested_repo_dir_prefix") or "")
         + check_gate_mentions(d, e["id"], gates)

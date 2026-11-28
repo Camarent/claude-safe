@@ -56,6 +56,7 @@ DOCS_IMPACT_TICK_RE = r"`{sym}`"  # template: a symbol in backticks in a doc
 DOCS_GATE_OFF_RE = re.compile(
     r"^\s*Docs gate\s*:\s*off\b", re.I | re.M
 )  # a TASKS.md line that switches the docs impact check off for its stage (docs_impact.plan_off)
+DOCS_IMPACT_PLAN_PREFIX = "docs-impact:"  # prefix of the plan problem plan_docs_impact.check_docs_impact returns: a doc cites a path the task changes, the doc is not in its Predicted paths
 DOC_CITES_KEY = "docs_cite_final"  # pipeline.json key: the cite check over the whole docs folder runs at every stage end; False = no step
 DOC_CITES_DEFAULT = True  # the key when pipeline.json does not set it
 DOC_CITES_STEP = "docs-cite-final"  # id of the script step that runs the whole-docs cite check (phases.audit_phases)
