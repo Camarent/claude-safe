@@ -20,6 +20,9 @@
 - `steps.py:763` `is_research` (and the same read in `is_webtest`/`is_report`): when the task file is missing, the type is lost. Proposed concrete change: record `Type:` in `TASKS.md` (kept by cleanup) or keep `task-*.md` in `phases.py:354` for tasks still needed. Owner decision needed on which; I did not verify either.
 - Expected-behaviour alternative (if the owner prefers): none; this is a real defect, not expected.
 
+## Settled-task wait (driver-gates task-7)
+- `decide` now calls `_unsettled_action` before `_closing_phases`: the final steps (final-test, audits, pr-ready, master-merged, branch-cleanup) wait while a task that has events still has an open step, for example a retry after its wave merged. That dispatch or ask is returned first. This does not fix the lost `Type:` after cleanup in the section above.
+
 ## Steps needing stage branch
 - merge-w4-late (a312): BLOCKED. "pathspec 'stage/retro-m25-followup2' did not match". Cause: branch-cleanup (a304) deleted `stage/retro-m25-followup2` after master-merged (a303) squash-merged the PR. Any merge-w*-late after a304 needs the stage branch and will fail the same way.
 - Other steps after final (a293-a305, a302 pr-ready, a303 master-merged, a304 branch-cleanup, a305 index-refresh, a306 cleanup): no record in the log shows them needing the stage branch. Not verified beyond the log.
