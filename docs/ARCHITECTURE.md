@@ -59,6 +59,8 @@ Five pipeline modules hold code moved out of older modules. Each old module re-e
 
 Settle rule (`.claude/tools/pipeline/graph.py`, `_unsettled_action`, called in `decide` before the closing phases): the final steps (tests, audits, pr-ready, master-merged, branch-cleanup) wait while a task that has events still has a step open (a retry after its wave merged, or an ask); that step runs first. Tasks with no events yet are left to their wave.
 
+Merge skip (`.claude/tools/pipeline/graph.py`, `_merge_wave`, `_wave_merge_skipped`): `orch.py skip --step merge-w<N>` closes that wave's merge for good, late batches included, and `_unmerged_done` no longer counts the wave's tasks as unmerged. `_merge_wave` also dispatches nothing when every job branch is already in the work branch (`_already_merged`) and the merge step has no history.
+
 Worktree setup (`.claude/tools/pipeline/worktree.py`, `_run_setup`): after the `worktree_setup` commands, each file matched by the `worktree_requirements` globs (`_requirement_steps`, setting in `.claude/tools/pipeline/configuration/defaults.py`) is installed into the job venv with `python -m pip install -r`, run with the venv python of the `worktree_venv_python` setting (default `.venv/bin/python` under the worktree root). A missing file is skipped; a failing install fails the setup like a failing setup command.
 
 Retry refresh (`.claude/tools/pipeline/worktree.py`, `refresh`): before a job branch is rebased onto the stage, its own commits whose patch is already on the stage branch under another sha (cherry-pick or merge fix; `rev-list --cherry-pick --right-only`) are not replayed. A job whose commits are all on the stage is not rebased; a job commit not on the stage is still rebased.

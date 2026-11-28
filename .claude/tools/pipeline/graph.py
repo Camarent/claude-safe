@@ -174,9 +174,18 @@ def _wave_parts(a, evs, members):
     return parts
 
 
+def _wave_merge_skipped(evs, wave) -> bool:
+    """True when `orch.py skip --step merge-w<N>` closed the wave's merge: no merge of that wave runs again, its late batches included."""
+    return any(e["ev"] == EV_SKIP for e in history(evs, f"merge-w{wave}"))
+
+
 def _merge_wave(a, evs, members, wave, n):
     """Merger after a wave: -> a run_phase action, or None once the wave is merged (also when the tasks worked in place and no job branch exists)."""
     if not _has_job_branches(a):
+        return None
+    sid = f"merge-w{wave}"
+    # skipped (for good), or every job branch already in the work branch: nothing to dispatch
+    if _step_satisfied(evs, sid) or (not history(evs, sid) and _already_merged(a, members)):
         return None
     parts = _wave_parts(a, evs, members)
     if project(a.dir).get("worktrees"):
@@ -539,14 +548,20 @@ def _empty_job_removed(a, task_id, prune=True):
 
 
 def _unmerged_done(a, evs, tasks, prune=True):
-    """Worktree mode: a finished (not skipped) task whose worktree is still there was never merged (the merge script removes it). An empty one is removed (PRUNE False: left alone), not blocking. -> task ids."""
+    """Worktree mode: a finished (not skipped, its wave's merge not skipped) task whose worktree is still there was never merged (the merge script removes it). An empty one is removed (PRUNE False: left alone), not blocking. -> task ids."""
     if not project(a.dir).get("worktrees"):
         return []
     skipped = {e.get("task") for e in evs if e["ev"] == EV_SKIP}
     out = []
     for t in tasks:
         done = any(e["ev"] == EV_REPORT and e["role"] == "dev" and e["verdict"] == DONE for e in history(evs, t["id"]))
-        if done and t["id"] not in skipped and job_info(a, t["id"], create=False) and not _empty_job_removed(a, t["id"], prune):
+        if (
+            done
+            and t["id"] not in skipped
+            and not _wave_merge_skipped(evs, t["wave"])
+            and job_info(a, t["id"], create=False)
+            and not _empty_job_removed(a, t["id"], prune)
+        ):
             out.append(t["id"])
     return out
 
