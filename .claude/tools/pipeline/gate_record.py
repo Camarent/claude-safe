@@ -11,6 +11,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 
+from .configuration import GATE_KIND_FLAKE
 from .gitx import try_run
 
 RECORD_FILE = "gate-runs.jsonl"
@@ -117,8 +118,14 @@ def records(cwd) -> list[dict]:
     return _entries(path) if path else []
 
 
+def flake_count(cwd) -> int:
+    """Number of flake records (kind GATE_KIND_FLAKE) in the record log of the repo at cwd; 0 when there is none."""
+    return sum(1 for rec in records(cwd) if rec.get("kind") == GATE_KIND_FLAKE)
+
+
 def find_passed(cwd, argv, tree=None, base=None) -> dict | None:
-    """Latest record with rc 0 for the same command on the same tree (and base, when given) -> dict, else None."""
+    """Latest record with rc 0 for the same command on the same tree (and base, when given) -> dict, else None.
+    A flake record is never a pass: it is skipped even when its rc is 0."""
     try:
         tree = tree_hash(cwd) if tree is None else tree
         path = _log_path(cwd)
@@ -126,6 +133,8 @@ def find_passed(cwd, argv, tree=None, base=None) -> dict | None:
             return None
         key = cmd_key(argv)
         for rec in reversed(_entries(path)):
+            if rec.get("kind") == GATE_KIND_FLAKE:
+                continue
             if rec.get("rc") == PASSED_RC and rec.get("cmd") == key and rec.get("tree") == tree and (base is None or rec.get("base") == base):
                 return rec
     except (OSError, ValueError, TypeError):

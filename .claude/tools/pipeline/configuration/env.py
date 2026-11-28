@@ -28,6 +28,7 @@ ENV_QRUN_NO_RECORD = "QRUN_NO_RECORD"  # set: qrun writes no gate-run record (pi
 ENV_GATED = "ORCH_GATED"  # comma list of agents the lead may only start after approval
 ENV_GATE_KIND = "PIPELINE_GATE_KIND"  # set for the reviewer session only: GATE_KIND_MUTATION; qrun then uses MUTATION_GATE_TIMEOUT_S
 GATE_KIND_MUTATION = "mutation"  # ENV_GATE_KIND value of a reviewer mutation check
+GATE_KIND_FLAKE = "flake"  # gate-run record kind of a run that failed then passed on a retry: never a pass (gate_record.find_passed)
 ENV_AGENTS_DIR = "ORCH_AGENTS_DIR"
 ENV_MAX_DISPATCH = "ORCH_MAX_DISPATCH"
 ENV_MAX_OPUS = "ORCH_MAX_OPUS"
