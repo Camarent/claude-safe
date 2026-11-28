@@ -8,3 +8,7 @@ Module map: `docs/ARCHITECTURE.md`; per-module contracts: `docs/modules/`.
 
 python: read ~/.claude/practices/guidelines/python.md before editing python files
 all: ~/.claude/practices/guidelines/base.md
+
+## Notes
+
+`.notes/run-with-wrapper.md`: read before starting a feature or stage; run it through `scripts/pipeline_auto.py`.
