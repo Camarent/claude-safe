@@ -50,6 +50,7 @@ KIND_LEVELS = {
     "research": ERROR,
     "pins": ERROR,
     "testcmd": ERROR,  # a bare pytest Test line where the project names its test command (was a warning)
+    "testrunner": ERROR,  # a bare pytest Test line where pytest does not import with python3 and no test command is named
     "ignored-done": ERROR,  # planned: task-5
     "cite-short": ERROR,  # planned: task-7
     "carried-notes": ERROR,

@@ -30,7 +30,7 @@ class T(unittest.TestCase):
             f.write(f"Predicted paths: a.py\n{test_line}\n")
 
     def check(self):
-        return plan_testcmd.check_bare_test_runner(self.d, TID, self.ws)
+        return plan_testcmd.check_bare_test_runner(self.d, TID, self.ws, probe=lambda: True)  # injected probe: no python spawn
 
     def test_bare_pytest_is_an_error_with_setting_hint(self):
         self.cfg(test_command_hint="make test")
