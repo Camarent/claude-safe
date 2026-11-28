@@ -74,14 +74,38 @@ def missing(tracked, required):
     return found
 
 
+def git_ignored(claude_dir, names):
+    """Names of `names` (top-level items of claude_dir) that git check-ignore reports as ignored.
+    Only when claude_dir sits in a repo whose top level is its parent: a scratch dir inside some outer
+    repo (TMPDIR under .work/) would otherwise take the outer repo's ignore rules."""
+    if not names:
+        return set()
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=claude_dir, check=False, capture_output=True, text=True)
+    if top.returncode != 0 or os.path.realpath(top.stdout.strip()) != os.path.realpath(os.path.dirname(claude_dir)):
+        return set()
+    proc = subprocess.run(
+        ["git", "check-ignore", "-z", "--stdin"],
+        cwd=claude_dir,
+        check=False,
+        input="\0".join(names) + "\0",
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode not in (0, 1):
+        return set()
+    return {p for p in proc.stdout.split("\0") if p}
+
+
 def synced_items(claude_dir, tracked):
     """Top-level items of .claude that scripts/install-claude-config.sh syncs.
     Names come from disk and from the index: an item on disk but untracked, or tracked but gone from disk,
-    is listed."""
-    names = set(os.listdir(claude_dir))
-    names |= {p.split("/")[1] for p in tracked if p.startswith(".claude/") and p.count("/") >= 2}
-    names |= {p[len(".claude/") :] for p in tracked if p.startswith(".claude/") and p.count("/") == 1}
-    return [f".claude/{name}" for name in sorted(names) if name not in CLAUDE_CONFIG_SKIP]
+    is listed. A disk-only item that git ignores is a local artifact (a lock file), not a synced item, so it is dropped."""
+    disk = set(os.listdir(claude_dir))
+    indexed = {p.split("/")[1] for p in tracked if p.startswith(".claude/") and p.count("/") >= 2}
+    indexed |= {p[len(".claude/") :] for p in tracked if p.startswith(".claude/") and p.count("/") == 1}
+    names = disk | indexed
+    ignored = git_ignored(claude_dir, sorted(disk - indexed))
+    return [f".claude/{name}" for name in sorted(names) if name not in CLAUDE_CONFIG_SKIP and name not in ignored]
 
 
 class ConsumerFilesTest(unittest.TestCase):
@@ -104,6 +128,20 @@ class ConsumerFilesTest(unittest.TestCase):
             open(os.path.join(tmp, "paths.json"), "w").close()
             items = synced_items(tmp, without)
             self.assertEqual(missing(without, items), [".claude/paths.json"])
+
+    def test_git_ignored_disk_only_item_is_not_synced(self):
+        # Mutation: an ignored disk-only lock file must not be listed; an untracked, non-ignored file still must.
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            claude = os.path.join(tmp, ".claude")
+            os.mkdir(claude)
+            with open(os.path.join(tmp, ".gitignore"), "w") as fh:
+                fh.write(".claude/*.lock\n")
+            open(os.path.join(claude, "scheduled_tasks.lock"), "w").close()
+            open(os.path.join(claude, "notes.md"), "w").close()
+            items = synced_items(claude, [])
+            self.assertNotIn(".claude/scheduled_tasks.lock", items)
+            self.assertIn(".claude/notes.md", items)
 
     def test_check_reports_untracked_pinned_file(self):
         # Mutation: a copy of the tracked list without dev.md must report it missing.
