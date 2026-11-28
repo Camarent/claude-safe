@@ -124,7 +124,7 @@ class GateSequenceTest(_SeqBase):
         self.assertIn("one `Gates:` line", briefs.gates_note(self.a))
         self.cfg(gates=[])
         self.assertEqual(briefs.gates_note(self.a), "")
-        self.cfg(gates=[], each=[{"name": "e", "cmd": "true"}])  # each alone still means the driver runs them
+        self.cfg(gates=[], each=[{"name": "e", "glob": "*", "cmd": "true"}])  # each alone still means the driver runs them
         self.assertTrue(steps.task_gates_on(self.a))
 
     def test_dev_done_without_gates_line_is_fine_with_driver_gates(self):
