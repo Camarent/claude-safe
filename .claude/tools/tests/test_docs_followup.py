@@ -67,7 +67,7 @@ class DocsFollowupScripts(unittest.TestCase):
 
     def test_each_changed_behaviour_is_one_paragraph(self):
         bullets = [ln for ln in self.section.splitlines() if ln.startswith("- ")]
-        self.assertEqual(len(bullets), 12)
+        self.assertEqual(len(bullets), 13)  # 13th bullet: the testroot: kind (plan_testroot.check_vitest_root)
 
     def test_no_machine_counts_added(self):
         self.assertIsNone(MACHINE_COUNT.search(self.section))

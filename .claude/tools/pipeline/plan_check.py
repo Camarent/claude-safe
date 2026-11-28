@@ -272,6 +272,7 @@ from .plan_rules import (
     nested_repo as nested_repo,  # re-exported: pre-split name of pipeline.plan_check
 )
 from .plan_testcmd import check_bare_test_runner, check_qrun_operator, check_test_ban
+from .plan_testroot import check_vitest_root
 from .plan_toolblock import check_toolblock
 from .plan_wiring import check_wiring
 from .shellwords import split_commands as split_commands  # re-exported: pre-split name of pipeline.plan_check
@@ -314,6 +315,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced, rows=None):
         + check_bare_test_runner(d, e["id"], _workspace(d))
         + check_test_ban(d, e["id"], _workspace(d))
         + check_qrun_operator(d, e["id"])
+        + check_vitest_root(d, e["id"], _workspace(d))
         + check_kinds(d, e, ents, repo)
         + check_task_size(d, e["id"])
         + check_type_inputs(d, e["id"], repo, _workspace(d), ents if rows is None else rows)

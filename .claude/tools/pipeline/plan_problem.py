@@ -44,6 +44,7 @@ KIND_LEVELS = {
     "docs-count": ERROR,
     "testban": ERROR,
     "qrun-op": ERROR,
+    "testroot": ERROR,  # a Test: path repeats the root of its test runner (plan_testroot)
     "outputs": ERROR,
     "research": ERROR,
     "pins": ERROR,
