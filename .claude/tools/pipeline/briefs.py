@@ -121,6 +121,7 @@ def research_prompt(a, task, rid) -> str:
     return (
         f"Stage {a.stage}: answer the research question of the task in {t} (read it there; index .work/{a.stage}/TASKS.md). Do its Goal and Steps; read the tree only, never edit or delete."
         " Your reply is the document the task names, not a file: you have no Write tool, so the lead saves your reply as the report."
+        " Cite upstream files (outside the repo) as `file.go line 87`: the word line goes between the name and the number, never a colon (`file.go:87`), because the docs cite check fails on a colon cite of a file that is not in the repo."
         " The first line of your reply is `VERDICT: DONE|BLOCKED` (BLOCKED when the question cannot be answered from the tree; then say why in the body), then the document body."
         f" Scratchpad for temp files: {WORK_DIR}/{a.stage}/{SCRATCH_DIR}/ (write nothing temporary elsewhere). Report id: {rid}."
     )
