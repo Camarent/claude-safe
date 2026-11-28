@@ -13,11 +13,13 @@ from . import gitx, linkguard, maincheck
 from .configuration import (
     CLAUDE_FILE,
     DB_START_PREFIX,
+    DEV_GATE_FULL_CMDS_KEY,
     ENV_NO_LEADS,
     EV_DISPATCH,
     EV_REPORT,
     GATE_OUTPUT_CHARS,
     GATE_SKIP_PATHS,
+    GATE_TIMEOUT_S,
     LEAD_NOTE_CHARS,
     LEAD_SLICE_CHARS,
     LEAD_SLICE_CHARS_WITH_PATTERN,
@@ -476,6 +478,19 @@ def gates_note(a) -> str:
     return f" Before DONE run the full gate set, every gate below and none skipped silently ({names}); your report carries one `Gates:` line with each gate RAN or SKIPPED and its result. A negated test uses `! grep`."
 
 
+DEV_FULL_GATE_NOTE = (  # dev brief: the full gate runs after the dev reports, never in the dev's own Bash call
+    " Never run a full gate command in your own Bash call ({cmds}): run only your task's Test line and the files it names. The driver runs the full gate after you report."
+)
+DEV_TIMEOUT_NOTE = " A Bash call that hits the agent tool timeout ({timeout} s) is never a reason to report BLOCKED: report DONE with the Test line result and say the full gate is the driver's."
+
+
+def dev_gate_note(a) -> str:
+    """Dev brief text: no full gate (pipeline.json `dev_gate_full_cmds`) in the dev's own Bash call, and a call that times out is DONE, not BLOCKED."""
+    cmds = project(getattr(a, "dir", "."))[DEV_GATE_FULL_CMDS_KEY]
+    head = DEV_FULL_GATE_NOTE.format(cmds=", ".join(f"`{c}`" for c in cmds)) if cmds else ""
+    return head + DEV_TIMEOUT_NOTE.format(timeout=GATE_TIMEOUT_S)
+
+
 AFFECTED_DEV = " Affected tests (hint, may be incomplete): {named}. Check them first; update them if the new behavior is intended."
 AFFECTED_REVIEW = " Check that test changes match the task's Done and do not weaken a check."
 
@@ -596,6 +611,7 @@ def prompt_for(a, task, role, rework_file, rid) -> str:
             + WORKTREE_NOTE
             + pattern_header_note(os.path.abspath(getattr(a, "dir", ".")), t)
             + gates_note(a)
+            + dev_gate_note(a)
             + db_start_note(a)
             + TOOLING_BLOCKED_NOTE
             + complexity_note(t)

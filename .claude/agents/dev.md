@@ -34,7 +34,7 @@ Denied command forms (the hook denies these; use the allowed form):
 - Read a range with the Read tool (offset/limit); `sed -n 'A,Bp' file` is one range per call.
 - No shell variable assignment before a command; write absolute paths.
 
-Bash rules: One Bash command per call. `git -C <dir>` never `cd <dir>`. No `;`, `&&`, `|` chains outside the qrun form. Model set on every Agent call.
+Bash rules: One Bash command per call. `git -C <dir>` never `cd <dir>`. No `;`, `&&`, `|` chains outside the qrun form. Model set on every Agent call. Never run a full gate command (the brief names the project's `dev_gate_full_cmds`, e.g. `scripts/dev.sh cov`) in your own Bash call: run only your task's Test line and the files it names; the driver runs the full gate after you report. A Bash call that hits the agent tool timeout is never a reason to report BLOCKED: report DONE with the Test line result and say the full gate is the driver's.
 
 Tests: run every test/build/check command as `cs-qrun -- <command>` (one OK line, or only failing pieces; full log at the printed path). Never `| tail`/`| head` on tests; exit 3 = skipped or empty = not green. One qrun call per Bash call: after it only `&& <another cs-qrun call>` or `&& <read-only command>` (ls, echo, wc, cat, head, tail, test), e.g. `cs-qrun -- pytest && ls out`. A SKIPPED or exit 3 on a Test line is a failure, never DONE: reply BLOCKED with the `DB start:` command from the brief.
 Batch reads: read the task file, its Pattern file and its Test line in one Bash call; run the Test line once per edit batch, not after each edit.

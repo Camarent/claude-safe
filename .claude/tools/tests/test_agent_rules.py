@@ -18,7 +18,8 @@ AGENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "a
 # architect.md: 28600 (was 28000) because task-10 added the research trigger table; always-read planning guidance, so it sits in the main file, not rare-rules.md.
 # architect.md: 28800 (was 28600) because the wiring bullet (every new module mounted from the real entry, reach proof) is always-read planning guidance; it sits in the main file, not rare-rules.md.
 # dev.md: 15300 (was 15100) because task-14 item docs added the follow-up rules to dev.md that test_escalation_docs.py requires word for word.
-CAPS = {"architect.md": 28800, "dev.md": 15300, "reviewer.md": 13900}
+# dev.md: 15700 (was 15300) because task-23 put the never-run-a-full-gate rule and the timed-out-call-is-DONE rule in the dev Bash rules line; the dev must read them in the main file.
+CAPS = {"architect.md": 28800, "dev.md": 15700, "reviewer.md": 13900}
 
 # Gate-rule keywords that existed in the agent files before the split.
 KEYWORDS = ("ccn", "mutation check", "PLAN GAP", "Predicted paths", "VERDICT")
