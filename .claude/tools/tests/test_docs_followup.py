@@ -8,8 +8,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 SCRIPTS_DOC = os.path.join(ROOT, "docs", "modules", "scripts.md")
 DECISIONS_DOC = os.path.join(ROOT, "docs", "decisions.md")
 
+ARCHITECTURE_DOC = os.path.join(ROOT, "docs", "ARCHITECTURE.md")
+
 SCRIPTS_SECTION = "## Followup behaviour (retro-m25-followup)"
 DECISIONS_SECTION = "## Retro m25 followup (retro-m25-followup)"
+STAGE_DECISIONS_SECTION = "## Stage retro-m25-followup2"
+
+# the four plan check modules of the pipeline section of docs/ARCHITECTURE.md
+PLAN_CHECK_MODULES = [
+    "plan_testroot.py",
+    "plan_testwrap.py",
+    "plan_docs_impact.py",
+    "plan_needs.py",
+]
 
 # one name per changed behaviour: its code file (or setting) must appear in the followup section
 SCRIPTS_NAMES = [
@@ -29,6 +40,20 @@ SCRIPTS_NAMES = [
     "gate_slots.py",
     "testrun.py",
     "steps_history.py",
+    "steps_finaltest.py",
+    "GATE_KIND_FLAKE",
+    "plan_testroot.py",
+    "plan_testwrap.py",
+    "plan_docs_impact.py",
+    "plan_needs.py",
+    "test_roots",
+    "test_wrap",
+    "roadmap_file",
+    "worktree_requirements",
+    "retry_note.py",
+    "merge_wave.py",
+    "cli_orch.py",
+    "plan_gaps_open.py",
 ]
 
 DECISIONS_TERMS = [
@@ -67,13 +92,26 @@ class DocsFollowupScripts(unittest.TestCase):
 
     def test_each_changed_behaviour_is_one_paragraph(self):
         bullets = [ln for ln in self.section.splitlines() if ln.startswith("- ")]
-        self.assertEqual(len(bullets), 13)  # 13th bullet: the testroot: kind (plan_testroot.check_vitest_root)
+        self.assertEqual(len(bullets), 24)  # one bullet per changed behaviour; the last is the plan-review gaps warning
 
     def test_no_machine_counts_added(self):
         self.assertIsNone(MACHINE_COUNT.search(self.section))
 
     def test_no_line_reference_cites_added(self):
         self.assertIsNone(LINE_CITE.search(self.section))
+
+    def test_each_cited_code_path_exists(self):
+        for path in re.findall(r"\.claude/tools/[\w./-]+\.py", self.section):
+            with self.subTest(path=path):
+                self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
+
+
+class DocsFollowupArchitecture(unittest.TestCase):
+    def test_plan_check_modules_listed_in_pipeline_section(self):
+        text = _read(ARCHITECTURE_DOC)
+        for name in PLAN_CHECK_MODULES:
+            with self.subTest(name=name):
+                self.assertIn(name, text)
 
 
 class DocsFollowupDecisions(unittest.TestCase):
@@ -87,3 +125,10 @@ class DocsFollowupDecisions(unittest.TestCase):
 
     def test_verify_step_is_owner_or_lead_and_not_run_here(self):
         self.assertIn("owner or lead step, not run by this stage", self.section)
+
+    def test_stage_entry_records_needs_roadmap_and_cost_finding(self):
+        text = _read(DECISIONS_DOC)
+        stage = _section(text, STAGE_DECISIONS_SECTION)
+        for term in ["Needs", "roadmap_file", "docs/cost-lp-nav.md"]:
+            with self.subTest(term=term):
+                self.assertIn(term, stage)

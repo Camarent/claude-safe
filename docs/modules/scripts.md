@@ -79,6 +79,16 @@ Each paragraph names the code file that holds the change.
 - Gate slots (`.claude/tools/pipeline/gate_slots.py`, `held`): the host-wide gate cap is the `gate_slots` setting; `.claude/tools/testrun.py` runs each Test line inside one slot.
 - Worktree requirements (`.claude/tools/pipeline/worktree.py`, `_requirement_steps`, `_run_setup`; defaults in `.claude/tools/pipeline/configuration/defaults.py`): the `worktree_requirements` globs are pip-installed into each new job worktree's venv after the `worktree_setup` commands; a missing file is skipped and a failing install removes the worktree.
 - Retry refresh (`.claude/tools/pipeline/steps_history.py`, `_after_retry`): a task's history after a retry marker keeps only the events after that marker, so a reset starts the review rounds again.
+- Final-test flake rerun (`.claude/tools/pipeline/steps_finaltest.py`, `triage`, `record_flake`): a final-test FAIL whose failing test files pass when rerun alone is logged as a flake (gate record kind `GATE_KIND_FLAKE`, `.claude/tools/pipeline/gate_record.py`) and gets no fix plan; a red still red alone goes on to the fix plan.
+- Plan check `testroot:` (`.claude/tools/pipeline/plan_testroot.py`, `check_vitest_root`): a vitest `Test:` line whose path repeats the runner root (pipeline.json `test_roots`) fails `cs-plan check`.
+- Plan check `testwrap:` (`.claude/tools/pipeline/plan_testwrap.py`, `check_test_wrap`): a `Test:` line that matches a pipeline.json `test_wrap` rule but lacks its required wrapper text fails `cs-plan check`; the message names the wrapper to use.
+- Plan check `docs-impact:` (`.claude/tools/pipeline/plan_docs_impact.py`, `check_docs_impact`): a doc that cites a Predicted path of a task must be in that task's Predicted paths, or a doc-only task must list it.
+- Plan check `plan-gap:` for `Needs:` lines (`.claude/tools/pipeline/plan_needs.py`, `check_needs`): a task's `Needs: <repo path> :: <literal>` line fails the plan when the path is missing or lacks the literal, unless a task it depends on lists that path in its Predicted paths.
+- Settings defaults (`.claude/tools/pipeline/configuration/defaults.py`): `test_roots`, `test_wrap` and `roadmap_file` default to empty, which means off; `worktree_requirements` defaults to an empty list.
+- Retry note lint (`.claude/tools/pipeline/retry_note.py`): a retry NOTE that follows a dev PLAN GAP report gets a warning while the task file is unchanged since that report.
+- Merge gate skip (`.claude/tools/merge_wave.py`, `_passed_gates`): a merge gate command with a green qrun record on the merged tree is skipped and logged as skipped.
+- Roadmap audit pass (`.claude/tools/pipeline/cli_orch.py`, `_remit_verdict`): an auditor FIXES list whose severe lines are all should-fix items repeating an open `roadmap_file` item becomes CLEAN.
+- Open plan-review gaps warning (`.claude/tools/pipeline/plan_gaps_open.py`): the stage or feature folder's plan-review gaps still open are read at stage start and shown to the lead as a warning.
 
 ## Depends on / used by
 - Depends on: `.claude/tools/ptest.py`, `.claude/tools/tests/`, `.claude/tools/pipeline/cmdindex.py`, `Dockerfile`, `profiles/`, the `claude-safe:rust` image (docker), `uv`, `flock`, `git`.
