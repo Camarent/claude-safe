@@ -390,8 +390,13 @@ def cmd_report(a) -> None:
     if not d:
         sys.exit(f"orch: unknown dispatch id {a.id}")
     d = d[0]
+    if a.replace and not a.text:
+        sys.exit("orch: --replace needs --text (the reply to record)")
     f = work_path(w, f"report-{a.id}.md", create=True)
-    _fill_report_file(a, d, f)
+    if a.replace:  # relay of a researcher reply: its text replaces the existing report, the verdict is read from it
+        write_text(f, a.text)
+    else:
+        _fill_report_file(a, d, f)
     body = read_text(f)
     v, reason = _report_verdict(d, body, a.id)
     v, ignored = _remit_verdict(a, d, v, body)
@@ -715,6 +720,11 @@ def main(argv=None) -> None:
         if name == "report":
             p.add_argument("--id", required=True)
             p.add_argument("--text", default="")
+            p.add_argument(
+                "--replace",
+                action="store_true",
+                help="with --text: overwrite the existing report of --id and record its new verdict; use it to relay a researcher reply that replaces a report already written (e.g. BLOCKED). Without it --text only fills a missing or blank report",
+            )
         if name in ("retry", "skip"):
             p.add_argument("--step", required=True)
             p.add_argument(
