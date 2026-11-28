@@ -4,6 +4,8 @@ Generated files: if a file you must touch says in its first lines that it is gen
 
 Do not edit `docs/INDEX.md` by hand: `wt.py commit` regenerates it, so a diff there is expected.
 
+Gates: a dev never runs the full `scripts/dev/check-all.sh` in a task. The driver runs the gates after your tests pass; run only the task's Test line and the tests of the code you touch.
+
 Regex: any regex on a file is unsafe; assume it matches several places. Anchor it, assert how many places changed (restore if wrong), test with a decoy sharing the value. Parser for JSON/TOML/YAML.
 
 A test that depends on wall-clock time (sleep, a timing threshold, the real `now`) or that is not isolated (it writes a fixed shared file or folder, a fixed port, a shared env or global) is bad design: it shows code that is not separated, and it flakes when tasks run in parallel. It is almost never the right way. Write the code so the clock is passed in (a `now` argument, a fake clock you advance by hand to simulate time passing) and give every test its own temp dir and port. If such a test is truly unavoidable, say so under `Skipped/unchecked:` with the reason: the lead moves it to the project's `gates_merge` (merge gate only). Never loosen a timing threshold or add a retry to make it pass.

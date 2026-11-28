@@ -54,6 +54,18 @@ class AgentRules(unittest.TestCase):
         self.assertIn("in one Bash call", text)
         self.assertIn("once per edit batch", text)
 
+    def test_dev_never_runs_the_full_check_all(self):
+        text = read(os.path.join(AGENTS, "dev", "rare-rules.md"))
+        self.assertIn("a dev never runs the full", text)
+        self.assertIn("check-all.sh", text)
+
+    def test_architect_measure_needs_and_test_wrap_rules(self):
+        text = read(os.path.join(AGENTS, "architect", "rare-rules.md"))
+        self.assertIn('never requires "no driver running"', text)
+        self.assertIn("Needs: <path> :: <literal>", text)
+        self.assertIn("plan-gap: check", text)
+        self.assertIn("`test_wrap` wrapper", text)
+
     def test_reviewer_pass_report_is_counts_only(self):
         text = read(os.path.join(AGENTS, "reviewer.md"))
         self.assertIn("PASS: report only the verdict, the counts line", text)
