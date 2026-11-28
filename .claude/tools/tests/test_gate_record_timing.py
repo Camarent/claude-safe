@@ -11,7 +11,7 @@ sys.path.insert(0, TOOLS)
 from audit import final_check  # noqa: E402
 from pipeline import gate_record as G  # noqa: E402
 from pipeline import gate_timing as T  # noqa: E402
-from pipeline.configuration import GATE_KIND_MERGE, GATE_KIND_TASK  # noqa: E402
+from pipeline.configuration import GATE_KIND_FULL, GATE_KIND_MERGE, GATE_KIND_TASK  # noqa: E402
 from test_gate_record import make_repo  # noqa: E402
 
 LIMITS = {"unit": 120, "merge": 300, "full": 540}
@@ -33,6 +33,14 @@ class TestWarn(unittest.TestCase):
     def test_limit_zero_warns_on_any_run(self):
         # mutation check: a zero limit makes every timed run a warning
         self.assertTrue(T.warn("unit", 1, {"unit": 0}))
+
+
+class TestFullKind(unittest.TestCase):
+    def test_full_kind_is_level_full(self):
+        self.assertEqual(T.LEVEL_OF_KIND[GATE_KIND_FULL], "full")
+
+    def test_full_run_warns_against_full_limit(self):
+        self.assertEqual(T.warn(T.LEVEL_OF_KIND[GATE_KIND_FULL], 600, LIMITS), "gate time: full gate run 600s over the 540s limit (gate_time_warn_s.full)")
 
 
 class TestCheckRealRecords(unittest.TestCase):

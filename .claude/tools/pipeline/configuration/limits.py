@@ -323,7 +323,11 @@ SEARCH_TOOL_NAMES = (
     tuple(dict.fromkeys(cmdnames.names_for(_cs_index(), "lp"))) if _cs_index() and "lp" in _cs_index()["commands"] else ("lp", "local.py")
 )  # from the command index (name, script file, aliases); names of the local search tool in a Bash command (alias on the container, script on the host); lp_share.py and retro_numbers.py count both
 EV_REPORT, EV_DISPATCH, EV_SKIP, EV_SESSION, EV_RETRY = "report", "dispatch", "skip", "session", "retry"  # orch.jsonl / metrics.jsonl event names
-GATE_KIND_TASK, GATE_KIND_MERGE = "task", "merge"  # `kind` of a gate_cmd record: the task gates, a wave merge
+GATE_KIND_TASK, GATE_KIND_MERGE, GATE_KIND_FULL = (
+    "task",
+    "merge",
+    "full",
+)  # `kind` of a gate_cmd record: the task gates, a wave merge, the final full gate (final_check --stage)
 GATE_MODE_FLAG_RE = r"(?<![\w-])--[a-z][a-z-]*(?![\w-])"  # one mode flag of a gate command or script header: a --word token
 GATE_MODE_FULL = "full"  # gate mode of a command or script that names no mode flag
 HEADER_LINES_MAX = 10  # first lines of a script scanned for the modes its header lists

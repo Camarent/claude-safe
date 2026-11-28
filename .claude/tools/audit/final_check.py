@@ -28,12 +28,16 @@ from pipeline.configuration import (
     CLEAR_WHY_BAD_RC,
     CLEAR_WHY_GREEN,
     CLEAR_WHY_NO_CMD,
+    ENV_GATE_KIND,
     EV_GATE_CMD,
     FAIL_ID_RES,
     FAIL_IDS_SHOWN,
     GATE_GROUP_MAX_WORKERS,
-    GATE_KIND_TASK,
+    GATE_KIND_FULL,
     GATE_PARALLEL_KEY,
+    GATE_TIME_WARN_KEY,
+    METRICS_LOG,
+    WORK_DIR,
     ConfigError,
     each_of,
     final_gates_of,
@@ -181,8 +185,8 @@ def run_all(cmds, repo, env, runner=run_group, groups=None):
 
 
 def log_gate_cmds(path, kind, results, names, task="", base_red=(), limits=None, skipped=False):
-    """Append one `gate_cmd` metrics record per command of RESULTS ([(cmd, rc, seconds, text)]) to the metrics file PATH: KIND (`task` or `merge`), the gate name, exit code, seconds, the gate time level (unit or merge), the gate `mode`, `concurrent` (gate commands running at once when the command started, 1 when it ran alone or never ran here), `skipped` (SKIPPED: the command was not run), and `base_red` when the command was red on the stage base too (its `rc` is then 0: it was cleared, not the task's failure). Returns the gate time warning lines of the runs over their LIMITS (gate_time_warn_s; none when LIMITS is None); the exit codes never change. A failed write is ignored: a metric never stops a gate."""
-    level = gate_timing.LEVEL_UNIT if kind == GATE_KIND_TASK else gate_timing.LEVEL_MERGE
+    """Append one `gate_cmd` metrics record per command of RESULTS ([(cmd, rc, seconds, text)]) to the metrics file PATH: KIND (`task`, `merge` or `full`), the gate name, exit code, seconds, the gate time level (unit, merge or full), the gate `mode`, `concurrent` (gate commands running at once when the command started, 1 when it ran alone or never ran here), `skipped` (SKIPPED: the command was not run), and `base_red` when the command was red on the stage base too (its `rc` is then 0: it was cleared, not the task's failure). Returns the gate time warning lines of the runs over their LIMITS (gate_time_warn_s; none when LIMITS is None); the exit codes never change. A failed write is ignored: a metric never stops a gate."""
+    level = gate_timing.LEVEL_OF_KIND.get(kind, gate_timing.LEVEL_MERGE)
     warns = []
     with contextlib.suppress(OSError):
         for cmd, rc, secs, _text in results:
@@ -338,7 +342,13 @@ def main(argv=None):
         print("VERDICT: FAIL\nno `gates`, `gates_merge` or `gates_final` in pipeline.json: nothing to run")
         return 0
     gates = gate_names(cfg, merge=True, final=True)
-    results = run_all(cmds, repo, {**os.environ, **test_env(cfg, a.dir)}, groups=gate_groups(cfg, repo, merge=True, final=True))
+    env = {**os.environ, **test_env(cfg, a.dir)}
+    if a.stage:
+        env[ENV_GATE_KIND] = GATE_KIND_FULL  # qrun records the run as a full gate run (gate_timing: full limit)
+    results = run_all(cmds, repo, env, groups=gate_groups(cfg, repo, merge=True, final=True))
+    if a.stage:
+        for w in log_gate_cmds(os.path.join(a.dir, WORK_DIR, a.stage, METRICS_LOG), GATE_KIND_FULL, results, gates, limits=cfg[GATE_TIME_WARN_KEY]):
+            print(w, file=sys.stderr)  # a slow gate is a warning line; the report and the exit code stay as they are
     print(report(results, gates))
     return 0
 
