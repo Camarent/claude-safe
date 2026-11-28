@@ -32,6 +32,7 @@ KIND_LEVELS = {
     "reach": WARN,  # a Mounts: header whose Done names no entry proof (plan_wiring)
     # errors
     "publish": ERROR,
+    "publish-recipe": ERROR,
     "ci-drift": ERROR,
     "shared-file": ERROR,
     "test-env": ERROR,

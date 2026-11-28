@@ -414,6 +414,7 @@ def _stage_produced(d, ents):
 
 
 PUBLISH_PROBLEM_PREFIX = "publish: "
+PUBLISH_RECIPE_PREFIX = "publish-recipe: "
 
 
 def _publish_scope(entry):
@@ -458,6 +459,18 @@ def publish_problems(d, ents) -> list[str]:
     return [
         f"{PUBLISH_PROBLEM_PREFIX}the plan changes paths of the `publish` entry {', '.join(hit)} but no TASKS.md has a `PUBLISH: <url>` line: add it so the artifact is republished, or set `flags: no-publish` when the artifact must stay as it is"
     ]
+
+
+def publish_recipe_problems(d) -> list[str]:
+    """-> [`publish-recipe:` problem] for each URL of a `PUBLISH:` line in the stage TASKS.md that has no `publish` recipe in pipeline.json (the republish step cannot build it). A bad publish config yields none."""
+    try:
+        entries = publish_entries(project(_workspace(d)))
+    except ConfigError:
+        return []
+    missing = sorted(publish_urls(read_text(tasks_path(d))) - set(entries))
+    if not missing:
+        return []
+    return [f"{PUBLISH_RECIPE_PREFIX}PUBLISH: {', '.join(missing)} has no `publish` recipe in pipeline.json: add the entry, or drop the line"]
 
 
 UX_FLOWS_WARN_PREFIX = "ux-flows: "  # a warning line: never fails a check (errors_of)
@@ -528,6 +541,7 @@ def check_stage(d, repo=None) -> tuple[int, list[str]]:
     for e in ents:
         probs += _task_file_problems(d, e, ents, repo, gates, git, produced, rows)
         probs += check_needs(d, e["id"], repo)
+    probs += publish_recipe_problems(d)
     return len(ents), probs + _overlap_problems(d, ents) + _carried_problems(d, ents) + publish_problems(d, ents) + shared_warnings(
         d, ents
     ) + parallel_candidates(d, ents) + shared_file_errors(_listings(d, ents)) + ux_vars_errors(d, repo) + ux_flows_findings(d, ents, repo) + registry_problems(
