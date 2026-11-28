@@ -16,6 +16,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# Finding (C1): scripts/dev.sh sets root from its own location, and this file puts its own dir (HERE) first on sys.path,
+# so a job worktree run imports the worktree's .claude/tools pipeline, not the main checkout's. Test: test_ptest_nomatch.py.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
 from pipeline import gitx
 from pipeline.configuration import DEFAULT_WORKSPACE, JOB_BRANCH_PREFIX, MERGE_ONLY_TESTS_KEY, project
