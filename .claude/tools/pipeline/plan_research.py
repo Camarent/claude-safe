@@ -1,11 +1,15 @@
 """The research-task rule: a `Type: research` task writes one tracked output (its `Outputs:` path), and a later task must consume it (depend on the research task and name the path). Code and report tasks are not checked here."""
 
 import os
+import re
 
-from .configuration import RESEARCH_PREFIX
+from .configuration import RESEARCH_PREFIX, RESEARCH_WEB_PREFIX, RESEARCH_WEB_RE
 from .plan_files import task_outputs, task_type
 from .plan_outputs import check_output_paths
+from .task_text import lines
 from .util import read_text
+
+WEB_RE = re.compile(RESEARCH_WEB_RE, re.I)
 
 
 def _consumed(d, tid, out, ents) -> bool:
@@ -21,11 +25,17 @@ def check_research(d, e, ents, repo) -> list[str]:
     text = read_text(os.path.join(d, tid + ".md"))
     if task_type(text) != "research":
         return []
+    problems = []
+    goal = " ".join(value for _, value in lines(text, "Goal"))
+    if WEB_RE.search(goal):
+        problems.append(
+            f"{RESEARCH_WEB_PREFIX} {tid}: its Goal needs web access, which scout lacks: split it into an ops-N step where the lead runs the researcher agent (.claude/agents/researcher.md) and relays the reply with the orch.py report --replace command, and make the code tasks depend on that step"
+        )
     outs = task_outputs(text)
     if len(outs) != 1:
-        return [f"{RESEARCH_PREFIX} {tid}: a research task names one tracked output in its Outputs: line, found {len(outs)}"]
+        return [*problems, f"{RESEARCH_PREFIX} {tid}: a research task names one tracked output in its Outputs: line, found {len(outs)}"]
     out = outs[0]
-    problems = check_output_paths(d, tid, repo)
+    problems += check_output_paths(d, tid, repo)
     if not _consumed(d, tid, out, ents):
         problems.append(f"{RESEARCH_PREFIX} {tid}: no later task depends on {tid} and names its output `{out}` in its text")
     return problems

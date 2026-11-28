@@ -92,7 +92,7 @@ class DocsFollowupScripts(unittest.TestCase):
 
     def test_each_changed_behaviour_is_one_paragraph(self):
         bullets = [ln for ln in self.section.splitlines() if ln.startswith("- ")]
-        self.assertEqual(len(bullets), 25)  # one bullet per changed behaviour; the last is the plan-review gaps warning
+        self.assertEqual(len(bullets), 28)  # one bullet per changed behaviour; the last is the plan-review gaps warning
 
     def test_no_machine_counts_added(self):
         self.assertIsNone(MACHINE_COUNT.search(self.section))

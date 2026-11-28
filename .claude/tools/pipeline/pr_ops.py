@@ -130,6 +130,41 @@ def _open_pr(a_dir, repo, cfg, stage, br):
     return f"PR opened: {r.stdout.strip().splitlines()[-1] if r.stdout.strip() else br}"
 
 
+def stage_pr_merged(repo, br) -> bool:
+    """-> True when the newest PR of branch BR is MERGED and covers the branch tip (no commit pushed after it). No gh, no PR, an open newer PR or a bad reply is False: the run then goes on as before."""
+    try:
+        r = pr_base._run(["gh", "pr", "list", "--head", br, "--state", "all", "--json", "state,headRefOid,createdAt"], repo)
+    except pr_base.Blocked:
+        return False
+    if r.returncode:
+        return False
+    try:
+        prs = json.loads(r.stdout or "[]")
+    except ValueError:
+        return False
+    prs = [p for p in prs if isinstance(p, dict)] if isinstance(prs, list) else []
+    if not prs:
+        return False
+    newest = max(prs, key=lambda p: str(p.get("createdAt") or ""))  # a stable max: the first of equal dates (gh lists newest first)
+    if newest.get("state") != "MERGED":
+        return False
+    return _tip_matches(repo, br, newest.get("headRefOid"))
+
+
+def _tip_matches(repo, br, oid) -> bool:
+    """-> False when branch BR (local, else origin) has a tip that differs from OID: new commits came after the merge. An unknown branch or OID is True (nothing to compare)."""
+    if not oid:
+        return True
+    try:
+        for ref in (br, f"origin/{br}"):
+            t = pr_base._git(repo, "rev-parse", "--verify", "-q", ref)
+            if t.returncode == 0 and t.stdout.strip():
+                return t.stdout.strip() == oid
+    except pr_base.Blocked:
+        return True
+    return True
+
+
 class CiReadError(Blocked):
     """The CI runs of a PR head could not be read: never read as "no checks" (a merge must not pass on it)."""
 

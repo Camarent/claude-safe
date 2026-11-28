@@ -90,6 +90,13 @@ def gate_lines(feature_dir, cwd):
     return out
 
 
+def lsp_health_line(usage_path=None):
+    """-> [retro line] when the lp usage log holds failed `nav` calls (rc not 0), else []. Source: local.py usage_log, one record per lp call in LP_USAGE_LOG (default ~/.claude/lp-usage.jsonl). A nav call that falls back to the in-process run is not recorded there, so only failed calls count."""
+    path = usage_path or os.environ.get("LP_USAGE_LOG") or os.path.join(HOME, ".claude", "lp-usage.jsonl")
+    bad = [r for r in read_jsonl(path, quiet=True, errors="replace") if str(r.get("cmd", "")).startswith("nav ") and r.get("rc") not in (0, None)]
+    return [f"language server: {len(bad)} nav calls failed or fell back"] if bad else []
+
+
 def _signal_phases(data):
     """-> {signal name: [phase, ...]} for every signal tripped in data."""
     names: dict = {}
@@ -150,7 +157,7 @@ def main(argv=None):
     )
     ap.add_argument("--dir", default=os.getcwd(), help="workspace holding pipeline.json and the .work folder (gate time limits, gate-run log)")
     a = ap.parse_args(argv)
-    text = render(os.path.basename(os.path.normpath(a.feature_dir)), gather(a.feature_dir), gate_lines(a.feature_dir, a.dir))
+    text = render(os.path.basename(os.path.normpath(a.feature_dir)), gather(a.feature_dir), gate_lines(a.feature_dir, a.dir) + lsp_health_line())
     lead = lead_cost.feature_lines(a.feature_dir, a.lead_log or [os.path.join(HOME, "projects")])
     if lead:
         text += "\n## Lead cost of the whole feature (script, USD from prices.py)\n" + "\n".join(lead) + "\n"

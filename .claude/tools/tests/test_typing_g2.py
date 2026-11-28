@@ -18,9 +18,9 @@ def _public_defs(path):
 
 
 class TypingGroup2Test(unittest.TestCase):
-    def test_group_covers_31_public_defs(self):
+    def test_group_covers_32_public_defs(self):
         total = sum(len(_public_defs(path)) for path in MODULES)
-        self.assertEqual(total, 31)
+        self.assertEqual(total, 32)
 
     def test_every_public_def_has_return_annotation(self):
         for path in MODULES:

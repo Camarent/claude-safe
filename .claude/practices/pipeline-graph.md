@@ -28,6 +28,7 @@ for each wave of the task graph (waves run in order, tasks inside a wave in para
    merge-w<N>: script `merge_wave.py` in worktree mode (agent `merger`, haiku, only in in-place mode)   squash-merge the wave's branches into the stage branch `stage/<feature>`, run gates and `each`
    [pr-push-w<N> (script)    push the stage branch after each wave merge, only with an open PR]
         `- on FAIL: merge-fix-w<N> (agent `merger`, sonnet, CONFLICT-RESOLVE MODE) fixes once, merge-w<N>-2 runs again, then the lead is asked
+        `- no dispatch when `orch.py skip --step merge-w<N>` closed it (for good: no late batch either) or, before any merge ran, every job branch is already in the work branch
    [index-w<N> (script)      refresh the code index, only with flag `index`]
         BLOCKED "done task(s) ... still have an unmerged worktree branch" (graph `_unmerged_done`): a done task whose job branch has commits ahead of the stage branch, or uncommitted work, asks the lead. A done task with no commits ahead and nothing uncommitted (e.g. a retried scout that wrote only files outside git) has its job worktree and branch removed by the driver and does not block.
 before the first wave (feature level): deps-sweep (merge green Dependabot PRs); the draft PR opens at the first `pr-push-w<N>` (no `pr-open` step any more)

@@ -34,7 +34,7 @@ class ReportPathTest(unittest.TestCase):
         root = worktree.layout(self.d, STAGE, TASK)[2]
         self.wt_report = Path(root, ".work", STAGE, "reports", f"report-{ID}.md")
         self.main_report = self.work / "reports" / f"report-{ID}.md"
-        self.a = SimpleNamespace(dir=self.d, stage=STAGE, id=ID, text=None)
+        self.a = SimpleNamespace(dir=self.d, stage=STAGE, id=ID, text=None, replace=False)
 
     def write_worktree_report(self, body):
         self.wt_report.parent.mkdir(parents=True, exist_ok=True)

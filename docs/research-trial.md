@@ -33,5 +33,8 @@ the flags did not exist.
 
 ## Checker
 
-`check_research` in `.claude/tools/pipeline/plan_research.py` needed no change: the trial
-found no gap there. A research task with one tracked output and a consumer that names it passes.
+The trial found no gap in the one-output and consumer rules of `check_research` in
+`.claude/tools/pipeline/plan_research.py`: a research task with one tracked output and a consumer
+that names it passes. A later change added one rule: `check_research` reports a research task
+whose Goal needs web access (`RESEARCH_WEB_RE`), because scout has none; such a step belongs in
+an ops-N task where the lead runs the researcher agent.

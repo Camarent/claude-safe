@@ -1,7 +1,9 @@
 """plan_check rule: a `Test:` line that runs bare pytest where the project names its own test command."""
 
+import functools
 import os
 import re
+import subprocess
 
 from .configuration import (
     BARE_RUNNER_RE,
@@ -12,6 +14,10 @@ from .configuration import (
     TEST_BAN_PREFIX,
     TESTCMD_HINT_KEY,
     TESTCMD_WARN_PREFIX,
+    TESTRUNNER_PREFIX,
+    TESTRUNNER_PROBE,
+    TESTRUNNER_PROBE_TIMEOUT_S,
+    TESTRUNNER_WORKING_FORM,
     gates_of,
     project,
 )
@@ -43,20 +49,33 @@ def test_command_hint(cfg) -> str | None:
     return None
 
 
-def check_bare_test_runner(d, tid, workspace) -> list[str]:
-    """`testcmd:` error for one task: its `Test:` line runs bare `pytest` / `python -m pytest` while the project names another test command (it needs an environment the job worktree lacks)."""
+@functools.cache
+def pytest_importable() -> bool:
+    """-> True when the TESTRUNNER_PROBE exits 0 (pytest imports here). Cached: one check run spawns it once."""
+    try:
+        done = subprocess.run(TESTRUNNER_PROBE, capture_output=True, check=False, timeout=TESTRUNNER_PROBE_TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0
+
+
+def check_bare_test_runner(d, tid, workspace, probe=pytest_importable) -> list[str]:
+    """`testcmd:` error for one task: its `Test:` line runs bare `pytest` / `python -m pytest` while the project names another test command (it needs an environment the job worktree lacks).
+    With no test command named, `testrunner:` error when PROBE (a callable -> bool) says pytest does not import with python3."""
     m = TEST_LINE_RE.search(read_text(os.path.join(d, tid + ".md")))
     if not m:
         return []
-    hint = test_command_hint(project(workspace))
-    if not hint:
+    bare = next((part for part in split_commands(m[1].replace("`", " "), amp=False, newline=False) if _is_bare(part)), None)
+    if bare is None:
         return []
-    for part in split_commands(m[1].replace("`", " "), amp=False, newline=False):
-        if _is_bare(part):
-            return [
-                f"{TESTCMD_WARN_PREFIX} {tid}: Test runs bare `{part.strip()}` but the project's test command is `{hint}`: use that, or the runner the project notes name"
-            ]
-    return []
+    hint = test_command_hint(project(workspace))
+    if hint:
+        return [
+            f"{TESTCMD_WARN_PREFIX} {tid}: Test runs bare `{bare.strip()}` but the project's test command is `{hint}`: use that, or the runner the project notes name"
+        ]
+    if probe():
+        return []
+    return [f"{TESTRUNNER_PREFIX} {tid}: Test runs bare `{bare.strip()}` but pytest does not import with python3 here: use `{TESTRUNNER_WORKING_FORM}`"]
 
 
 def _test_bans(cfg):

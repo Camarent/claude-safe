@@ -15,6 +15,7 @@ from .configuration import (
     MODEL_SONNET,
     PLAN_CONTEXT_FILE,
     PLAN_FILE,
+    PLAN_REVIEW_GAPS_FILE,
     PLAN_REVIEW_REPORT_FILE,
     REQUEST_FILE,
     TASKS_FILE,
@@ -322,16 +323,29 @@ def run(a) -> int:
 
 
 def _gaps_block(a, gaps) -> int:
-    """Plan-review gaps still open after the fix rounds: the GAPS: block as the run's last output, also written to GAPS_FILE. -> EXIT_LIMIT."""
+    """Plan-review gaps still open after the fix rounds: the GAPS: block as the run's last output, also written to GAPS_FILE. The stale PLAN_REVIEW_GAPS_FILE goes: the final pass owns the gaps. -> EXIT_LIMIT."""
     block = "\n".join(["GAPS:", *gaps])
     write_text(os.path.join(feature_dir(a), GAPS_FILE), block + "\n")
+    _drop_review_gaps(a)
     print(block)
     return EXIT_LIMIT
 
 
 def _clear_gaps(a) -> int:
-    """No gaps left: drop the GAPS_FILE of an earlier run so it does not outlive its gaps. -> 0."""
-    path = os.path.join(feature_dir(a), GAPS_FILE)
+    """No gaps left: drop the GAPS_FILE and the PLAN_REVIEW_GAPS_FILE of an earlier run so they do not outlive their gaps. -> 0."""
+    _drop(os.path.join(feature_dir(a), GAPS_FILE))
+    _drop_review_gaps(a)
+    return 0
+
+
+def _drop_review_gaps(a) -> None:
+    """Remove PLAN_REVIEW_GAPS_FILE from the feature root and from every phase folder: cli_feature writes it into phases/<dir>."""
+    d = feature_dir(a)
+    for folder in [d, *(os.path.join(d, "phases", p["dir"]) for p in read_phases(a))]:
+        _drop(os.path.join(folder, PLAN_REVIEW_GAPS_FILE))
+
+
+def _drop(path) -> None:
+    """Remove path when it exists."""
     if os.path.exists(path):
         os.remove(path)
-    return 0
