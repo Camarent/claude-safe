@@ -274,6 +274,7 @@ from .plan_rules import (
 )
 from .plan_testcmd import check_bare_test_runner, check_qrun_operator, check_test_ban
 from .plan_testroot import check_vitest_root
+from .plan_testwrap import check_test_wrap
 from .plan_toolblock import check_toolblock
 from .plan_wiring import check_wiring
 from .shellwords import split_commands as split_commands  # re-exported: pre-split name of pipeline.plan_check
@@ -315,6 +316,7 @@ def _task_file_problems(d, e, ents, repo, gates, git, produced, rows=None):
         + check_denied_commands(d, e["id"], _preflight_denied(d))
         + check_bare_test_runner(d, e["id"], _workspace(d))
         + check_test_ban(d, e["id"], _workspace(d))
+        + check_test_wrap(d, e["id"], _workspace(d))
         + check_qrun_operator(d, e["id"])
         + check_vitest_root(d, e["id"], _workspace(d))
         + check_kinds(d, e, ents, repo)
