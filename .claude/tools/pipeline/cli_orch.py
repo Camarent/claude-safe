@@ -340,10 +340,20 @@ def _materialize_audit(w, d, v, body):
 
 
 def _remit_verdict(a, d, v, body):
-    """-> (verdict, ignored lines). An auditor's FIXES caused only by FAIL lines on Plan.md checklist items outside its remit becomes CLEAN: those findings are logged as ignored, not fixed."""
-    from .audit_phases import checklist_items, out_of_remit_split, plan_rel  # lazy: audit_phases imports this package's graph
+    """-> (verdict, ignored lines). An auditor's FIXES caused only by FAIL lines on Plan.md checklist items outside its remit becomes CLEAN: those findings are logged as ignored, not fixed.
+    An auditor's FIXES whose every severe line is a should-fix that repeats an open roadmap item (pipeline.json `roadmap_file`) becomes CLEAN the same way."""
+    from .audit_phases import checklist_items, out_of_remit_split, plan_rel, roadmap_split  # lazy: audit_phases imports this package's graph
 
-    remit = project(a.dir).get("auditor_remit", AUDITOR_REMIT)
+    cfg = project(a.dir)
+    rel = cfg.get("roadmap_file", "")
+    road = os.path.realpath(os.path.join(a.dir, rel)) if rel else ""
+    inside = road and os.path.commonpath([road, os.path.realpath(a.dir)]) == os.path.realpath(a.dir)  # an absolute or ../ path never leaves the repo
+    if d["role"] in AUDITORS and v == FIXES and inside and os.path.isfile(road):
+        listed, severe = roadmap_split(body, read_text(road))
+        if listed and len(listed) == len(severe):
+            return CLEAN, listed
+
+    remit = cfg.get("auditor_remit", AUDITOR_REMIT)
     if d["role"] not in remit or v != FIXES:
         return v, []
     items = checklist_items(read_text(os.path.join(a.dir, plan_rel(a.stage))))
