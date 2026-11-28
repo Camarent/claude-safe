@@ -86,7 +86,7 @@ Each paragraph names the code file that holds the change.
 - Plan check `plan-gap:` for `Needs:` lines (`.claude/tools/pipeline/plan_needs.py`, `check_needs`): a task's `Needs: <repo path> :: <literal>` line fails the plan when the path is missing or lacks the literal, unless a task it depends on lists that path in its Predicted paths.
 - Settings defaults (`.claude/tools/pipeline/configuration/defaults.py`): `test_roots`, `test_wrap` and `roadmap_file` default to empty, which means off; `worktree_requirements` defaults to an empty list.
 - Retry note lint (`.claude/tools/pipeline/retry_note.py`): a retry NOTE that follows a dev PLAN GAP report gets a warning while the task file is unchanged since that report.
-- Merge gate skip (`.claude/tools/merge_wave.py`, `_passed_gates`): a merge gate command with a green qrun record on the merged tree is skipped and logged as skipped.
+- Merge gate skip (`.claude/tools/merge_wave.py`, `_passed_gates`): a merge gate command with a green qrun record on the merged tree is skipped and logged as skipped (its `gate_cmd` record has `skipped: true`, `seconds: 0`; `_log_skipped`). Every `gate_cmd` record carries `mode` (the gate mode flag, `gate_mode.mode_of`), `concurrent` (gate commands running at once when the command started; 1 when alone) and `skipped`.
 - Roadmap audit pass (`.claude/tools/pipeline/cli_orch.py`, `_remit_verdict`): an auditor FIXES list whose severe lines are all should-fix items repeating an open `roadmap_file` item becomes CLEAN.
 - Open plan-review gaps warning (`.claude/tools/pipeline/plan_gaps_open.py`): the stage or feature folder's plan-review gaps still open are read at stage start and shown to the lead as a warning.
 

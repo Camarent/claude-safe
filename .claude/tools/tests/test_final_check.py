@@ -1,5 +1,6 @@
 """Synthetic tests for the scripted final verification. Contract only: what runs, what the verdict is, script vs tester choice."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -10,7 +11,7 @@ import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from audit import final_check as fc
-from pipeline import steps
+from pipeline import gate_mode, steps
 from tests.support.orch_harness import OrchHarness
 from tests.support.tmpdirs import tracked_mkdtemp
 
@@ -59,6 +60,19 @@ class FinalCheckTest(unittest.TestCase):
         self.assertTrue(rep.startswith("VERDICT: FAIL"))
         self.assertLess(rep.index("FAIL ("), rep.index("ok ("))
         self.assertTrue(fc.report([("x", 0, 0, "")]).startswith("VERDICT: DONE"))
+
+    def test_gate_cmd_record_has_mode_concurrent_and_skipped(self):
+        d = tracked_mkdtemp()
+        path = f"{d}/metrics.jsonl"
+        cmd = "scripts/dev.sh check"
+        res = [(cmd, 0, 1, "")]
+        fc.log_gate_cmds(path, "merge", res, {cmd: "check"})
+        fc.log_gate_cmds(path, "merge", [("scripts/dev.sh test --fast", 0, 0, "")], {}, skipped=True)
+        recs = [json.loads(x) for x in open(path, encoding="utf-8")]
+        self.assertEqual([r["mode"] for r in recs], [gate_mode.mode_of(cmd), gate_mode.mode_of("scripts/dev.sh test --fast")])
+        self.assertEqual([r["concurrent"] for r in recs], [1, 1])  # never ran here: default 1
+        self.assertEqual([r["skipped"] for r in recs], [False, True])
+        self.assertEqual([r["gate"] for r in recs], ["check", "scripts/dev.sh test --fast"])
 
 
 class FinalStepChoice(OrchHarness):

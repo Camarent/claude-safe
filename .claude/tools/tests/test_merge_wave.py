@@ -184,7 +184,7 @@ class MergeWaveTest(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertRegex(text, r"gate t: skipped, identical passed tree [0-9a-f]{40}, record \S+gate-runs\.jsonl passed at \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
         recs = [r for r in map(json.loads, open(f"{self.t}/.work/s/metrics.jsonl", encoding="utf-8")) if r["ev"] == "gate_cmd"]
-        self.assertEqual([(r["kind"], r["gate"], r["rc"], r["seconds"]) for r in recs][-1], ("merge", "t", 0, 0))
+        self.assertEqual([(r["kind"], r["gate"], r["rc"], r["seconds"], r["skipped"]) for r in recs][-1], ("merge", "t", 0, 0, True))
 
     def test_a_different_tree_runs_the_gate_again(self):
         def dirty():
