@@ -189,6 +189,9 @@ def _cite_msg(worktree, where, path, line, end, before, relaxed=False):
         full = _inside(worktree, resolved)
         lines = _lines(full) if full else None
     if lines is None:
+        hits = _bare_hits(worktree, path)
+        if len(hits) > 1:
+            return f"{where} but {path} is ambiguous: {', '.join(sorted(hits))}"
         return f"{where} but {path} is missing"
     if relaxed:
         return None

@@ -271,3 +271,7 @@ Reason: the changed behaviours of the followup stages had no doc names; `docs/mo
 - Needs lines: a task file's `Needs: <repo path> :: <literal>` line makes the plan fail when the path is missing or lacks the literal, unless a task the task depends on lists that path in its Predicted paths (it creates the file first). Reason: a task must not start before the fact it needs exists in the repo.
 - roadmap_file marker: a pipeline.json `roadmap_file` names the roadmap; an auditor FIXES list whose severe lines all repeat open roadmap items counts as CLEAN. Reason: a known roadmap item must not block a stage again and again.
 - Finding of `docs/cost-lp-nav.md`: wave 0 cost has a code cause, the job worktree setup (`worktree_setup` and `worktree_requirements` run in each new job worktree). Fix: set the two keys in pipeline.json to reuse one venv. The wave share and the lp nav share are not derivable from the tree. Reason: the setup cost is the cause that the code shows.
+
+## Cite check: ambiguous bare names (driver-gates, task-9)
+
+- A cite whose file is a bare name (no directory) that matches two or more worktree files fails with `is ambiguous:` and lists every candidate path, sorted. A bare name with no match still fails with `is missing`. Reason: the author sees which file the cite meant without a grep.
