@@ -135,6 +135,9 @@ class PrOpsNames(unittest.TestCase):
         missing = [n for n in HEAD_NAMES if not hasattr(pr_ops, n)]
         self.assertEqual(missing, [])
 
+    def test_pr_ready_flake_rerun_is_importable_from_pr_ops(self):  # the pr-ready gate runs a red gate's failing files alone through this name
+        self.assertTrue(callable(getattr(pr_ops, "_settles_alone", None)))
+
     def test_release_module_imports_first(self):
         rc, err = _fresh_import("pr_release")
         self.assertEqual(rc, 0, err)

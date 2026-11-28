@@ -64,6 +64,7 @@ from .pr_release import (  # noqa: F401 -- re-exported: pr_ops keeps every relea
 from .run import Run
 from .slow_suite import REASON
 from .stagedir import stage_root
+from .steps_finaltest import record_flake, rerun_cmd, test_files
 from .util import TOOLS, paths, read_jsonl
 
 
@@ -214,8 +215,17 @@ def append_body(repo, br, note) -> None:
     pr_base._run(["gh", "pr", "edit", br, "--body", f"{cur.stdout.rstrip()}\n\n{note}"], repo)
 
 
+def _settles_alone(repo, cfg, out, run_cmd) -> bool:
+    """True when a red gate's output names failing test files that are green when rerun alone (`final_files_cmd`): a flake, logged in REPO (GATE_KIND_FLAKE). No file named, no command, or still red -> False: the gate stays red."""
+    rerun = rerun_cmd(cfg, test_files(out))
+    if not rerun or run_cmd(["sh", "-c", rerun], repo, PR_GATE_TIMEOUT_S).returncode:
+        return False
+    record_flake(repo, rerun)
+    return True
+
+
 def _gates_gate(repo, cfg, br, runner=None):
-    """Runs every project gate (`all_gates_of`) and each CI run line no gate covers, in REPO, before the push; a red one raises Blocked naming it. `runner(args, cwd, timeout)` -> returncode holder, default `_run`."""
+    """Runs every project gate (`all_gates_of`) and each CI run line no gate covers, in REPO, before the push; a red gate whose failing test files pass alone is a flake and counts green; a red one raises Blocked naming it. `runner(args, cwd, timeout)` -> returncode holder, default `_run`."""
     run_cmd = runner or _run
     gates = [g["cmd"] for g in all_gates_of(cfg)]
     ci = ci_commands(repo, cfg)
@@ -223,7 +233,8 @@ def _gates_gate(repo, cfg, br, runner=None):
     red = []
     try:
         for c in gates:
-            if run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S).returncode:
+            r = run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S)
+            if r.returncode and not _settles_alone(repo, cfg, (r.stdout or "") + (r.stderr or ""), run_cmd):
                 red.append(f"`{c}`")
         for c in ci:
             r = run_cmd(["sh", "-c", c], repo, PR_GATE_TIMEOUT_S)

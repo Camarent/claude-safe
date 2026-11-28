@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 os.environ["PIPELINE_NO_LEADS"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline import phases, steps_finaltest
+from pipeline import gate_record, phases, pr_ops, steps_finaltest
 from pipeline.configuration import BLOCKED, DONE, FAIL, FINAL_FILES_CMD_KEY, FINALTEST_TRIAGE_STEP, PRE_EXISTING_RED
 from tests.support.gitrepo import git
 from tests.support.tmpdirs import tracked_mkdtemp
@@ -74,7 +74,7 @@ class TriageRunTest(unittest.TestCase):
         (verdict, reason), seen = self.triage({self.d})
         self.assertEqual(verdict, FAIL)
         self.assertIn("stage head only", reason)
-        self.assertEqual(len(seen), 2)  # alone, then the base tree
+        self.assertEqual(len(seen), 2)  # alone, then the base tree (green there: no base rerun)
 
     def test_red_on_preflight_head_too_is_pre_existing(self):
         seen = []
@@ -84,9 +84,31 @@ class TriageRunTest(unittest.TestCase):
             return SimpleNamespace(returncode=1, stdout="", stderr="")
 
         verdict, reason = steps_finaltest.triage(CFG, self.d, {}, REPORT, self.head, runner=red_everywhere)
-        self.assertEqual(len(seen), 2)
+        self.assertEqual(len(seen), 3)  # the stage run, the base run, the base alone rerun: red all three times
         self.assertEqual(verdict, BLOCKED)
         self.assertIn(PRE_EXISTING_RED.replace("<command>", "scripts/dev.sh test"), reason)
+
+    def test_green_alone_is_logged_as_a_flake_not_a_pass(self):
+        self.triage(set())
+        self.assertEqual(gate_record.flake_count(self.d), 1)
+        self.assertIsNone(gate_record.find_passed(self.d, ["sh", "-c", "scripts/dev.sh test .claude/tools/tests/test_alpha.py tests/test_beta.py"]))
+
+    def test_red_alone_is_not_logged_as_a_flake(self):
+        self.triage({self.d})
+        self.assertEqual(gate_record.flake_count(self.d), 0)
+
+    def test_base_red_once_then_green_alone_is_not_pre_existing(self):
+        calls = []
+
+        def base_flaps(argv, cwd, **_kw):  # stage red alone; the base red on its first run, green on the alone rerun
+            calls.append(cwd)
+            base_runs = [c for c in calls if c != self.d]
+            return SimpleNamespace(returncode=1 if cwd == self.d or len(base_runs) == 1 else 0, stdout="", stderr="")
+
+        verdict, reason = steps_finaltest.triage(CFG, self.d, {}, REPORT, self.head, runner=base_flaps)
+        self.assertEqual(verdict, FAIL)
+        self.assertIn("stage head only", reason)
+        self.assertEqual(gate_record.flake_count(self.d), 1)
 
     def test_base_tree_is_removed_after_the_run(self):
         base_dirs = []
@@ -100,6 +122,48 @@ class TriageRunTest(unittest.TestCase):
         self.assertEqual(len(base_dirs), 1)
         self.assertFalse(os.path.exists(base_dirs[0]))
         self.assertEqual(git(self.d, "worktree", "list"), self.worktrees_before)
+
+
+PR_GATE_OUT = "FAILED .claude/tools/tests/test_alpha.py::test_one\n"
+PR_CFG = {"gates": [{"name": "test", "cmd": "scripts/dev.sh test"}], FINAL_FILES_CMD_KEY: "scripts/dev.sh test {files}"}
+
+
+class PrReadyFlakeTest(unittest.TestCase):
+    """pr-ready (pr_ops._gates_gate): a red gate whose failing files pass alone counts green and is logged as a flake."""
+
+    def setUp(self):
+        self.d = tracked_mkdtemp()
+        git(self.d, "init", "-q")
+        git(self.d, "commit", "-q", "--allow-empty", "-m", "base")
+
+    def gate(self, red_cmds, rerun_red=False):
+        """Runs the gate once with the fake: the gate line is red (stdout names one test file); the alone rerun is red when RERUN_RED."""
+        seen = []
+
+        def run(args, cwd, timeout):
+            cmd = args[-1]
+            seen.append(cmd)
+            is_rerun = cmd.startswith("scripts/dev.sh test ")
+            red = (cmd in red_cmds) or (is_rerun and rerun_red)
+            return SimpleNamespace(returncode=1 if red else 0, stdout=PR_GATE_OUT if cmd in red_cmds else "", stderr="")
+
+        return pr_ops._gates_gate(self.d, PR_CFG, "stage/x", runner=run), seen
+
+    def test_red_gate_green_alone_counts_green_and_is_a_flake(self):
+        note, seen = self.gate({"scripts/dev.sh test"})
+        self.assertIn("1 command(s) green", note)
+        self.assertEqual(seen, ["scripts/dev.sh test", "scripts/dev.sh test .claude/tools/tests/test_alpha.py"])
+        self.assertEqual(gate_record.flake_count(self.d), 1)
+
+    def test_red_gate_still_red_alone_blocks_and_is_not_a_flake(self):
+        with self.assertRaises(pr_ops.Blocked) as cm:
+            self.gate({"scripts/dev.sh test"}, rerun_red=True)
+        self.assertIn("`scripts/dev.sh test`", str(cm.exception))
+        self.assertEqual(gate_record.flake_count(self.d), 0)
+
+    def test_red_gate_naming_no_file_is_not_rerun(self):
+        with self.assertRaises(pr_ops.Blocked):
+            pr_ops._gates_gate(self.d, PR_CFG, "stage/x", runner=lambda args, cwd, timeout: SimpleNamespace(returncode=1, stdout="", stderr=""))
 
 
 class TriagePhasesTest(unittest.TestCase):

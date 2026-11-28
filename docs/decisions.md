@@ -88,6 +88,7 @@ Stage decisions, one per task. Reason = the report item it fixes.
 - task-13: dev BLOCKED with committed work and an env/test reason runs the verify path. Reason: stability 2.
 - task-14: rework ladder: Haiku rework first, Sonnet only after it fails; the complexity review route starts on Haiku. Reason: tokens 3, 5.
 - task-15: final-test FAIL reruns failing files alone, then on the preflight head. Reason: stability 6.
+- retro-m25-followup2 task-2: a red whose failing test files pass on one alone rerun is a flake, not a red: the final-test triage (preflight head too: a red base that passes alone) and the pr-ready gates (`pr_ops._settles_alone`) count it green and log it with `gate_record.record(kind=GATE_KIND_FLAKE)` (`flake_count`; never a pass). A red still red alone keeps the fix plan / the Blocked. Reason: each flake blocked a real run.
 - task-16: third round of a repeating docs-only finding becomes a script step; auditor retry is the default. Reason: stability 16, time 11.
 - task-17: task gate skips docs-only diffs; linkguard flags line-number cites. Reason: time 3, 4.
 - task-18: merge dedup by tree hash; red after clean merge goes to the task dev; merger gets conflicted hunks. Reason: time 2, 9, tokens 14.
