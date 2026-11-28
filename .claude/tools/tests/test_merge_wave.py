@@ -74,6 +74,44 @@ class MergeWaveTest(unittest.TestCase):
         self.assertEqual(v, "DONE", text)
         self.assertIn("rebased onto the stage branch", text)
 
+    def test_job_already_on_stage_branch_is_skipped_not_a_conflict(self):
+        r = wt.create(self.t, "s", T1)
+        with open(f"{r['root']}/a", "w") as f:
+            f.write("task-1")
+        wt.commit(self.t, "s", T1, "feat(x): add a")
+        job_sha = subprocess.run(["git", "-C", r["root"], "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        sh("-C", self.m, "cherry-pick", job_sha)  # the job's commit already on the stage branch
+        with open(f"{self.m}/a", "w") as f:
+            f.write("later")
+        sh("-C", self.m, "add", "a")
+        sh("-C", self.m, "commit", "-qm", "later, touches the same file")
+        v, text = merge_wave.run(self.t, "s", [T1])
+        self.assertEqual(v, "DONE", text)
+        self.assertIn("skipped, already on the stage branch", text)
+        self.assertNotIn("conflict", text)
+
+    def test_hand_merged_job_is_skipped_not_rebased_into_a_conflict(self):  # settled, but not on the stage branch: only the filter keeps it out of the rebase
+        self._job("task-1", "a")
+        with open(f"{self.m}/a", "w") as f:
+            f.write("later")
+        sh("-C", self.m, "add", "a")
+        sh("-C", self.m, "commit", "-qm", "later, touches the same file")
+        wt.mark_merged(self.t, "s", "task-1")
+        v, text = merge_wave.run(self.t, "s", ["task-1"])
+        self.assertEqual(v, "DONE", text)
+        self.assertIn("skipped, already on the stage branch", text)
+        self.assertNotIn("conflict", text)
+
+    def test_real_new_commit_with_a_conflict_still_reports_the_conflict(self):  # decoy: the skip must not hide real conflicts
+        self._job("task-1", "a")
+        with open(f"{self.m}/a", "w") as f:
+            f.write("later")
+        sh("-C", self.m, "add", "a")
+        sh("-C", self.m, "commit", "-qm", "later, touches the same file")
+        _, text = merge_wave.run(self.t, "s", ["task-1"])
+        self.assertIn("rebase conflicts", text)
+        self.assertNotIn("skipped, already on the stage branch", text)
+
     def test_each_groups_reach_run_all(self):
         os.makedirs(f"{self.m}/w/c1")
         with open(f"{self.m}/w/c1/course.json", "w") as f:
