@@ -1,5 +1,6 @@
 """Lint of the note a `retry --note` gives the dev: the note must name the file and line to change (`path[:line]`), and a path outside the task's Predicted paths, or one its Done/Test lines forbid, is a warning."""
 
+import os
 import re
 
 from . import task_text
@@ -76,14 +77,29 @@ def refused(note) -> bool:
     return not _paths(note)
 
 
-def lint(note, task_text_value) -> list[str]:
-    """-> messages for the retry NOTE given the task file text TASK_TEXT: the refusal (no path token, one message) or advisory warnings."""
+def stale_plan_gap(task_path, gap_report) -> list[str]:
+    """-> a warning when GAP_REPORT (the task's latest dev report, which holds a PLAN GAP line) is not older than the task file TASK_PATH: the plan was not fixed, a retry repeats the gap. [] otherwise."""
+    if not task_path or not gap_report or os.path.getmtime(task_path) > os.path.getmtime(gap_report):
+        return []
+    return [f"orch: warning: the dev reported PLAN GAP ({gap_report}) and {task_path} is not changed since: edit the task file to close the gap, then retry"]
+
+
+def lint(note, task_text_value, task_path="", gap_report="") -> list[str]:
+    """-> messages for the retry NOTE given the task file text TASK_TEXT (file TASK_PATH) and the PLAN GAP report GAP_REPORT: the refusal (no path token, one message) or advisory warnings."""
     if refused(note):
         return [f"orch: retry note refused: it names no file (path[:line]). Allowed form: {ALLOWED_FORM}"]
-    out = []
+    out = stale_plan_gap(task_path, gap_report)
+    paths = list(dict.fromkeys(_paths(note)))
+    if task_path and all(_same(p, task_path) for p in paths):
+        return [
+            *out,
+            f"orch: warning: retry note names only the task file {task_path}, which the dev cannot see: not self-contained; name the file and line the dev must change",
+        ]
     predicted = _predicted(task_text_value)
     forbidden = _forbidden(task_text_value)
-    for p in dict.fromkeys(_paths(note)):
+    for p in paths:
+        if task_path and _same(p, task_path):
+            continue  # the task file itself: the dev cannot see it, it is no edit target
         if any(_same(p, f) for f in forbidden):
             out.append(f"orch: warning: retry note names {p}, which the task's Done/Test lines forbid")
         elif predicted and not any(_same(p, q) for q in predicted):
